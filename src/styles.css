@@ -1160,3 +1160,19 @@ body.portrait #rotate {
   touch-action: pan-y;
   min-width: 170px;
 }
+
+/* v0.3 item quality */
+.mod { color: #7a7aff; }
+.q-magic { color: #7a7aff !important; }
+.q-rare { color: #ffff64 !important; }
+.iname.sub { font-size: 14px; margin-top: -2px; }
+.gi.q-magic { background: rgba(60, 60, 200, 0.28); border-color: rgba(122, 122, 255, 0.7); }
+.gi.q-rare { background: rgba(140, 130, 20, 0.28); border-color: rgba(255, 255, 100, 0.65); }
+.gi.bad { background: rgba(150, 20, 10, 0.4); }
+.eqi.q-magic { box-shadow: inset 0 0 10px rgba(122, 122, 255, 0.45); }
+.eqi.q-rare { box-shadow: inset 0 0 10px rgba(255, 255, 100, 0.4); }
+.cmp .up { color: #6ad06a; }
+.cmp .down { color: #e86a5a; }
+.sval small { font-size: 10px; color: #8a7858; }
+.idetail b.mod, .kv b.mod { color: #7a7aff; }
+.gi.q-normal { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.12); }

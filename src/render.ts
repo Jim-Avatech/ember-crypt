@@ -3,7 +3,7 @@
  * scaled up with nearest-neighbour by CSS. Text (labels, damage numbers, boss name) is drawn on a
  * separate full-resolution overlay so it stays sharp.
  */
-import { BASE_BY_ID } from "./data/items";
+import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, qualityOf } from "./data/items";
 import type { Game, GroundItem, Monster } from "./game";
 import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
@@ -21,6 +21,7 @@ export interface LabelHit {
   y: number;
   w: number;
   h: number;
+  color?: string;
 }
 
 type Drawable = { d: number; f: () => void };
@@ -225,8 +226,27 @@ export class Renderer {
     }
     // ground items
     for (const g of game.ground) {
-      const c = g.item ? groundSprite(g.item.baseId) : goldSprite();
+      const c = g.item ? groundSprite(g.item) : goldSprite();
       const bounce = g.t < 0.4 ? Math.sin((g.t / 0.4) * Math.PI) * 0.5 : 0;
+      const q = g.item ? qualityOf(g.item) : "normal";
+      if (q !== "normal") {
+        // light beam over magic (blue) and rare (yellow) drops
+        const bx = this.ax(g.x, g.y);
+        const by = this.ay(g.x, g.y);
+        const col = q === "rare" ? "255,255,100" : "122,122,255";
+        const pulse = 0.75 + 0.25 * Math.sin(game.time * 3 + g.x);
+        const H = 34;
+        for (let k = 0; k < H; k++) {
+          const a = (1 - k / H) * 0.5 * pulse;
+          ctx.fillStyle = `rgba(${col},${a.toFixed(3)})`;
+          ctx.fillRect(bx - 1, by - k, 3, 1);
+          ctx.fillStyle = `rgba(${col},${(a * 0.4).toFixed(3)})`;
+          ctx.fillRect(bx - 3, by - k, 2, 1);
+          ctx.fillRect(bx + 2, by - k, 2, 1);
+        }
+        ctx.fillStyle = `rgba(${col},${(0.35 * pulse).toFixed(3)})`;
+        ctx.fillRect(bx - 6, by - 1, 13, 3);
+      }
       ctx.drawImage(c, this.ax(g.x, g.y) - (c.width >> 1), this.ay(g.x, g.y, bounce) - (c.height >> 1) - 1);
     }
 
@@ -483,7 +503,7 @@ export class Renderer {
 
   playerLook(game: Game): Look {
     const e = game.player.equip;
-    return { main: e.main?.baseId, off: e.off?.baseId, head: e.head?.baseId, chest: e.chest?.baseId, gloves: e.gloves?.baseId, boots: e.boots?.baseId };
+    return { main: lookOf(e.main), off: lookOf(e.off), head: lookOf(e.head), chest: lookOf(e.chest), gloves: lookOf(e.gloves), boots: lookOf(e.boots) };
   }
 
   /** Which animation + frame the player shows right now. */
@@ -581,8 +601,9 @@ export class Renderer {
     for (const g of items) {
       if (Math.hypot(g.x - p.x, g.y - p.y) > 11) continue;
       if (!g.item || BASE_BY_ID[g.item.baseId].kind === "potion") continue; // gold and potions: walk over them
-      const text = BASE_BY_ID[g.item.baseId].name;
-      const color = game.meetsReq(g.item) ? "#ffffff" : "#ff6a5a";
+      const text = itemName(g.item);
+      const color = QUALITY_COLOR[qualityOf(g.item)];
+      const usable = game.meetsReq(g.item);
       const w = f.measureText(text).width + 12;
       const h = 18;
       const x = this.cx(g.x, g.y) - w / 2;
@@ -595,12 +616,12 @@ export class Renderer {
       if (x + w < 0 || x > this.W || y + h < 0 || y > this.H) continue;
       f.fillStyle = "rgba(0,0,0,.62)";
       f.fillRect(x, y, w, h);
-      f.strokeStyle = "rgba(255,255,255,.18)";
+      f.strokeStyle = usable ? "rgba(255,255,255,.18)" : "rgba(255,90,70,.8)";
       f.lineWidth = 1;
       f.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       f.fillStyle = color;
       f.fillText(text, x + w / 2, y + h * 0.72);
-      const hit: LabelHit = { g, x, y, w, h };
+      const hit: LabelHit = { g, x, y, w, h, color };
       placed.push(hit);
       this.labels.push(hit);
     }

@@ -1,5 +1,6 @@
 /** Pixel-art item icons, drawn procedurally per base at a given cell size. */
-import { BASE_BY_ID, type Item } from "../data/items";
+import { BASE_BY_ID, type Item, lookOf } from "../data/items";
+import { LOOK_BY_ID } from "../data/looks";
 import { Mask, PB, type RGB, hex, mul, rot90 } from "../pixel";
 
 const STEEL = hex("#c4ccd4");
@@ -9,8 +10,10 @@ const WOOD_L = hex("#9a6a3a");
 const GOLD = hex("#d0a640");
 const LEATHER = hex("#8a5a32");
 
-function paint(baseId: string, cs: number): HTMLCanvasElement {
-  const b = BASE_BY_ID[baseId];
+/** Paint a D2-look icon into a w×h-cell box. */
+function paint(baseId: string, cs: number, cw?: number, ch?: number): HTMLCanvasElement {
+  const lb = LOOK_BY_ID[baseId];
+  const b = { ...lb, w: cw ?? lb.w, h: ch ?? lb.h };
   const W = b.w * cs;
   const H = b.h * cs;
   const pb = new PB(W, H);
@@ -171,36 +174,46 @@ function paint(baseId: string, cs: number): HTMLCanvasElement {
 const cache = new Map<string, HTMLCanvasElement>();
 const urls = new Map<string, string>();
 
+/** Icon key: which look, drawn at the item class's grid size. */
+function lookKey(it: Item | string): { look: string; w: number; h: number; key: string } {
+  const item: Item = typeof it === "string" ? { uid: 0, baseId: it } : it;
+  const look = lookOf(item) ?? "short_sword";
+  const cls = BASE_BY_ID[item.baseId] ?? LOOK_BY_ID[look];
+  return { look, w: cls.w, h: cls.h, key: `${look}:${cls.w}x${cls.h}` };
+}
+
 /** Inventory icon: 16 px per grid cell. */
-export function itemIcon(baseId: string): HTMLCanvasElement {
-  const k = `i:${baseId}`;
+export function itemIcon(it: Item | string): HTMLCanvasElement {
+  const { look, w, h, key } = lookKey(it);
+  const k = `i:${key}`;
   let c = cache.get(k);
   if (!c) {
-    c = paint(baseId, 16);
+    c = paint(look, 16, w, h);
     cache.set(k, c);
   }
   return c;
 }
 
 export function itemIconUrl(it: Item | string): string {
-  const id = typeof it === "string" ? it : it.baseId;
-  let u = urls.get(id);
+  const { key } = lookKey(it);
+  let u = urls.get(key);
   if (!u) {
-    u = itemIcon(id).toDataURL();
-    urls.set(id, u);
+    u = itemIcon(it).toDataURL();
+    urls.set(key, u);
   }
   return u;
 }
 
 /** Small sprite for an item lying on the ground (long items lie sideways). */
-export function groundSprite(baseId: string): HTMLCanvasElement {
-  const k = `g:${baseId}`;
+export function groundSprite(it: Item): HTMLCanvasElement {
+  const { look, w, h, key } = lookKey(it);
+  const k = `g:${key}`;
   let c = cache.get(k);
   if (!c) {
-    const b = BASE_BY_ID[baseId];
-    const cs = b.kind === "potion" || b.kind === "ring" || b.kind === "amulet" ? 8 : b.h >= 3 ? 5 : 6;
-    c = paint(baseId, cs);
-    if (b.h > b.w && b.slot === "weapon") c = rot90(c);
+    const b = LOOK_BY_ID[look];
+    const cs = b.kind === "potion" || b.kind === "ring" || b.kind === "amulet" ? 8 : h >= 3 ? 5 : 6;
+    c = paint(look, cs, w, h);
+    if (h > w && b.slot === "weapon") c = rot90(c);
     cache.set(k, c);
   }
   return c;

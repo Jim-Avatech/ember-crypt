@@ -1,4 +1,9 @@
-import { BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, SLOT_LABEL, isTwoHanded, sellPrice } from "./data/items";
+import { modText } from "./data/affixes";
+import {
+  BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, QUALITY_LABEL, SLOT_LABEL, baseDamage, baseDefense, beltSlotsOf, ilvlOf,
+  isTwoHanded, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
+} from "./data/items";
+import type { Derived } from "./game";
 import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, type Tab, TAB_NAMES } from "./data/skills";
 import { type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
@@ -409,7 +414,7 @@ export class Ui {
       case "sell":
         if (this.sel?.src === "bag" && this.sel.uid !== undefined && selItem) {
           const price = g.sell(this.sel.uid);
-          if (price) this.toast(`Sold ${BASE_BY_ID[selItem.baseId].name} for ${price} gold`);
+          if (price) this.toast(`Sold ${itemName(selItem)} for ${price} gold`);
           this.sel = null;
         }
         break;
@@ -623,11 +628,11 @@ export class Ui {
       if (!err && s.src !== "bag") this.sel = null;
     } else if (t.kind === "grid" && t.grid === "vendor") {
       const price = g.sell(s.uid!);
-      if (price) this.toast(`Sold ${BASE_BY_ID[it.baseId].name} for ${price} gold`);
+      if (price) this.toast(`Sold ${itemName(it)} for ${price} gold`);
       this.sel = null;
     } else if (t.kind === "ground") {
       g.dropFromBag(s.uid!);
-      this.toast(`Dropped ${BASE_BY_ID[it.baseId].name}`);
+      this.toast(`Dropped ${itemName(it)}`);
       this.sel = null;
     }
     if (err) this.toast(err);
@@ -703,7 +708,7 @@ export class Ui {
     }
     if (pr.grid === "vendor" && cur?.src === "bag" && it) {
       const price = g.sell(cur.uid!);
-      if (price) this.toast(`Sold ${BASE_BY_ID[it.baseId].name} for ${price} gold`);
+      if (price) this.toast(`Sold ${itemName(it)} for ${price} gold`);
       this.sel = null;
       return;
     }
@@ -716,17 +721,18 @@ export class Ui {
     const p = g.player;
     const d = g.derived();
     const s = p.base;
+    const tot = d.stats;
     const next = xpForLevel(p.level + 1);
     const row = (k: keyof Stats, name: string, note: string) => `
       <div class="srow">
         <div class="sname">${name}<small>${note}</small></div>
-        <div class="sval">${s[k]}</div>
+        <div class="sval ${tot[k] !== s[k] ? "mod" : ""}">${tot[k]}${tot[k] !== s[k] ? `<small> (${s[k]}+${tot[k] - s[k]})</small>` : ""}</div>
         ${p.statPoints ? `<button class="splus" data-act="stat" data-stat="${k}" aria-label="Add ${name}">+</button>` : `<span class="splus off"></span>`}
       </div>`;
     const hands = d.hands
       .map((h, i) => {
         const it = h.slot ? p.equip[h.slot] : null;
-        const name = it ? BASE_BY_ID[it.baseId].name : "Fists";
+        const name = it ? itemName(it) : "Fists";
         const lo = Math.round(h.min * (1 + h.dmgPct / 100));
         const hi = Math.round(h.max * (1 + h.dmgPct / 100));
         const aps = (1 + d.ias) / h.speed;
@@ -755,6 +761,11 @@ export class Ui {
         <div class="kv"><span>Life</span><b>${Math.ceil(p.hp)} / ${d.maxHp}</b></div>
         <div class="kv"><span>Mana</span><b>${Math.ceil(p.mana)} / ${d.maxMana}</b></div>
         <div class="kv"><span>Critical strike</span><b>${d.crit}%</b></div>
+        <div class="kv"><span>Resist fire · cold</span><b>${d.res.fire}% · ${d.res.cold}%</b></div>
+        <div class="kv"><span>Resist lightning · poison</span><b>${d.res.light}% · ${d.res.poison}%</b></div>
+        ${d.ll || d.ml ? `<div class="kv"><span>Life · mana leech</span><b class="mod">${d.ll}% · ${d.ml}%</b></div>` : ""}
+        ${d.gearIas || d.frw ? `<div class="kv"><span>Attack speed · run speed</span><b class="mod">+${d.gearIas}% · +${d.frw}%</b></div>` : ""}
+        ${d.gf || d.mf ? `<div class="kv"><span>Gold find · magic find</span><b class="mod">+${d.gf}% · +${d.mf}%</b></div>` : ""}
         <div class="kv"><span>Gold</span><b class="gold">${p.gold.toLocaleString()}</b></div>
         <div class="kv"><span>Kills · deepest level</span><b>${p.kills} · ${g.maxFloor}</b></div>
       </div>`;
@@ -764,48 +775,69 @@ export class Ui {
   private itemLines(it: Item): string {
     const g = this.game();
     const b = BASE_BY_ID[it.baseId];
-    const s = g.player.base;
+    const st = g.stats();
+    const L = ilvlOf(it);
     const lines: string[] = [];
     if (b.slot === "weapon") {
-      lines.push(`${b.hands === 2 ? "Two-Hand" : "One-Hand"} Damage: <b>${b.min} to ${b.max}</b>`);
+      const [bl, bh] = baseDamage(b, L);
+      const [lo, hi] = itemDamage(it);
+      const m = lo !== bl || hi !== bh;
+      lines.push(`${b.hands === 2 ? "Two-Hand" : "One-Hand"} Damage: <b class="${m ? "mod" : ""}">${lo} to ${hi}</b>`);
       lines.push(`Speed: ${b.speedLabel}${b.hands === 1 ? " · can dual wield" : ""}`);
     } else if (b.potion) {
       lines.push(b.potion === "hp" ? "Restores 45% life over a few seconds" : "Restores 60% mana over a few seconds");
-    } else if (it.def) lines.push(`Defense: <b>${it.def}</b>`);
-    if (b.beltSlots) lines.push(`Belt: holds <b>+${b.beltSlots}</b> potions of each kind`);
-    if (b.bonus?.ar) lines.push(`<span class="mod">+${b.bonus.ar} to Attack Rating</span>`);
-    if (b.bonus?.life) lines.push(`<span class="mod">+${b.bonus.life} to Life</span>`);
-    if (b.bonus?.mana) lines.push(`<span class="mod">+${b.bonus.mana} to Mana</span>`);
-    if (b.reqStr) lines.push(`<span class="${s.str < b.reqStr ? "bad" : ""}">Required Strength: ${b.reqStr}</span>`);
-    if (b.reqDex) lines.push(`<span class="${s.dex < b.reqDex ? "bad" : ""}">Required Dexterity: ${b.reqDex}</span>`);
-    if (b.reqLvl) lines.push(`<span class="${g.player.level < b.reqLvl ? "bad" : ""}">Required Level: ${b.reqLvl}</span>`);
+    } else if (b.defMul) {
+      const dv = itemDefense(it);
+      lines.push(`Defense: <b class="${dv !== baseDefense(b, L) ? "mod" : ""}">${dv}</b>`);
+    }
+    if (b.kind === "belt") lines.push(`Belt: holds <b>+${beltSlotsOf(it)}</b> potions of each kind`);
+    if (!b.potion) {
+      const r = itemReqs(it);
+      if (r.str) lines.push(`<span class="${st.str < r.str ? "bad" : ""}">Required Strength: ${r.str}</span>`);
+      if (r.dex) lines.push(`<span class="${st.dex < r.dex ? "bad" : ""}">Required Dexterity: ${r.dex}</span>`);
+      if (r.lvl) lines.push(`<span class="${g.player.level < r.lvl ? "bad" : ""}">Required Level: ${r.lvl}</span>`);
+    }
+    for (const m of it.mods ?? []) lines.push(`<span class="mod">${esc(modText(m))}</span>`);
     return lines.map((l) => `<div>${l}</div>`).join("");
   }
 
+  /** Diff of the character's totals if this item were equipped. */
   private compareLine(it: Item): string {
     const g = this.game();
-    const b = BASE_BY_ID[it.baseId];
     const slot = g.defaultSlot(it);
     if (!slot) return "";
     const cur = g.player.equip[slot];
-    if (!cur) return `<div class="cmp up">${EQUIP_LABEL[slot]} is empty — equip it!</div>`;
-    const cb = BASE_BY_ID[cur.baseId];
-    if (b.slot === "weapon" && cb.slot === "weapon") {
-      const diff = (b.min! + b.max!) / 2 - (cb.min! + cb.max!) / 2;
-      return `<div class="cmp ${diff > 0 ? "up" : diff < 0 ? "down" : ""}">vs ${esc(cb.name)}: ${diff >= 0 ? "+" : ""}${diff.toFixed(1)} avg damage</div>`;
-    }
-    if (it.def !== undefined || cur.def !== undefined) {
-      const diff = (it.def ?? 0) - (cur.def ?? 0);
-      return `<div class="cmp ${diff > 0 ? "up" : diff < 0 ? "down" : ""}">vs ${esc(cb.name)}: ${diff >= 0 ? "+" : ""}${diff} defense</div>`;
-    }
-    return `<div class="cmp">Replaces ${esc(cb.name)}</div>`;
+    const now = g.derived();
+    const then = g.previewEquip(it, slot);
+    const avg = (d: Derived) => {
+      const h = d.hands[0];
+      return ((h.min + h.max) / 2) * (1 + h.dmgPct / 100);
+    };
+    const parts: string[] = [];
+    const add = (label: string, a: number, b: number, digits = 0, unit = "") => {
+      const diff = b - a;
+      if (Math.abs(diff) < (digits ? 0.05 : 0.5)) return;
+      parts.push(`<span class="${diff > 0 ? "up" : "down"}">${diff > 0 ? "+" : ""}${diff.toFixed(digits)}${unit} ${label}</span>`);
+    };
+    add("damage", avg(now), avg(then), 1);
+    add("attack rating", now.ar, then.ar);
+    add("defense", now.def, then.def);
+    add("life", now.maxHp, then.maxHp);
+    add("mana", now.maxMana, then.maxMana);
+    add("attack speed", now.gearIas, then.gearIas, 0, "%");
+    add("run speed", now.frw, then.frw, 0, "%");
+    add("life leech", now.ll, then.ll, 0, "%");
+    add("all resists", Math.min(now.res.fire, now.res.cold, now.res.light, now.res.poison), Math.min(then.res.fire, then.res.cold, then.res.light, then.res.poison), 0, "%");
+    add("magic find", now.mf, then.mf, 0, "%");
+    const head = cur ? `vs ${esc(itemName(cur))}:` : `${EQUIP_LABEL[slot]} is empty:`;
+    return `<div class="cmp">${head} ${parts.length ? parts.join(" · ") : "no change"}</div>`;
   }
 
   private itemBox(it: Item, src: Src, x: number, y: number, C: number, extra = "") {
     const b = BASE_BY_ID[it.baseId];
     const sel = this.sel && this.sel.src === src && this.sel.uid === it.uid;
     const bad = src !== "vendor" && !b.potion && !this.game().meetsReq(it);
-    return `<div class="gi ${sel ? "sel" : ""} ${bad ? "bad" : ""}" data-src="${src}" data-uid="${it.uid}" style="left:${x * C}px;top:${y * C}px;width:${b.w * C}px;height:${b.h * C}px" ${extra}>
+    return `<div class="gi q-${qualityOf(it)} ${sel ? "sel" : ""} ${bad ? "bad" : ""}" data-src="${src}" data-uid="${it.uid}" data-q="${qualityOf(it)}" style="left:${x * C}px;top:${y * C}px;width:${b.w * C}px;height:${b.h * C}px" ${extra}>
       <img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false"/></div>`;
   }
 
@@ -830,7 +862,7 @@ export class Ui {
         if (it) {
           const b = BASE_BY_ID[it.baseId];
           const k = Math.min(1, w / b.w, h / b.h);
-          inner = `<div class="eqi" data-src="eq" data-eq="${s}"><img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false" style="width:${b.w * U * k}px;height:${b.h * U * k}px"/></div>`;
+          inner = `<div class="eqi q-${qualityOf(it)}" data-src="eq" data-eq="${s}"><img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false" style="width:${b.w * U * k}px;height:${b.h * U * k}px"/></div>`;
         } else if (blocked && p.equip.main) {
           const b = BASE_BY_ID[p.equip.main.baseId];
           inner = `<img class="ghost2h" src="${itemIconUrl(p.equip.main)}" alt="" draggable="false" style="width:${b.w * U * 0.9}px;height:${b.h * U * 0.9}px"/><em>2-handed</em>`;
@@ -854,8 +886,9 @@ export class Ui {
     const btns: string[] = [];
     let price = "";
     if (s.src === "vendor") {
-      price = `<div class="price ${g.player.gold < b.price ? "bad" : ""}">Price: ${b.price} gold</div>`;
-      btns.push(`<button class="gbtn" data-act="buy" ${g.player.gold < b.price ? "disabled" : ""}>Buy</button>`);
+      const cost = itemPrice(it);
+      price = `<div class="price ${g.player.gold < cost ? "bad" : ""}">Price: ${cost} gold</div>`;
+      btns.push(`<button class="gbtn" data-act="buy" ${g.player.gold < cost ? "disabled" : ""}>Buy</button>`);
     } else if (s.src === "bag") {
       if (shop) {
         price = `<div class="price">Sells for ${sellPrice(it)} gold</div>`;
@@ -877,8 +910,9 @@ export class Ui {
       btns.push(`<button class="gbtn" data-act="unequip">Unequip</button>`);
     }
     return `
-      <div class="iname">${esc(b.name)}</div>
-      <div class="itype">${s.src === "eq" ? EQUIP_LABEL[s.slot!] : SLOT_LABEL[b.slot]} · Normal · ${b.w}×${b.h}</div>
+      <div class="iname q-${qualityOf(it)}">${esc(itemName(it))}</div>
+      ${qualityOf(it) === "rare" ? `<div class="iname q-rare sub">${esc(b.name)}</div>` : ""}
+      <div class="itype">${s.src === "eq" ? EQUIP_LABEL[s.slot!] : SLOT_LABEL[b.slot]} · ${QUALITY_LABEL[qualityOf(it)]}${b.potion ? "" : ` · Item level ${ilvlOf(it)}`}</div>
       ${this.itemLines(it)}
       ${s.src !== "eq" && !b.potion ? this.compareLine(it) : ""}
       ${price}
@@ -910,8 +944,7 @@ export class Ui {
     const VC = this.VC;
     const stock = g.vendorStock
       .map((e) => {
-        const b = BASE_BY_ID[e.item.baseId];
-        return this.itemBox(e.item, "vendor", e.x, e.y, VC, `data-price="${b.price}"`);
+        return this.itemBox(e.item, "vendor", e.x, e.y, VC, `data-price="${itemPrice(e.item)}"`);
       })
       .join("");
     return `
@@ -1056,7 +1089,7 @@ export class Ui {
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
-        <p class="ver">Ember Crypt v0.2 · progress saves on this device · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.3 · progress saves on this device · all art made in code for this game</p>
       </div>`;
   }
 }

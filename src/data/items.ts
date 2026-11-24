@@ -1,158 +1,203 @@
-/** Normal (white) item bases. Damage, defense, requirements and grid sizes follow Diablo II where possible. */
+/**
+ * Itemization (v0.3): one base per item class.
+ *  - the class sets size, hands, attack speed, damage spread and how requirements grow
+ *  - the item level sets the damage / defense numbers (and which art is used)
+ *  - the rarity sets how many random affixes it has (normal 0, magic 1–2, rare 3–6)
+ */
+import { LOOK_BY_ID } from "./looks";
+
 export type Slot = "weapon" | "shield" | "armor" | "helm" | "gloves" | "boots" | "belt" | "ring" | "amulet" | "potion";
 export type Kind = "sword" | "axe" | "mace" | "armor" | "helm" | "shield" | "gloves" | "boots" | "belt" | "ring" | "amulet" | "potion";
 export type EquipSlot = "head" | "chest" | "gloves" | "boots" | "belt" | "ring1" | "ring2" | "amulet" | "main" | "off";
+export type Quality = "normal" | "magic" | "rare";
+
+export type StatKey =
+  | "edmg" | "mindmg" | "maxdmg" | "ar" | "str" | "dex" | "vit" | "ene" | "life" | "mana" | "ll" | "ml"
+  | "frw" | "ias" | "fres" | "cres" | "lres" | "pres" | "ares" | "edef" | "def" | "gf" | "mf" | "skill";
+
+export interface Mod {
+  s: StatKey;
+  v: number;
+  /** skill id for "+N to <skill>" */
+  sk?: string;
+}
 
 export interface ItemBase {
   id: string;
   name: string;
   slot: Slot;
   kind: Kind;
-  /** quality level: the lowest monster level that can drop it */
-  qlvl: number;
-  reqStr: number;
-  reqDex: number;
-  reqLvl: number;
-  /** inventory grid size */
   w: number;
   h: number;
   hands?: 1 | 2;
-  min?: number;
-  max?: number;
   /** seconds per swing */
   speed?: number;
   speedLabel?: string;
-  defMin?: number;
-  defMax?: number;
-  /** extra potions of each type the belt holds */
-  beltSlots?: number;
-  bonus?: { ar?: number; life?: number; mana?: number };
+  /** min and max damage as a fraction of the level's average */
+  spread?: [number, number];
+  dmgMul?: number;
+  defMul?: number;
+  /** requirement = a + b × item level */
+  str?: [number, number];
+  dex?: [number, number];
   potion?: "hp" | "mp";
-  /** vendor buy price */
+  /** price of a level-1 normal one */
   price: number;
   /** relative drop weight */
   weight: number;
 }
 
-const speedLabel = (s: number) => (s <= 0.46 ? "Fast" : s <= 0.56 ? "Normal" : "Slow");
-
-const W = (
-  id: string, name: string, kind: Kind, qlvl: number, min: number, max: number,
-  reqStr: number, reqDex: number, speed: number, w: number, h: number, hands: 1 | 2 = 1,
-): ItemBase => ({
-  id, name, kind, slot: "weapon", qlvl, min, max, reqStr, reqDex, reqLvl: 0, speed, speedLabel: speedLabel(speed),
-  w, h, hands, price: Math.round(40 + qlvl * 22 + max * 6 + (hands === 2 ? 40 : 0)), weight: 1.4,
+const speedLabel = (s: number) => (s <= 0.46 ? "Fast" : s <= 0.53 ? "Normal" : "Slow");
+const W = (id: string, name: string, kind: Kind, w: number, h: number, speed: number, spread: [number, number], dmgMul: number, str: [number, number], dex: [number, number] | undefined, hands: 1 | 2 = 1): ItemBase => ({
+  id, name, kind, slot: "weapon", w, h, hands, speed, speedLabel: speedLabel(speed), spread, dmgMul, str, dex, price: hands === 2 ? 70 : 45, weight: hands === 2 ? 0.7 : 1.2,
 });
-const A = (
-  id: string, name: string, kind: Kind, slot: Slot, qlvl: number, defMin: number, defMax: number, reqStr: number,
-  w: number, h: number, extra: Partial<ItemBase> = {},
-): ItemBase => ({
-  id, name, kind, slot, qlvl, defMin, defMax, reqStr, reqDex: 0, reqLvl: 0, w, h,
-  price: Math.round(25 + qlvl * 24 + defMax * 4), weight: 1, ...extra,
-});
-const J = (id: string, name: string, kind: Kind, qlvl: number, bonus: ItemBase["bonus"], price: number): ItemBase => ({
-  id, name, kind, slot: kind as Slot, qlvl, reqStr: 0, reqDex: 0, reqLvl: Math.max(0, qlvl - 2), w: 1, h: 1, bonus, price, weight: 0.25,
+const A = (id: string, name: string, kind: Kind, w: number, h: number, defMul: number, str: [number, number] | undefined, price: number, weight = 1): ItemBase => ({
+  id, name, kind, slot: kind as Slot, w, h, defMul, str, price, weight,
 });
 
 export const ITEM_BASES: ItemBase[] = [
-  // Swords
-  W("short_sword", "Short Sword", "sword", 1, 2, 7, 0, 0, 0.48, 1, 3),
-  W("scimitar", "Scimitar", "sword", 5, 2, 6, 0, 21, 0.42, 1, 3),
-  W("sabre", "Sabre", "sword", 8, 3, 8, 25, 25, 0.46, 1, 3),
-  W("falchion", "Falchion", "sword", 11, 9, 17, 33, 0, 0.52, 1, 3),
-  W("broad_sword", "Broad Sword", "sword", 15, 7, 14, 48, 0, 0.5, 2, 3),
-  W("long_sword", "Long Sword", "sword", 20, 3, 19, 55, 39, 0.52, 2, 3),
-  W("two_handed_sword", "Two-Handed Sword", "sword", 10, 8, 17, 35, 27, 0.6, 2, 4, 2),
-  W("claymore", "Claymore", "sword", 17, 13, 30, 47, 0, 0.58, 2, 4, 2),
-  // Axes
-  W("hand_axe", "Hand Axe", "axe", 1, 3, 6, 0, 0, 0.46, 1, 3),
-  W("axe", "Axe", "axe", 7, 4, 11, 32, 0, 0.52, 2, 3),
-  W("double_axe", "Double Axe", "axe", 13, 5, 13, 43, 0, 0.55, 2, 3),
-  W("military_pick", "Military Pick", "axe", 19, 7, 11, 49, 33, 0.52, 2, 3),
-  W("war_axe", "War Axe", "axe", 25, 10, 18, 67, 0, 0.56, 2, 3),
-  W("large_axe", "Large Axe", "axe", 6, 6, 13, 35, 0, 0.6, 2, 3, 2),
-  W("broad_axe", "Broad Axe", "axe", 12, 10, 18, 48, 0, 0.6, 2, 3, 2),
-  W("battle_axe", "Battle Axe", "axe", 17, 12, 32, 54, 0, 0.62, 2, 3, 2),
-  // Maces
-  W("club", "Club", "mace", 1, 1, 6, 0, 0, 0.5, 1, 3),
-  W("spiked_club", "Spiked Club", "mace", 4, 5, 8, 0, 0, 0.5, 1, 3),
-  W("mace", "Mace", "mace", 3, 3, 10, 27, 0, 0.52, 1, 3),
-  W("morning_star", "Morning Star", "mace", 10, 7, 16, 36, 0, 0.52, 1, 3),
-  W("flail", "Flail", "mace", 19, 1, 24, 41, 35, 0.58, 2, 3),
-  W("maul", "Maul", "mace", 21, 6, 21, 69, 0, 0.66, 2, 4, 2),
-  // Body armor
-  A("quilted_armor", "Quilted Armor", "armor", "armor", 1, 8, 11, 12, 2, 3),
-  A("leather_armor", "Leather Armor", "armor", "armor", 3, 14, 17, 15, 2, 3),
-  A("hard_leather", "Hard Leather Armor", "armor", "armor", 5, 21, 24, 20, 2, 3),
-  A("studded_leather", "Studded Leather", "armor", "armor", 8, 32, 35, 27, 2, 3),
-  A("ring_mail", "Ring Mail", "armor", "armor", 11, 45, 48, 36, 2, 3),
-  A("scale_mail", "Scale Mail", "armor", "armor", 13, 57, 60, 44, 2, 3),
-  A("chain_mail", "Chain Mail", "armor", "armor", 15, 72, 75, 48, 2, 3),
-  // Helms
-  A("cap", "Cap", "helm", "helm", 1, 3, 5, 0, 2, 2),
-  A("skull_cap", "Skull Cap", "helm", "helm", 5, 8, 11, 15, 2, 2),
-  A("helm", "Helm", "helm", "helm", 11, 15, 18, 26, 2, 2),
-  A("full_helm", "Full Helm", "helm", "helm", 15, 23, 26, 41, 2, 2),
-  // Shields
-  A("buckler", "Buckler", "shield", "shield", 1, 4, 6, 12, 2, 2),
-  A("small_shield", "Small Shield", "shield", "shield", 5, 8, 10, 22, 2, 2),
-  A("large_shield", "Large Shield", "shield", "shield", 11, 12, 14, 34, 2, 3),
-  A("kite_shield", "Kite Shield", "shield", "shield", 15, 16, 18, 47, 2, 3),
-  // Gloves, boots, belts
-  A("leather_gloves", "Leather Gloves", "gloves", "gloves", 3, 2, 3, 0, 2, 2),
-  A("heavy_gloves", "Heavy Gloves", "gloves", "gloves", 7, 5, 6, 0, 2, 2),
-  A("chain_gloves", "Chain Gloves", "gloves", "gloves", 12, 8, 9, 25, 2, 2),
-  A("boots", "Boots", "boots", "boots", 3, 2, 3, 0, 2, 2),
-  A("heavy_boots", "Heavy Boots", "boots", "boots", 7, 5, 6, 18, 2, 2),
-  A("chain_boots", "Chain Boots", "boots", "boots", 12, 8, 9, 30, 2, 2),
-  A("sash", "Sash", "belt", "belt", 1, 2, 2, 0, 2, 1, { beltSlots: 1 }),
-  A("light_belt", "Light Belt", "belt", "belt", 6, 3, 3, 0, 2, 1, { beltSlots: 2 }),
-  A("belt", "Belt", "belt", "belt", 12, 5, 5, 25, 2, 1, { beltSlots: 3 }),
-  A("heavy_belt", "Heavy Belt", "belt", "belt", 18, 6, 6, 45, 2, 1, { beltSlots: 4 }),
-  // Rings and amulets: plain "normal" pieces with a small fixed bonus (D2 has no white jewelry; this is a v0.2 stand-in)
-  J("copper_ring", "Copper Ring", "ring", 1, { ar: 15 }, 180),
-  J("silver_ring", "Silver Ring", "ring", 8, { mana: 8 }, 300),
-  J("gold_ring", "Gold Ring", "ring", 16, { life: 12 }, 450),
-  J("bone_amulet", "Bone Amulet", "amulet", 3, { life: 8 }, 260),
-  J("jade_amulet", "Jade Amulet", "amulet", 12, { mana: 10, ar: 20 }, 420),
-  // Potions
-  { id: "hp_potion", name: "Healing Potion", slot: "potion", kind: "potion", qlvl: 1, reqStr: 0, reqDex: 0, reqLvl: 0, w: 1, h: 1, potion: "hp", price: 25, weight: 0 },
-  { id: "mp_potion", name: "Mana Potion", slot: "potion", kind: "potion", qlvl: 1, reqStr: 0, reqDex: 0, reqLvl: 0, w: 1, h: 1, potion: "mp", price: 30, weight: 0 },
+  W("sword", "Sword", "sword", 1, 3, 0.46, [0.55, 1.45], 1.0, [10, 1.5], [8, 1.2]),
+  W("axe", "Axe", "axe", 2, 3, 0.52, [0.4, 1.6], 1.15, [12, 2], undefined),
+  W("mace", "Mace", "mace", 1, 3, 0.5, [0.8, 1.2], 1.05, [12, 1.8], undefined),
+  W("great_sword", "Great Sword", "sword", 2, 4, 0.6, [0.5, 1.5], 1.9, [18, 2.3], [10, 1.2], 2),
+  A("armor", "Armor", "armor", 2, 3, 1, [8, 1.6], 40, 1.2),
+  A("helm", "Helm", "helm", 2, 2, 0.45, [0, 1.2], 30),
+  A("shield", "Shield", "shield", 2, 2, 0.6, [8, 1.5], 35),
+  A("gloves", "Gloves", "gloves", 2, 2, 0.25, undefined, 25, 0.8),
+  A("boots", "Boots", "boots", 2, 2, 0.25, undefined, 25, 0.8),
+  A("belt", "Belt", "belt", 2, 1, 0.2, undefined, 25, 0.7),
+  A("ring", "Ring", "ring", 1, 1, 0, undefined, 120, 0.35),
+  A("amulet", "Amulet", "amulet", 1, 1, 0, undefined, 160, 0.25),
+  { id: "hp_potion", name: "Healing Potion", slot: "potion", kind: "potion", w: 1, h: 1, potion: "hp", price: 25, weight: 0 },
+  { id: "mp_potion", name: "Mana Potion", slot: "potion", kind: "potion", w: 1, h: 1, potion: "mp", price: 30, weight: 0 },
 ];
-
 export const BASE_BY_ID: Record<string, ItemBase> = Object.fromEntries(ITEM_BASES.map((b) => [b.id, b]));
 
 export interface Item {
   uid: number;
+  /** item class id */
   baseId: string;
-  /** rolled defense for armor pieces */
+  /** item level: sets base damage/defense and which affix tiers can roll */
+  ilvl?: number;
+  q?: Quality;
+  /** magic: full name; rare: the two-word name */
+  name?: string;
+  mods?: Mod[];
+  /** affix ids (one per group), for tooltips and tests */
+  aff?: string[];
+  /** v0.2 field, no longer used */
   def?: number;
 }
 
 let nextUid = (Date.now() % 1000000) * 10;
-export function makeItem(baseId: string, roll = Math.random): Item {
-  const b = BASE_BY_ID[baseId];
+export const newUid = () => nextUid++;
+
+export function makeItem(baseId: string, ilvl = 1): Item {
   const it: Item = { uid: nextUid++, baseId };
-  if (b.defMin !== undefined && b.defMax !== undefined) {
-    it.def = b.defMin + Math.floor(roll() * (b.defMax - b.defMin + 1));
-  }
+  if (!BASE_BY_ID[baseId].potion) it.ilvl = Math.max(1, Math.round(ilvl));
   return it;
 }
 
-/** Pick a random base that a monster of this level can drop. */
-export function rollBase(mlvl: number, roll = Math.random): ItemBase {
-  const pool = ITEM_BASES.filter((b) => b.weight > 0 && b.qlvl <= mlvl + 1);
-  const weights = pool.map((b) => b.weight * (1 + b.qlvl / (mlvl + 2)));
-  const total = weights.reduce((a, c) => a + c, 0);
+export const ilvlOf = (it: Item) => it.ilvl ?? 1;
+export const qualityOf = (it: Item): Quality => it.q ?? "normal";
+export const modTotal = (it: Item | undefined | null, s: StatKey) => (it?.mods ?? []).reduce((a, m) => (m.s === s ? a + m.v : a), 0);
+
+/** Base (white) weapon damage for a class at an item level. */
+export function baseDamage(b: ItemBase, ilvl: number): [number, number] {
+  const avg = (3 + 1.15 * ilvl) * (b.dmgMul ?? 1);
+  const [lo, hi] = b.spread ?? [0.6, 1.4];
+  const min = Math.max(1, Math.round(avg * lo));
+  return [min, Math.max(min + 1, Math.round(avg * hi))];
+}
+
+/** Weapon damage after the item's own +damage% and +min/+max mods. */
+export function itemDamage(it: Item): [number, number] {
+  const b = BASE_BY_ID[it.baseId];
+  const [mn, mx] = baseDamage(b, ilvlOf(it));
+  const ed = 1 + modTotal(it, "edmg") / 100;
+  const min = Math.floor(mn * ed) + modTotal(it, "mindmg");
+  return [min, Math.max(min + 1, Math.floor(mx * ed) + modTotal(it, "maxdmg"))];
+}
+
+export function baseDefense(b: ItemBase, ilvl: number): number {
+  return b.defMul ? Math.max(1, Math.round((5 + 3.2 * ilvl) * b.defMul)) : 0;
+}
+
+/** Defense after the item's own +defense% and +defense mods. */
+export function itemDefense(it: Item): number {
+  const b = BASE_BY_ID[it.baseId];
+  const d = baseDefense(b, ilvlOf(it));
+  if (!d) return 0;
+  return Math.floor(d * (1 + modTotal(it, "edef") / 100)) + modTotal(it, "def");
+}
+
+export const beltSlotsOf = (it: Item) => Math.min(4, 1 + Math.floor((ilvlOf(it) - 1) / 6));
+
+export interface Reqs {
+  str: number;
+  dex: number;
+  lvl: number;
+}
+export function itemReqs(it: Item): Reqs {
+  const b = BASE_BY_ID[it.baseId];
+  const L = ilvlOf(it);
+  const r = (p?: [number, number]) => (p ? Math.round(p[0] + p[1] * L) : 0);
+  const q = qualityOf(it);
+  return { str: r(b.str), dex: r(b.dex), lvl: q === "normal" || b.potion ? 0 : Math.max(1, Math.floor(L * 0.75)) };
+}
+
+export function itemPrice(it: Item): number {
+  const b = BASE_BY_ID[it.baseId];
+  if (b.potion) return b.price;
+  const L = ilvlOf(it);
+  const q = qualityOf(it);
+  const n = it.mods?.length ?? 0;
+  const mul = q === "rare" ? 4 + n * 0.5 : q === "magic" ? 2 + n * 0.5 : 1;
+  return Math.round(b.price * (1 + 0.3 * L) * mul);
+}
+export const sellPrice = (it: Item) => Math.max(1, Math.floor(itemPrice(it) / 4));
+
+/** Display name. Rare items also show the class name under it. */
+export function itemName(it: Item): string {
+  return it.name ?? BASE_BY_ID[it.baseId].name;
+}
+
+export const QUALITY_COLOR: Record<Quality, string> = { normal: "#ffffff", magic: "#7a7aff", rare: "#ffff64" };
+export const QUALITY_LABEL: Record<Quality, string> = { normal: "Normal", magic: "Magic", rare: "Rare" };
+
+/** Pick a random item class for a drop. */
+export function rollBase(roll = Math.random): ItemBase {
+  const pool = ITEM_BASES.filter((b) => b.weight > 0);
+  const total = pool.reduce((a, b) => a + b.weight, 0);
   let r = roll() * total;
-  for (let i = 0; i < pool.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return pool[i];
+  for (const b of pool) {
+    r -= b.weight;
+    if (r <= 0) return b;
   }
   return pool[pool.length - 1];
 }
 
-export const sellPrice = (it: Item) => Math.max(1, Math.floor(BASE_BY_ID[it.baseId].price / 4));
+/** Which D2 art to draw for an item (by class and level). */
+export function lookOf(it: Item | undefined | null): string | undefined {
+  if (!it) return undefined;
+  const L = ilvlOf(it);
+  const pick = (steps: [number, string][]) => steps.find(([max]) => L <= max)?.[1] ?? steps[steps.length - 1][1];
+  switch (it.baseId) {
+    case "sword": return pick([[4, "short_sword"], [9, "scimitar"], [15, "sabre"], [99, "falchion"]]);
+    case "axe": return pick([[6, "axe"], [12, "double_axe"], [99, "war_axe"]]);
+    case "mace": return pick([[3, "club"], [7, "spiked_club"], [12, "mace"], [99, "morning_star"]]);
+    case "great_sword": return pick([[12, "two_handed_sword"], [99, "claymore"]]);
+    case "armor": return pick([[2, "quilted_armor"], [4, "leather_armor"], [7, "hard_leather"], [10, "studded_leather"], [13, "ring_mail"], [16, "scale_mail"], [99, "chain_mail"]]);
+    case "helm": return pick([[4, "cap"], [9, "skull_cap"], [14, "helm"], [99, "full_helm"]]);
+    case "shield": return pick([[4, "buckler"], [9, "small_shield"], [14, "large_shield"], [99, "kite_shield"]]);
+    case "gloves": return pick([[6, "leather_gloves"], [11, "heavy_gloves"], [99, "chain_gloves"]]);
+    case "boots": return pick([[6, "boots"], [11, "heavy_boots"], [99, "chain_boots"]]);
+    case "belt": return pick([[5, "sash"], [11, "light_belt"], [17, "belt"], [99, "heavy_belt"]]);
+    case "ring": return ["copper_ring", "silver_ring", "gold_ring"][it.uid % 3];
+    case "amulet": return ["bone_amulet", "jade_amulet"][it.uid % 2];
+    default: return LOOK_BY_ID[it.baseId] ? it.baseId : undefined;
+  }
+}
 
 export const SLOT_LABEL: Record<Slot, string> = {
   weapon: "Weapon", shield: "Shield", armor: "Body Armor", helm: "Helm", gloves: "Gloves", boots: "Boots",
@@ -171,5 +216,29 @@ export const EQUIP_SIZE: Record<EquipSlot, [number, number]> = {
 };
 
 export function isTwoHanded(it: Item | undefined | null) {
-  return !!it && BASE_BY_ID[it.baseId].hands === 2;
+  return !!it && BASE_BY_ID[it.baseId]?.hands === 2;
+}
+
+/** Convert a v0.1/v0.2 item (a D2 base like "war_axe") to the class system. */
+export function migrateItem(raw: Item): Item | null {
+  if (BASE_BY_ID[raw.baseId]) return raw;
+  const old = LOOK_BY_ID[raw.baseId];
+  if (!old) return null;
+  const cls =
+    old.kind === "sword" ? (old.hands === 2 ? "great_sword" : "sword")
+    : old.kind === "axe" ? "axe"
+    : old.kind === "mace" ? "mace"
+    : old.kind;
+  const it: Item = { uid: raw.uid, baseId: cls };
+  if (!BASE_BY_ID[cls].potion) it.ilvl = Math.max(1, old.qlvl);
+  // old plain jewelry had a fixed bonus: keep it as a magic item
+  if (old.bonus) {
+    it.q = "magic";
+    it.name = old.name;
+    it.mods = [];
+    if (old.bonus.ar) it.mods.push({ s: "ar", v: old.bonus.ar });
+    if (old.bonus.life) it.mods.push({ s: "life", v: old.bonus.life });
+    if (old.bonus.mana) it.mods.push({ s: "mana", v: old.bonus.mana });
+  }
+  return it;
 }

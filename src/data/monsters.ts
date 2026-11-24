@@ -6,7 +6,7 @@ export interface MonsterDef {
   hp: number;
   dmgMin: number;
   dmgMax: number;
-  /** tiles per second */
+  /** tiles per second (v0.3: ×1.27 to match the v0.1 on-screen speed after the pixel-art rescale) */
   speed: number;
   /** seconds between attacks */
   atkInterval: number;
@@ -20,9 +20,9 @@ export interface MonsterDef {
 }
 
 export const MONSTERS: Record<MonsterKind, MonsterDef> = {
-  zombie: { kind: "zombie", name: "Zombie", hp: 15, dmgMin: 2, dmgMax: 5, speed: 0.95, atkInterval: 1.5, windup: 0.45, reach: 0.75, radius: 0.32, xp: 14, ar: 22, def: 3, aggro: 7 },
-  fallen: { kind: "fallen", name: "Fallen", hp: 7, dmgMin: 1, dmgMax: 3, speed: 2.4, atkInterval: 0.95, windup: 0.25, reach: 0.6, radius: 0.24, xp: 8, ar: 28, def: 2, aggro: 8 },
-  boss: { kind: "boss", name: "Rotfang the Hollow", hp: 110, dmgMin: 4, dmgMax: 9, speed: 1.15, atkInterval: 1.3, windup: 0.5, reach: 0.95, radius: 0.5, xp: 160, ar: 40, def: 8, aggro: 7 },
+  zombie: { kind: "zombie", name: "Zombie", hp: 15, dmgMin: 2, dmgMax: 5, speed: 1.2, atkInterval: 1.5, windup: 0.45, reach: 0.75, radius: 0.32, xp: 14, ar: 22, def: 3, aggro: 7 },
+  fallen: { kind: "fallen", name: "Fallen", hp: 7, dmgMin: 1, dmgMax: 3, speed: 3.05, atkInterval: 0.95, windup: 0.25, reach: 0.6, radius: 0.24, xp: 8, ar: 28, def: 2, aggro: 8 },
+  boss: { kind: "boss", name: "Rotfang the Hollow", hp: 110, dmgMin: 4, dmgMax: 9, speed: 1.45, atkInterval: 1.3, windup: 0.5, reach: 0.95, radius: 0.5, xp: 160, ar: 40, def: 8, aggro: 7 },
 };
 
 /** Scale a stat by monster level. */

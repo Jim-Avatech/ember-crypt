@@ -1,5 +1,7 @@
+import { enchant, rollDrop } from "./data/affixes";
 import {
-  BASE_BY_ID, type EquipSlot, ITEM_BASES, type Item, type Kind, isTwoHanded, makeItem, rollBase, sellPrice,
+  BASE_BY_ID, type EquipSlot, ITEM_BASES, type Item, type Kind, type StatKey, beltSlotsOf, isTwoHanded, itemDamage,
+  itemDefense, itemName, itemPrice, itemReqs, makeItem, migrateItem, modTotal, QUALITY_COLOR, qualityOf, sellPrice,
 } from "./data/items";
 import {
   MONSTERS, type MonsterDef, type MonsterKind, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp,
@@ -190,7 +192,22 @@ export interface Derived {
   crit: number;
   swing: number;
   weaponKind: Kind | "fist";
+  /** resistances in % (no elemental monsters yet) */
+  res: { fire: number; cold: number; light: number; poison: number };
+  /** % of damage dealt returned as life / mana */
+  ll: number;
+  ml: number;
+  /** % faster run/walk and increased attack speed from gear */
+  frw: number;
+  gearIas: number;
+  gf: number;
+  mf: number;
+  /** total attributes, gear included */
+  stats: Stats;
 }
+
+/** Base walking speed in tiles per second (v0.3: raised from 3.5 to keep the v0.1 on-screen speed after the pixel-art rescale). */
+export const BASE_RUN = 4.6;
 
 export const BASE_POTS = 4;
 export const VENDOR_W = 10;
@@ -201,37 +218,55 @@ export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
 export const xpForLevel = (L: number) => (L <= 1 ? 0 : Math.round(100 * Math.pow(L - 1, 1.9)));
 
 export interface SaveData {
-  v: 2;
+  v: 3;
   seed: number;
   floor: number;
   maxFloor: number;
   player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills">;
   /** items that didn't fit when an old save was converted */
   migratedSold?: number;
+  migratedFrom?: number;
 }
 
 const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy"]);
 const TWO_HIT = new Set(["double_swing", "frenzy"]);
 
-/** Convert a v1 save (20-slot list, 6 slots) to v2 (grid bag, D2 slots). Items that don't fit are sold. */
+/** Bring any older save up to v3: v1 (20-slot list, 6 slots) → v2 (grid bag, D2 slots) → v3 (item classes). */
 export function migrateSave(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== "object") return null;
   const d = raw as Record<string, unknown> & { v: number };
-  if (d.v === 2) return d as unknown as SaveData;
-  if (d.v !== 1) return null;
+  if (d.v === 3) return d as unknown as SaveData;
+  if (d.v !== 1 && d.v !== 2) return null;
   const op = d.player as Record<string, unknown>;
-  const oldEq = (op.equip ?? {}) as Record<string, Item>;
-  const map: Record<string, EquipSlot> = { weapon: "main", shield: "off", armor: "chest", helm: "head", gloves: "gloves", boots: "boots" };
   const equip: Partial<Record<EquipSlot, Item>> = {};
-  for (const [k, v] of Object.entries(oldEq)) if (v && map[k] && BASE_BY_ID[v.baseId]) equip[map[k]] = v;
+  let loose: Item[] = [];
+  if (d.v === 1) {
+    const oldEq = (op.equip ?? {}) as Record<string, Item>;
+    const map: Record<string, EquipSlot> = { weapon: "main", shield: "off", armor: "chest", helm: "head", gloves: "gloves", boots: "boots" };
+    for (const [k, v] of Object.entries(oldEq)) if (v && map[k]) equip[map[k]] = v;
+    loose = ((op.inventory as (Item | null)[]) ?? []).filter((it): it is Item => !!it);
+  } else {
+    Object.assign(equip, op.equip ?? {});
+    loose = ((op.bag as BagEntry[]) ?? []).map((e) => e.item);
+  }
+  // convert items to the class system
+  for (const k of Object.keys(equip) as EquipSlot[]) {
+    const it = migrateItem(equip[k]!);
+    if (it) equip[k] = it;
+    else delete equip[k];
+  }
+  if (isTwoHanded(equip.main) && equip.off) {
+    loose.push(equip.off);
+    delete equip.off;
+  }
+  // repack the bag (sizes changed); small items first so as many as possible survive
+  const items = loose.map(migrateItem).filter((it): it is Item => !!it);
+  const area = (it: Item) => BASE_BY_ID[it.baseId].w * BASE_BY_ID[it.baseId].h;
+  items.sort((a, b) => area(a) - area(b));
   const bag: BagEntry[] = [];
   let gold = Number(op.gold ?? 0);
   let sold = 0;
-  // pack small items first so as many as possible survive the move to the grid
-  const old = ((op.inventory as (Item | null)[]) ?? []).filter((it): it is Item => !!it && !!BASE_BY_ID[it.baseId]);
-  const area = (it: Item) => BASE_BY_ID[it.baseId].w * BASE_BY_ID[it.baseId].h;
-  old.sort((a, b) => area(a) - area(b));
-  for (const it of old) {
+  for (const it of items) {
     if (!addItem(bag, it)) {
       gold += sellPrice(it);
       sold++;
@@ -239,7 +274,7 @@ export function migrateSave(raw: unknown): SaveData | null {
   }
   const floor = Number(d.floor ?? 1);
   return {
-    v: 2, seed: Number(d.seed), floor, maxFloor: floor, migratedSold: sold,
+    v: 3, seed: Number(d.seed), floor, maxFloor: Number(d.maxFloor ?? floor), migratedSold: sold, migratedFrom: d.v,
     player: {
       level: op.level as number, xp: op.xp as number, base: op.base as Stats, statPoints: op.statPoints as number,
       skillPoints: op.skillPoints as number, skills: (op.skills ?? {}) as Record<string, number>,
@@ -291,9 +326,9 @@ export class Game {
       this.floor = save.floor;
       this.maxFloor = Math.max(save.maxFloor ?? save.floor, save.floor);
     } else {
-      this.player.equip.main = makeItem("hand_axe");
-      this.player.equip.chest = makeItem("quilted_armor");
-      this.player.equip.belt = makeItem("sash");
+      this.player.equip.main = makeItem("axe", 1);
+      this.player.equip.chest = makeItem("armor", 1);
+      this.player.equip.belt = makeItem("belt", 1);
     }
     // like Diablo II, a loaded game starts in town
     this.goTown(true);
@@ -305,7 +340,7 @@ export class Game {
   toSave(): SaveData {
     const p = this.player;
     return {
-      v: 2, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor,
+      v: 3, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor,
       player: {
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
         skills: p.skills, slots: p.slots, bag: p.bag, equip: p.equip, gold: p.gold,
@@ -359,13 +394,21 @@ export class Game {
   /** Vendor goods: basics plus a few random pieces near the deepest level reached. */
   restock() {
     const stock: BagEntry[] = [];
-    const add = (id: string) => addItem(stock, makeItem(id), VENDOR_W, VENDOR_H);
-    add("hp_potion");
-    add("mp_potion");
-    for (const id of ["short_sword", "hand_axe", "club", "buckler", "cap", "quilted_armor", "leather_armor", "leather_gloves", "boots", "sash"]) add(id);
-    const rng = new Rng(this.seed + this.maxFloor * 31 + Math.floor(this.time));
-    const pool = ITEM_BASES.filter((b) => b.weight > 0 && b.qlvl <= this.maxFloor + 3 && b.qlvl > 1);
-    for (let i = 0; i < 6; i++) add(rng.pick(pool).id);
+    const rng = new Rng(this.seed + this.maxFloor * 31 + Math.floor(this.time * 7));
+    const r = () => rng.next();
+    const lvl = Math.max(1, this.maxFloor * 2 - 1);
+    const add = (it: Item) => addItem(stock, it, VENDOR_W, VENDOR_H);
+    add(makeItem("hp_potion"));
+    add(makeItem("mp_potion"));
+    // plain gear of every class near your level
+    for (const id of ["sword", "axe", "mace", "great_sword", "armor", "helm", "shield", "gloves", "boots", "belt"]) add(makeItem(id, Math.max(1, lvl - 1 + Math.floor(r() * 3))));
+    // a few magic pieces (Hilde never sells rares)
+    const n = 2 + Math.floor(r() * 3);
+    for (let i = 0; i < n; i++) {
+      const pool = ITEM_BASES.filter((b) => b.weight > 0);
+      const b = pool[Math.floor(r() * pool.length)];
+      add(enchant(makeItem(b.id, lvl + Math.floor(r() * 3)), "magic", r));
+    }
     this.vendorStock = stock;
   }
 
@@ -427,25 +470,34 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ derived stats
+  /** Sum of one stat over all equipped items. */
+  gear(k: StatKey): number {
+    let t = 0;
+    for (const it of Object.values(this.player.equip)) t += modTotal(it, k);
+    return t;
+  }
+
+  /** Attributes with gear bonuses. */
   stats(): Stats {
-    return this.player.base;
+    const b = this.player.base;
+    return { str: b.str + this.gear("str"), dex: b.dex + this.gear("dex"), vit: b.vit + this.gear("vit"), ene: b.ene + this.gear("ene") };
   }
 
   private handFor(slot: EquipSlot | null): Hand {
     const p = this.player;
-    const s = p.base;
+    const s = this.stats();
     const it = slot ? p.equip[slot] : undefined;
     const b = it ? BASE_BY_ID[it.baseId] : null;
     const kind: Kind | "fist" = b ? b.kind : "fist";
     const mastery = kind === "sword" ? "sword_mastery" : kind === "axe" ? "axe_mastery" : kind === "mace" ? "mace_mastery" : null;
-    const ml = mastery ? p.skills[mastery] ?? 0 : 0;
+    const ml = mastery ? this.skillLevel(mastery) : 0;
     const arPct = ml ? masteryAR(ml) : 0;
-    let arFlat = 0;
-    for (const e of Object.values(p.equip)) if (e) arFlat += BASE_BY_ID[e.baseId].bonus?.ar ?? 0;
+    const arFlat = this.gear("ar");
+    const [min, max] = it && b ? itemDamage(it) : [1, 2];
     return {
       slot,
-      min: b ? b.min! : 1,
-      max: b ? b.max! : 2,
+      min,
+      max,
       dmgPct: s.str + (ml ? masteryDmg(ml) : 0),
       ar: Math.round((s.dex * 5 + 20 + p.level * 5 + arFlat) * (1 + arPct / 100)),
       crit: masteryCrit(ml),
@@ -457,46 +509,58 @@ export class Game {
 
   derived(): Derived {
     const p = this.player;
-    const s = p.base;
+    const s = this.stats();
     const isWeapon = (sl: EquipSlot) => !!p.equip[sl] && BASE_BY_ID[p.equip[sl]!.baseId].slot === "weapon";
     const hands: Hand[] = [];
     if (isWeapon("main")) hands.push(this.handFor("main"));
     if (isWeapon("off")) hands.push(this.handFor("off"));
     if (!hands.length) hands.push(this.handFor(null));
     let armor = 0;
-    let life = 0;
-    let mana = 0;
-    for (const it of Object.values(p.equip)) {
-      if (!it) continue;
-      if (it.def) armor += it.def;
-      const bn = BASE_BY_ID[it.baseId].bonus;
-      life += bn?.life ?? 0;
-      mana += bn?.mana ?? 0;
-    }
+    for (const it of Object.values(p.equip)) if (it) armor += itemDefense(it);
+    const g = (k: StatKey) => this.gear(k);
     let defPct = 0;
-    if (p.skills.iron_skin) defPct += ironSkinDef(p.skills.iron_skin);
-    if (p.buffs.shout > 0) defPct += shoutDef(p.skills.shout ?? 1);
-    const boMul = p.buffs.bo > 0 ? 1 + boPct(p.skills.battle_orders ?? 1) / 100 : 1;
-    const maxHp = Math.round((55 + (s.vit - 25) * 4 + (p.level - 1) * 2 + life) * boMul);
-    const maxMana = Math.round((10 + (s.ene - 10) * 1.5 + (p.level - 1) * 1.5 + mana) * boMul);
-    const fl = p.skills.frenzy ?? 0;
-    const ias = fl ? (p.frenzy.stacks * frenzyIas(fl)) / 100 : 0;
+    const isl = this.skillLevel("iron_skin");
+    if (isl) defPct += ironSkinDef(isl);
+    if (p.buffs.shout > 0) defPct += shoutDef(this.skillLevel("shout") || 1);
+    const boMul = p.buffs.bo > 0 ? 1 + boPct(this.skillLevel("battle_orders") || 1) / 100 : 1;
+    const maxHp = Math.round((55 + (s.vit - 25) * 4 + (p.level - 1) * 2 + g("life")) * boMul);
+    const maxMana = Math.round((10 + (s.ene - 10) * 1.5 + (p.level - 1) * 1.5 + g("mana")) * boMul);
+    const fl = this.skillLevel("frenzy");
+    const gearIas = Math.min(60, g("ias"));
+    const ias = (fl ? (p.frenzy.stacks * frenzyIas(fl)) / 100 : 0) + gearIas / 100;
     const move = fl ? (p.frenzy.stacks * frenzyMove(fl)) / 100 : 0;
+    const frw = g("frw");
     const m = hands[0];
+    const all = g("ares");
+    const cap = (v: number) => Math.min(75, v);
     return {
       maxHp, maxMana, hands, dual: hands.length === 2,
       def: Math.round((armor + s.dex / 4) * (1 + defPct / 100)),
-      speed: 3.5 * (1 + incSpeed(p.skills.increased_speed ?? 0) / 100 + move),
+      speed: BASE_RUN * (1 + incSpeed(this.skillLevel("increased_speed")) / 100 + move + frw / 100),
       ias,
       dmgMin: m.min, dmgMax: m.max, dmgPct: m.dmgPct, ar: m.ar, crit: m.crit, swing: m.speed / (1 + ias), weaponKind: m.kind,
+      res: { fire: cap(g("fres") + all), cold: cap(g("cres") + all), light: cap(g("lres") + all), poison: cap(g("pres") + all) },
+      ll: g("ll"), ml: g("ml"), frw, gearIas, gf: g("gf"), mf: g("mf"), stats: s,
     };
   }
 
-  meetsReq(it: Item): boolean {
-    const b = BASE_BY_ID[it.baseId];
-    const s = this.player.base;
-    return s.str >= b.reqStr && s.dex >= b.reqDex && this.player.level >= b.reqLvl;
+  /** What derived stats would be with an item put in a slot (for tooltips). */
+  previewEquip(it: Item, slot: EquipSlot): Derived {
+    const p = this.player;
+    const saved = { ...p.equip };
+    p.equip[slot] = it;
+    if (slot === "main" && isTwoHanded(it)) delete p.equip.off;
+    const d = this.derived();
+    p.equip = saved;
+    return d;
   }
+
+  meetsReq(it: Item): boolean {
+    const r = itemReqs(it);
+    const s = this.stats();
+    return s.str >= r.str && s.dex >= r.dex && this.player.level >= r.lvl;
+  }
+
 
   // ------------------------------------------------------------------ main update
   update(dt: number, input: FrameInput) {
@@ -627,7 +691,17 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ skills & attacks
+  /** Skill level including +skill gear (gear only boosts skills you've learned). */
   skillLevel(id: string) {
+    const hard = this.player.skills[id] ?? 0;
+    if (!hard) return 0;
+    let bonus = 0;
+    for (const it of Object.values(this.player.equip)) for (const m of it?.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
+    return hard + bonus;
+  }
+
+  /** Points spent in a skill (no gear). */
+  hardLevel(id: string) {
     return this.player.skills[id] ?? 0;
   }
 
@@ -635,7 +709,7 @@ export class Game {
     const s = SKILL_BY_ID[id];
     const p = this.player;
     if (!s) return { ok: false, why: "Unknown skill" };
-    const lvl = this.skillLevel(id);
+    const lvl = this.hardLevel(id);
     if (!s.implemented) return { ok: false, why: "Coming soon" };
     if (lvl >= MAX_SKILL_LVL) return { ok: false, why: "Maxed" };
     if (p.level < s.reqLvl) return { ok: false, why: `Requires level ${s.reqLvl}` };
@@ -954,6 +1028,10 @@ export class Game {
     m.hp -= dmg;
     m.flash = 1;
     m.lastHurt = this.time;
+    // life / mana leech from gear
+    const dv = this.derived();
+    if (dv.ll > 0) p.hp = Math.min(dv.maxHp, p.hp + (dmg * dv.ll) / 100);
+    if (dv.ml > 0) p.mana = Math.min(dv.maxMana, p.mana + (dmg * dv.ml) / 100);
     const dx = m.x - p.x;
     const dy = m.y - p.y;
     const l = Math.hypot(dx, dy) || 1;
@@ -991,8 +1069,9 @@ export class Game {
     // loot
     if (m.def.kind === "boss") {
       this.events.shake(10);
-      for (let i = 0; i < 3; i++) this.dropAt(m.x, m.y, { item: makeItem(rollBase(m.mlvl + 2).id) });
-      this.dropAt(m.x, m.y, { gold: randInt(40, 90) * m.mlvl });
+      const mf = this.derived().mf;
+      for (let i = 0; i < 3; i++) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf, true) });
+      this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(40, 90) * m.mlvl) });
       this.dropAt(m.x, m.y, { item: makeItem("hp_potion") });
       this.dropAt(m.x, m.y, { item: makeItem("mp_potion") });
       this.stairs = { x: this.level.bossRoom.cx + 0.5, y: this.level.bossRoom.cy + 2.5 };
@@ -1001,10 +1080,15 @@ export class Game {
       this.events.sound("boss");
     } else {
       const r = Math.random();
-      if (r < 0.16) this.dropAt(m.x, m.y, { item: makeItem(rollBase(m.mlvl).id) });
-      else if (r < 0.36) this.dropAt(m.x, m.y, { gold: randInt(3, 12) * m.mlvl });
+      if (r < 0.17) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, this.derived().mf, false) });
+      else if (r < 0.37) this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(3, 12) * m.mlvl) });
       else if (r < 0.5) this.dropAt(m.x, m.y, { item: makeItem(chance(0.7) ? "hp_potion" : "mp_potion") });
     }
+  }
+
+  /** Gold find from gear. */
+  private goldAmount(n: number) {
+    return Math.max(1, Math.round(n * (1 + this.derived().gf / 100)));
   }
 
   gainXp(n: number) {
@@ -1267,7 +1351,7 @@ export class Game {
 
   beltCap(): number {
     const b = this.player.equip.belt;
-    return BASE_POTS + (b ? BASE_BY_ID[b.baseId].beltSlots ?? 0 : 0);
+    return BASE_POTS + (b ? beltSlotsOf(b) : 0);
   }
 
   pickUp(g: GroundItem): boolean {
@@ -1285,7 +1369,7 @@ export class Game {
         this.events.sound("nomana");
         return false;
       }
-      this.floatAt(g.x, g.y, b.name, "#fff", 13);
+      this.floatAt(g.x, g.y, itemName(g.item), QUALITY_COLOR[qualityOf(g.item)], 13);
       this.events.sound("pickup");
     }
     this.ground.splice(this.ground.indexOf(g), 1);
@@ -1461,7 +1545,7 @@ export class Game {
     const e = this.vendorStock.find((q) => q.item.uid === uid);
     if (!e) return "Not for sale";
     const b = BASE_BY_ID[e.item.baseId];
-    if (p.gold < b.price) return "Not enough gold";
+    if (p.gold < itemPrice(e.item)) return "Not enough gold";
     if (b.potion) {
       if (b.potion === "hp" && p.hpPots < this.beltCap()) p.hpPots++;
       else if (b.potion === "mp" && p.mpPots < this.beltCap()) p.mpPots++;
@@ -1470,7 +1554,7 @@ export class Game {
       if (!addItem(p.bag, e.item)) return "Not enough room in your bag";
       this.vendorStock = this.vendorStock.filter((q) => q !== e);
     }
-    p.gold -= b.price;
+    p.gold -= itemPrice(e.item);
     this.events.sound("gold");
     this.events.changed();
     return null;

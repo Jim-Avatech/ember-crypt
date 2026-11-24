@@ -3,7 +3,7 @@
  * frame, projected for one of 8 directions and rasterized with no anti-aliasing, then shaded and outlined.
  * Frames are generated lazily and cached.
  */
-import { BASE_BY_ID } from "../data/items";
+import { LOOK_BY_ID as BASE_BY_ID } from "../data/looks";
 import { Mask, PB, type RGB, hex, mul, whiteOf } from "../pixel";
 
 export type Model = "barb" | "zombie" | "fallen" | "boss" | "vendor";

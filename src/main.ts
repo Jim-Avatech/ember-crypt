@@ -1,4 +1,6 @@
 import "./styles.css";
+import { enchant, rollDrop } from "./data/affixes";
+import { makeItem, migrateItem } from "./data/items";
 import { Sfx } from "./audio";
 import { Game, type GameEvents } from "./game";
 import { Input } from "./input";
@@ -65,7 +67,8 @@ let tutorialT = 0;
 ui.showTutorial(tutorial);
 if (saved?.migratedSold !== undefined) {
   const n = saved.migratedSold;
-  setTimeout(() => ui.toast(n ? `Your bag now uses a grid. ${n} item${n === 1 ? "" : "s"} didn't fit and were sold.` : "Your bag now uses a grid, like Diablo II."), 600);
+  const what = saved.migratedFrom === 1 ? "Your bag now uses a grid, like Diablo II." : "Your gear was converted to the new item classes.";
+  setTimeout(() => ui.toast(n ? `${what} ${n} item${n === 1 ? "" : "s"} didn't fit and were sold.` : what), 600);
 }
 input.onFirstTouch = () => sfx.unlock();
 document.addEventListener("pointerdown", () => sfx.unlock(), { capture: true });
@@ -167,6 +170,7 @@ if (DEBUG) (window as unknown as { __ec: unknown }).__ec = {
   input,
   ui,
   settings,
+  items: { makeItem, enchant, rollDrop, migrateItem },
   get fps() {
     return fps;
   },

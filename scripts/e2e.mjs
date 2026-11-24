@@ -80,7 +80,7 @@ await ev(() => { __ec.settings.tutorialSeen = true; });
 
 // ---------------------------------------------------------------- 1. start in camp
 const start = await ev(() => { const g = __ec.game; const e = g.player.equip; return { town: g.inTown, main: e.main?.baseId, chest: e.chest?.baseId, belt: e.belt?.baseId }; });
-check("New hero starts in Ember Camp", start.town && start.main === "hand_axe", JSON.stringify(start));
+check("New hero starts in Ember Camp", start.town && start.main === "axe", JSON.stringify(start));
 
 // ---------------------------------------------------------------- 2. joystick
 const p0 = await ev(() => ({ x: __ec.game.player.x, y: __ec.game.player.y }));
@@ -152,7 +152,7 @@ check("Several kills", kills >= 3, `(${kills} kills)`);
 // ---------------------------------------------------------------- 5. pick up by tapping a label
 await ev(() => {
   const g = __ec.game;
-  g.dropAt(g.player.x, g.player.y + 0.6, { item: { uid: 1001, baseId: "spiked_club" } });
+  g.dropAt(g.player.x, g.player.y + 0.6, { item: { uid: 1001, baseId: "mace", ilvl: 2 } });
 });
 await wait(700);
 const before = await ev(() => __ec.game.player.bag.length);
@@ -185,13 +185,13 @@ await ev(() => {
   const g = __ec.game;
   const p = g.player;
   p.base.str = 70; p.base.dex = 60; p.level = 12;
-  const mk = (uid, baseId, def) => ({ uid, baseId, def });
+  const mk = (uid, baseId, ilvl = 3) => ({ uid, baseId, ilvl });
   p.bag = [
-    { item: mk(3001, "short_sword"), x: 0, y: 0 },
-    { item: mk(3002, "buckler", 6), x: 2, y: 0 },
-    { item: mk(3003, "copper_ring"), x: 6, y: 0 },
-    { item: mk(3004, "cap", 4), x: 0, y: 3 - 0 > 2 ? 2 : 2 },
-    { item: mk(3005, "two_handed_sword"), x: 8, y: 0 },
+    { item: mk(3001, "sword"), x: 0, y: 0 },
+    { item: mk(3002, "shield"), x: 2, y: 0 },
+    { item: mk(3003, "ring"), x: 6, y: 0 },
+    { item: mk(3004, "helm"), x: 0, y: 3 - 0 > 2 ? 2 : 2 },
+    { item: mk(3005, "great_sword"), x: 8, y: 0 },
   ];
   // the cap sits at (2,2); make room
   p.bag[3].x = 2; p.bag[3].y = 2;
@@ -227,38 +227,41 @@ check("Tap an item, then tap a cell, moves it there", rg3 && rg3[0] === 4 && rg3
 await drag(await center('[data-src="bag"][data-uid="3001"]'), { ...(await center('.slot[data-slot="off"]')), y: (await center('.slot[data-slot="off"]')).y + LIFT });
 const offId = await ev(() => __ec.game.player.equip.off?.baseId);
 const dual = await ev(() => __ec.game.derived().dual);
-check("Drag a one-hander onto the off-hand: dual wielding", offId === "short_sword" && dual, `(off-hand ${offId})`);
+check("Drag a one-hander onto the off-hand: dual wielding", offId === "sword" && dual, `(off-hand ${offId})`);
 // f. tap cap, tap head slot
 await tap('[data-src="bag"][data-uid="3004"]');
 await tap('.slot[data-slot="head"]');
-check("Tap an item, then tap a slot, equips it", (await ev(() => __ec.game.player.equip.head?.baseId)) === "cap");
+check("Tap an item, then tap a slot, equips it", (await ev(() => __ec.game.player.equip.head?.baseId)) === "helm");
 // g. ring via second tap (quick equip)
 await tap('[data-src="bag"][data-uid="3003"]');
 await tap('[data-src="bag"][data-uid="3003"]');
-check("Tapping a selected item again equips it", (await ev(() => __ec.game.player.equip.ring1?.baseId)) === "copper_ring");
+check("Tapping a selected item again equips it", (await ev(() => __ec.game.player.equip.ring1?.baseId)) === "ring");
 // h. two-handed sword blocks the off-hand
 await drag(await center('[data-src="bag"][data-uid="3005"]'), { ...(await center('.slot[data-slot="main"]')), y: (await center('.slot[data-slot="main"]')).y + LIFT });
 const th = await ev(() => {
   const g = __ec.game;
   const e = g.player.equip;
-  const sword = g.player.bag.find((q) => q.item.baseId === "short_sword");
+  const sword = g.player.bag.find((q) => q.item.baseId === "sword");
   return { main: e.main?.baseId, off: e.off?.baseId ?? null, swordBack: !!sword, err: sword ? g.equipError(sword.item, "off") : "n/a", blocked: !!document.querySelector('.slot[data-slot="off"].blocked') };
 });
-check("Two-handed weapon takes both hands", th.main === "two_handed_sword" && th.off === null && th.swordBack && /two-handed/i.test(th.err) && th.blocked, JSON.stringify(th));
+check("Two-handed weapon takes both hands", th.main === "great_sword" && th.off === null && th.swordBack && /two-handed/i.test(th.err) && th.blocked, JSON.stringify(th));
 // equipment screenshot: a full paper doll with two weapons
 await ev(() => {
   const g = __ec.game;
   const p = g.player;
-  const mk = (uid, baseId, def) => ({ uid, baseId, def });
+  let s = 77;
+  const r = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const { makeItem, enchant } = __ec.items;
+  const mk = (uid, baseId, ilvl = 12, q = "normal") => { const it = makeItem(baseId, ilvl); it.uid = uid; return q === "normal" ? it : enchant(it, q, r); };
   p.equip = {
-    main: mk(4001, "war_axe"), off: mk(4002, "scimitar"), head: mk(4003, "full_helm", 22), chest: mk(4004, "chain_mail", 74),
-    gloves: mk(4005, "heavy_gloves", 6), boots: mk(4006, "heavy_boots", 7), belt: mk(4007, "belt", 4), ring1: mk(4008, "gold_ring"),
-    ring2: mk(4009, "silver_ring"), amulet: mk(4010, "jade_amulet"),
+    main: mk(4001, "axe", 12, "rare"), off: mk(4002, "sword", 11, "magic"), head: mk(4003, "helm", 12), chest: mk(4004, "armor", 14, "magic"),
+    gloves: mk(4005, "gloves", 10), boots: mk(4006, "boots", 10, "magic"), belt: mk(4007, "belt", 10), ring1: mk(4008, "ring", 10, "magic"),
+    ring2: mk(4009, "ring", 10, "rare"), amulet: mk(4010, "amulet", 10, "magic"),
   };
   p.bag = [
-    { item: mk(4101, "long_sword"), x: 0, y: 0 }, { item: mk(4102, "kite_shield", 12), x: 2, y: 0 }, { item: mk(4103, "hp_potion"), x: 4, y: 0 },
-    { item: mk(4104, "hp_potion"), x: 4, y: 1 }, { item: mk(4105, "mp_potion"), x: 5, y: 0 }, { item: mk(4106, "cap", 5), x: 6, y: 0 },
-    { item: mk(4107, "morning_star"), x: 8, y: 0 }, { item: mk(4108, "copper_ring"), x: 5, y: 1 }, { item: mk(4109, "sash"), x: 4, y: 3 },
+    { item: mk(4101, "sword", 14, "magic"), x: 0, y: 0 }, { item: mk(4102, "shield", 12, "rare"), x: 2, y: 0 }, { item: mk(4103, "hp_potion"), x: 4, y: 0 },
+    { item: mk(4104, "hp_potion"), x: 4, y: 1 }, { item: mk(4105, "mp_potion"), x: 5, y: 0 }, { item: mk(4106, "helm", 13, "magic"), x: 6, y: 0 },
+    { item: mk(4107, "mace", 12), x: 8, y: 0 }, { item: mk(4108, "ring", 12, "rare"), x: 5, y: 1 }, { item: mk(4109, "belt", 12), x: 4, y: 3 },
   ];
   g.events.changed();
 });
@@ -288,7 +291,7 @@ await wait(200);
 await ev(() => {
   const g = __ec.game;
   const p = g.player;
-  p.equip = { main: { uid: 5001, baseId: "hand_axe" }, off: { uid: 5002, baseId: "short_sword" }, chest: { uid: 5003, baseId: "quilted_armor", def: 9 } };
+  p.equip = { main: { uid: 5001, baseId: "axe", ilvl: 1 }, off: { uid: 5002, baseId: "sword", ilvl: 1 }, chest: { uid: 5003, baseId: "armor", ilvl: 1 } };
   p.bag = [];
 });
 await standByMonster(true);
@@ -336,7 +339,7 @@ check("Double Swing with one weapon hits twice with it", ds2.length === 2 && ds2
 await ev(() => {
   const g = __ec.game;
   const p = g.player;
-  p.equip.off = { uid: 5002, baseId: "short_sword" };
+  p.equip.off = { uid: 5002, baseId: "sword", ilvl: 1 };
   p.skillPoints = Math.max(p.skillPoints, 1);
   g.learn("frenzy");
   g.assignSlot(2, "frenzy");
@@ -402,7 +405,7 @@ await ev(() => {
   p.y = g.level.vendor.y + 1;
   p.gold = 50;
   p.hpPots = 0;
-  p.bag = [{ item: { uid: 6001, baseId: "war_axe" }, x: 0, y: 0 }, { item: { uid: 6002, baseId: "chain_mail", def: 70 }, x: 2, y: 0 }];
+  p.bag = [{ item: { uid: 6001, baseId: "axe", ilvl: 8 }, x: 0, y: 0 }, { item: { uid: 6002, baseId: "armor", ilvl: 9 }, x: 2, y: 0 }];
 });
 await wait(300);
 const tradeLabel = await ev(() => document.getElementById("btn-ctx").textContent);
@@ -434,6 +437,92 @@ const buyUid = await ev(() => { const g = __ec.game; g.player.gold = 5000; retur
 await ev(() => __ec.ui.refresh());
 await drag(await center(`[data-src="vendor"][data-uid="${buyUid}"]`), await bagCell(6, 0, 1, 1));
 check("Dragging the trader's item into your bag buys it", !!(await ev((u) => __ec.game.bagEntry(u), buyUid)));
+// the trader stocks some magic (blue) items, priced above plain ones
+const blue = await ev(() => {
+  const g = __ec.game;
+  const m = g.vendorStock.filter((q) => q.item.q === "magic");
+  return { n: m.length, boxes: document.querySelectorAll('[data-src="vendor"].q-magic').length };
+});
+check("Hilde sells some blue (magic) items", blue.n >= 2 && blue.boxes === blue.n, JSON.stringify(blue));
+await page.locator(".pclose").tap();
+await wait(200);
+
+// ---------------------------------------------------------------- 12b. magic & rare items
+await ev(() => __ec.game.goDungeon(1));
+await wait(400);
+const spd = await ev(() => {
+  const d = __ec.game.derived();
+  return { tiles: d.speed, px: d.speed * 32 * __ec.renderer.ascale };
+});
+check("Walk speed on screen is at least v0.1's (~284 px/s)", spd.px >= 284, `(${spd.px.toFixed(0)} px/s, ${spd.tiles} tiles/s)`);
+await ev(() => {
+  const g = __ec.game;
+  const p = g.player;
+  for (const m of g.monsters) if (Math.hypot(m.x - p.x, m.y - p.y) < 12) { m.x += 40; m.y += 40; m.state = "idle"; }
+  p.hp = g.derived().maxHp;
+  let s = 5;
+  const r = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const { makeItem, enchant } = __ec.items;
+  const put = (dx, dy, it) => { const x = p.x + dx; const y = p.y + dy; g.dropAt(g.blocked(x, y, 0.2) ? p.x : x, g.blocked(x, y, 0.2) ? p.y : y, { item: it }); };
+  put(1.4, 0.2, Object.assign(makeItem("mace", 3), { uid: 8001 }));
+  put(-1.2, 0.9, Object.assign(enchant(makeItem("sword", 4), "magic", r), { uid: 8002 }));
+  put(0.4, 1.6, Object.assign(enchant(makeItem("armor", 5), "rare", r), { uid: 8003 }));
+  put(-0.3, -1.5, Object.assign(enchant(makeItem("ring", 5), "magic", r), { uid: 8004 }));
+  put(1.6, -1.1, { uid: 8005, baseId: "hp_potion" });
+  g.dropAt(p.x - 1.5, p.y - 0.6, { gold: 37 });
+});
+await wait(1300);
+const lbl = await ev(() => __ec.renderer.labels.map((l) => ({ uid: l.g.item.uid, c: l.color })));
+const col = (u) => lbl.find((l) => l.uid === u)?.c;
+check("Ground labels are colored by quality (white / blue / yellow)", col(8001) === "#ffffff" && col(8002) === "#7a7aff" && col(8003) === "#ffff64" && col(8004) === "#7a7aff", JSON.stringify(lbl));
+await page.screenshot({ path: `${outDir}/ground-drops.png` });
+// pick the rare up by its label
+const rl = await ev(() => { const l = __ec.renderer.labels.find((q) => q.g.item.uid === 8003); return l ? { x: l.x + l.w / 2, y: l.y + l.h / 2 } : null; });
+if (rl) await tapAt(rl);
+await wait(1500);
+check("Picking up a rare keeps its affixes", await ev(() => { const e = __ec.game.bagEntry(8003); return !!e && e.item.q === "rare" && e.item.mods.length >= 3; }));
+
+// tooltips
+await ev(() => {
+  const g = __ec.game;
+  const p = g.player;
+  const { makeItem, enchant } = __ec.items;
+  let s = 11;
+  const r = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  let mag;
+  for (let i = 0; i < 200; i++) { mag = enchant(makeItem("axe", 14), "magic", r); if (mag.aff.length === 2 && mag.mods.length >= 2) break; }
+  let rare;
+  for (let i = 0; i < 200; i++) { rare = enchant(makeItem("helm", 16), "rare", r); if (rare.aff.length >= 5) break; }
+  mag.uid = 8101; rare.uid = 8102;
+  p.level = 20; p.base.str = 80; p.base.dex = 60;
+  p.bag = [{ item: mag, x: 0, y: 0 }, { item: rare, x: 2, y: 0 }, { item: { uid: 8103, baseId: "ring", ilvl: 10, q: "rare", name: "Test Band", mods: [{ s: "str", v: 15 }, { s: "life", v: 30 }, { s: "ias", v: 10 }] }, x: 4, y: 0 }];
+  delete p.equip.ring1; delete p.equip.ring2;
+  g.events.changed();
+});
+await page.locator('.mbtn[data-tab="inv"]').tap();
+await wait(300);
+await tap('[data-src="bag"][data-uid="8101"]');
+await wait(200);
+const mt = await ev(() => ({ name: document.querySelector(".idetail .iname.q-magic")?.textContent, mods: document.querySelectorAll(".idetail .mod").length, cmp: document.querySelector(".idetail .cmp")?.textContent, box: !!document.querySelector('[data-uid="8101"].q-magic') }));
+check("Magic tooltip: blue name, affix lines, compare vs equipped", !!mt.name && / Axe|Axe /.test(mt.name) && mt.mods >= 2 && /vs /.test(mt.cmp ?? "") && mt.box, JSON.stringify(mt));
+await page.screenshot({ path: `${outDir}/magic-tooltip.png` });
+await tap('[data-src="bag"][data-uid="8102"]');
+await wait(200);
+const rt = await ev(() => ({ names: [...document.querySelectorAll(".idetail .iname.q-rare")].map((e) => e.textContent), mods: document.querySelectorAll(".idetail .mod").length, lvl: /Item level 16/.test(document.querySelector(".idetail .itype")?.textContent ?? "") }));
+check("Rare tooltip: yellow two-word name over the class, 3+ affixes, item level", rt.names.length === 2 && rt.names[1] === "Helm" && rt.mods >= 4 && rt.lvl, JSON.stringify(rt));
+await page.screenshot({ path: `${outDir}/rare-tooltip.png` });
+// equip a rare ring and check the stats actually change
+const st0 = await ev(() => { const d = __ec.game.derived(); return { str: d.stats.str, hp: d.maxHp, swing: d.swing }; });
+await tap('[data-src="bag"][data-uid="8103"]');
+await wait(150);
+await tap('[data-act="equip"]');
+await wait(200);
+const st1 = await ev(() => { const d = __ec.game.derived(); return { str: d.stats.str, hp: d.maxHp, swing: d.swing, ring: __ec.game.player.equip.ring1?.uid }; });
+check("Equipping a rare ring raises Strength, Life and attack speed", st1.ring === 8103 && st1.str === st0.str + 15 && st1.hp === st0.hp + 30 && st1.swing < st0.swing, `${JSON.stringify(st0)} → ${JSON.stringify(st1)}`);
+await ev(() => __ec.ui.open("char"));
+await wait(200);
+const charMod = await ev(() => /\+15/.test(document.querySelector(".sval.mod")?.textContent ?? ""));
+check("Character panel shows gear-boosted totals", charMod);
 await page.locator(".pclose").tap();
 await wait(200);
 
@@ -451,13 +540,13 @@ check("Death screen, then you wake in camp", deathShown && alive);
 // ---------------------------------------------------------------- 14. saves round-trip
 await ev(() => {
   const g = __ec.game;
-  g.player.equip.off = { uid: 7001, baseId: "short_sword" };
+  g.player.equip.off = __ec.items.enchant({ uid: 7001, baseId: "sword", ilvl: 9 }, "rare");
   localStorage.setItem("ember-crypt-save-v1", JSON.stringify(g.toSave()));
 });
 await page.goto(`${base}?debug`);
 await wait(1200);
-const reloaded = await ev(() => ({ off: __ec.game.player.equip.off?.baseId, town: __ec.game.inTown, bag: __ec.game.player.bag.length }));
-check("A saved game reloads (in camp, gear kept)", reloaded.off === "short_sword" && reloaded.town, JSON.stringify(reloaded));
+const reloaded = await ev(() => ({ off: __ec.game.player.equip.off?.baseId, q: __ec.game.player.equip.off?.q, mods: __ec.game.player.equip.off?.mods?.length, town: __ec.game.inTown, bag: __ec.game.player.bag.length }));
+check("A saved game reloads (in camp, gear kept)", reloaded.off === "sword" && reloaded.q === "rare" && reloaded.mods > 2 && reloaded.town, JSON.stringify(reloaded));
 
 // ---------------------------------------------------------------- 15. portrait + perf
 await page.setViewportSize({ width: 393, height: 852 });
@@ -500,7 +589,7 @@ await page.close();
     const e = g.player.equip;
     return { main: e.main?.baseId, off: e.off?.baseId, chest: e.chest?.baseId, head: e.head?.baseId, bag: g.player.bag.length, gold: g.player.gold, maxFloor: g.maxFloor, lvl: g.player.level, toast: document.getElementById("toast").textContent };
   });
-  check("Old v0.1 saves convert to the grid bag and new slots", mig.main === "scimitar" && mig.off === "small_shield" && mig.chest === "leather_armor" && mig.lvl === 7 && mig.bag >= 6 && mig.gold > 100 && /grid/.test(mig.toast), JSON.stringify(mig));
+  check("Old v0.1 saves convert to the grid bag, new slots and item classes", mig.main === "sword" && mig.off === "shield" && mig.chest === "armor" && mig.lvl === 7 && mig.bag >= 6 && mig.gold > 100 && /grid/.test(mig.toast), JSON.stringify(mig));
   check("No page errors after migration", errs2.length === 0, errs2.join(" | "));
   await p2.close();
   await ctx2.close();

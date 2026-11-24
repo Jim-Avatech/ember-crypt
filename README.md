@@ -3,6 +3,18 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.3 — magic and rare items, simpler item classes, faster movement
+
+- **One base per item class.** Sword, Axe, Mace, Great Sword (two-handed), Armor, Helm, Shield, Gloves, Boots, Belt, Ring, Amulet. The class sets damage spread (axe swingy, mace steady), attack speed, grid size and requirements. **Item level** sets the damage or defense numbers. **Rarity** sets how many random affixes it gets. Old saves are converted to the new classes automatically (the old item art is kept, picked by class and level).
+- **Magic (blue):** 1–2 affixes, at most one prefix and one suffix, named like *Jagged Axe of the Fox*.
+- **Rare (yellow):** 3–6 affixes (max 3 prefixes, 3 suffixes), a random two-word name with the class name under it.
+- **Affixes** (D2 names, tiers gated by item level): enhanced damage, +min/+max damage, attack rating, enhanced/+defense, Str/Dex/Vit/Energy, life, mana, life and mana leech, faster run/walk, increased attack speed, fire/cold/lightning/poison/all resists, +1–2 to a Barbarian skill you have learned, gold find, magic find.
+- **Drops:** odds scale with monster level and your magic find (rare odds with D2-style diminishing returns). The boss always drops magic or better, with a 30% rare chance per item. Rings and amulets are never white. Blue and yellow drops have colored labels and a light beam.
+- **Hilde** now stocks plain gear of every class at your depth plus 2–4 magic items; prices scale with level and affixes.
+- Tooltips show item level, affix lines in blue, requirements in red when unmet, and a comparison against what you have equipped (damage, AR, defense, life, mana, speed, leech, resists, MF). The Character panel shows totals including gear.
+- **Movement speed:** v0.2 drew the world smaller (pixel-art rescale) without speeding things up, so walking covered ~21% fewer pixels per second. Player base speed is now 4.6 tiles/s (was 3.5) and monsters are 27% faster, a touch snappier than v0.1 on screen.
+- Resistances are tracked but do nothing yet (no elemental monsters).
+
 ## v0.2 — camp, grid inventory, dual wield, pixel art
 
 - **Ember Camp:** every session starts in a fenced camp with tents, a campfire, and **Hilde the Trader** (sell loot, buy potions and a few white items, and her stock refreshes each visit). A **waypoint** links camp and every crypt level you've reached. Dying sends you back to camp.
@@ -25,6 +37,7 @@ npm install
 npm run dev                     # http://localhost:5174/ember-crypt/
 npm run build
 node scripts/e2e.mjs [url] [dir] # phone-landscape touch test, saves screenshots
+npm test                        # unit tests: affix rolling, stat application, save migration
 ```
 
 Test hooks (`window.__ec`, `?new`, `?seed=`) only work in dev builds or when the URL has `?debug`.
