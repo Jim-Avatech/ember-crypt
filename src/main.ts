@@ -7,13 +7,14 @@ import { clearGame, loadGame, loadSettings, saveGame, saveSettings } from "./sav
 import { Ui } from "./ui";
 
 const app = document.getElementById("app")!;
-app.innerHTML = `<canvas id="view"></canvas>`;
+app.innerHTML = `<canvas id="view"></canvas><canvas id="fx"></canvas>`;
 const canvas = document.getElementById("view") as HTMLCanvasElement;
+const fxCanvas = document.getElementById("fx") as HTMLCanvasElement;
 
 const settings = loadSettings();
 const sfx = new Sfx();
 sfx.enabled = settings.sound;
-const renderer = new Renderer(canvas);
+const renderer = new Renderer(canvas, fxCanvas);
 renderer.shakeOn = settings.shake;
 const input = new Input(canvas);
 
@@ -34,9 +35,12 @@ const events: GameEvents = {
 };
 
 const params = new URLSearchParams(location.search);
-const fresh = params.has("new");
+// test/debug switches only work in dev builds or with ?debug
+const DEBUG = import.meta.env.DEV || params.has("debug");
+const fresh = DEBUG && params.has("new");
 if (fresh) clearGame();
-let game = new Game(events, fresh ? null : loadGame(), params.has("seed") ? Number(params.get("seed")) : undefined);
+const saved = fresh ? null : loadGame();
+let game = new Game(events, saved, DEBUG && params.has("seed") ? Number(params.get("seed")) : undefined);
 
 const ui = new Ui(app, () => game, input, settings, {
   settingsChanged: () => {
@@ -59,6 +63,10 @@ input.onJoyChange = () => ui.updateJoystick();
 let tutorial = !settings.tutorialSeen;
 let tutorialT = 0;
 ui.showTutorial(tutorial);
+if (saved?.migratedSold !== undefined) {
+  const n = saved.migratedSold;
+  setTimeout(() => ui.toast(n ? `Your bag now uses a grid. ${n} item${n === 1 ? "" : "s"} didn't fit and were sold.` : "Your bag now uses a grid, like Diablo II."), 600);
+}
 input.onFirstTouch = () => sfx.unlock();
 document.addEventListener("pointerdown", () => sfx.unlock(), { capture: true });
 
@@ -99,6 +107,7 @@ function frame(now: number) {
   let dt = (now - last) / 1000;
   last = now;
   if (dt > 0.1) dt = 0.1;
+  if (!(dt > 0)) dt = 0;
   fpsAcc += dt;
   fpsN++;
   if (fpsAcc >= 1) {
@@ -112,6 +121,10 @@ function frame(now: number) {
     for (const t of input.taps) {
       const g = renderer.hitTest(game, t.x, t.y);
       if (g) game.tapGround(g);
+      else if (renderer.hitVendor(game, t.x, t.y)) {
+        if (game.nearVendor()) ui.open("shop");
+        else ui.toast("Walk up to Hilde to trade");
+      }
     }
     input.taps.length = 0;
     const v = input.vector();
@@ -145,8 +158,8 @@ document.addEventListener("visibilitychange", () => {
   last = performance.now();
 });
 
-// ---- debug hooks for automated tests
-(window as unknown as { __ec: unknown }).__ec = {
+// ---- debug hooks for automated tests (dev builds or ?debug only)
+if (DEBUG) (window as unknown as { __ec: unknown }).__ec = {
   get game() {
     return game;
   },

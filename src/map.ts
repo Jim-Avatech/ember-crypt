@@ -25,12 +25,32 @@ export interface Torch {
   y: number;
 }
 
-export interface Level {
+export type PropKind = "tree" | "tent" | "campfire" | "crate" | "barrel" | "stump";
+
+export interface Prop {
+  kind: PropKind;
+  /** tile of the prop's anchor (front-most tile for big props) */
+  x: number;
+  y: number;
+  /** footprint size in tiles */
   w: number;
   h: number;
+  v: number;
+}
+
+export interface Level {
+  kind: "dungeon" | "town";
+  w: number;
+  h: number;
+  /** 1 = solid tile drawn by a prop, not as a wall */
+  solidKind: Uint8Array;
+  props: Prop[];
+  waypoint: { x: number; y: number };
+  vendor: { x: number; y: number } | null;
+  spawn: { x: number; y: number };
   /** 1 = floor, 0 = solid */
   tiles: Uint8Array;
-  /** per-tile floor variant 0..3 */
+  /** per-tile floor art: dungeon 0..3, town grass 0..3, dirt 4..6 */
   variant: Uint8Array;
   explored: Uint8Array;
   rooms: Room[];
@@ -119,6 +139,12 @@ export function generateLevel(seed: number): Level {
   }
 
   const level: Level = {
+    kind: "dungeon",
+    solidKind: new Uint8Array(MAP_W * MAP_H),
+    props: [],
+    waypoint: { x: rooms[0].cx + 0.5, y: rooms[0].cy + 0.5 },
+    vendor: null,
+    spawn: { x: rooms[0].cx + 1.5, y: rooms[0].cy + 1.5 },
     w: MAP_W,
     h: MAP_H,
     tiles,
@@ -212,4 +238,72 @@ export function lineOfSight(level: Level, x0: number, y0: number, x1: number, y1
     if (!isFloor(level, Math.floor(x0 + dx * t), Math.floor(y0 + dy * t))) return false;
   }
   return true;
+}
+
+export const TOWN_W = 34;
+export const TOWN_H = 28;
+
+/** The Rogue-camp style hub: a palisade, dirt paths, tents, a campfire, a trader and a waypoint. */
+export function generateTown(): Level {
+  const rng = new Rng(20261124);
+  const N = MAP_W * MAP_H;
+  const tiles = new Uint8Array(N);
+  const art = new Uint8Array(N);
+  const solidKind = new Uint8Array(N);
+  for (let y = 1; y < TOWN_H - 1; y++)
+    for (let x = 1; x < TOWN_W - 1; x++) {
+      tiles[idx(x, y)] = 1;
+      art[idx(x, y)] = rng.chance(0.7) ? 0 : rng.int(1, 3);
+    }
+  const dirt = (x: number, y: number) => {
+    if (tiles[idx(x, y)]) art[idx(x, y)] = rng.int(4, 6);
+  };
+  for (let x = 1; x < TOWN_W - 1; x++) for (const y of [13, 14]) dirt(x, y);
+  for (let y = 1; y < TOWN_H - 1; y++) for (const x of [16, 17]) dirt(x, y);
+  for (let y = 10; y <= 17; y++) for (let x = 13; x <= 20; x++) dirt(x, y);
+  const props: Prop[] = [];
+  const solid = (x: number, y: number) => {
+    tiles[idx(x, y)] = 0;
+    solidKind[idx(x, y)] = 1;
+  };
+  const place = (kind: PropKind, x: number, y: number, w = 1, h = 1) => {
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) solid(xx, yy);
+    props.push({ kind, x: x + w - 1, y: y + h - 1, w, h, v: rng.int(0, 3) });
+  };
+  place("campfire", 16, 13);
+  place("tent", 4, 4, 3, 3);
+  place("tent", 24, 4, 3, 3);
+  place("tent", 4, 20, 3, 3);
+  place("tent", 25, 20, 3, 3);
+  for (const [x, y, k] of [[23, 7, "crate"], [27, 7, "barrel"], [7, 6, "barrel"], [7, 23, "crate"], [24, 22, "barrel"], [11, 12, "stump"]] as const)
+    place(k, x, y);
+  // trees along the palisade
+  let n = 0;
+  for (let tries = 0; tries < 400 && n < 26; tries++) {
+    const x = rng.int(1, TOWN_W - 2);
+    const y = rng.int(1, TOWN_H - 2);
+    const nearEdge = x < 3 || y < 3 || x > TOWN_W - 4 || y > TOWN_H - 4;
+    if (!nearEdge || !tiles[idx(x, y)] || art[idx(x, y)] >= 4) continue;
+    if (Math.abs(x - 16.5) < 3 || Math.abs(y - 13.5) < 3) continue;
+    place("tree", x, y);
+    n++;
+  }
+  return {
+    kind: "town",
+    w: MAP_W,
+    h: MAP_H,
+    tiles,
+    variant: art,
+    explored: new Uint8Array(N).fill(1),
+    solidKind,
+    props,
+    rooms: [],
+    start: { x: 1, y: 1, w: TOWN_W - 2, h: TOWN_H - 2, cx: 19, cy: 18 },
+    bossRoom: { x: 1, y: 1, w: 1, h: 1, cx: 1, cy: 1 },
+    decals: [],
+    torches: [],
+    waypoint: { x: 21.5, y: 18.5 },
+    vendor: { x: 25.5, y: 8.6 },
+    spawn: { x: 19.5, y: 17.5 },
+  };
 }

@@ -33,6 +33,13 @@ export const bashAR = (l: number) => 20 + (l - 1) * 5;
 export const doubleSwingAR = (l: number) => 15 + (l - 1) * 5;
 export const stunDur = (l: number) => 1 + l * 0.2;
 export const stunAR = (l: number) => 15 + (l - 1) * 10;
+export const frenzyDmg = (l: number) => 50 + (l - 1) * 9;
+export const frenzyAR = (l: number) => 20 + (l - 1) * 6;
+/** per-stack attack speed and move speed, in % */
+export const frenzyIas = (l: number) => Math.min(14, 6 + Math.floor((l - 1) / 2));
+export const frenzyMove = (l: number) => Math.min(12, 5 + Math.floor((l - 1) / 3));
+export const FRENZY_MAX_STACKS = 5;
+export const FRENZY_HOLD = 4; // seconds a stack lasts without hitting
 export const leapRange = (l: number) => Math.min(9, 4 + l * 0.3);
 export const leapAttackDmg = (l: number) => 100 + (l - 1) * 25;
 export const masteryDmg = (l: number) => 28 + (l - 1) * 8;
@@ -70,7 +77,7 @@ export const SKILLS: SkillDef[] = [
   }),
   S({
     id: "double_swing", name: "Double Swing", tab: "combat", reqLvl: 6, row: 1, col: 2, glyph: "⚔", prereq: ["bash"], implemented: true,
-    blurb: "Two quick strikes in the time of one.",
+    blurb: "Strike with both weapons, one hit each. With one weapon, it hits twice.",
     mana: () => 2,
     effect: (l) => `Hits twice, +${doubleSwingAR(l)}% attack rating`,
   }),
@@ -80,7 +87,7 @@ export const SKILLS: SkillDef[] = [
     mana: () => 2,
     effect: (l) => `Stuns for ${stunDur(l).toFixed(1)}s, +${stunAR(l)}% attack rating`,
   }),
-  S({ id: "double_throw", name: "Double Throw", tab: "combat", reqLvl: 12, row: 2, col: 2, glyph: "⇉", prereq: ["double_swing"], blurb: "Throw two weapons at once." }),
+  S({ id: "double_throw", name: "Double Throw", tab: "combat", reqLvl: 12, row: 4, col: 2, glyph: "⇉", prereq: ["double_swing"], blurb: "Throw two weapons at once. Needs throwing weapons, which aren't in the game yet." }),
   S({
     id: "leap_attack", name: "Leap Attack", tab: "combat", reqLvl: 18, row: 3, col: 1, glyph: "⇓", prereq: ["leap"], implemented: true,
     blurb: "Leap onto the nearest enemy and smash it.",
@@ -88,7 +95,12 @@ export const SKILLS: SkillDef[] = [
     effect: (l) => `+${leapAttackDmg(l)}% damage`,
   }),
   S({ id: "concentrate", name: "Concentrate", tab: "combat", reqLvl: 18, row: 3, col: 0, glyph: "◎", prereq: ["stun"], blurb: "An uninterruptible attack that boosts defense." }),
-  S({ id: "frenzy", name: "Frenzy", tab: "combat", reqLvl: 24, row: 4, col: 2, glyph: "≋", prereq: ["double_throw"], blurb: "Dual-wield attacks that speed you up." }),
+  S({
+    id: "frenzy", name: "Frenzy", tab: "combat", reqLvl: 12, row: 2, col: 2, glyph: "≋", prereq: ["double_swing"], implemented: true,
+    blurb: "Two quick hits. Each hit stacks extra attack and move speed (up to 5). Stacks fade after a few seconds without hitting. (D2: level 24, after Double Throw.)",
+    mana: () => 3,
+    effect: (l) => `+${frenzyDmg(l)}% damage, +${frenzyAR(l)}% attack, +${frenzyIas(l)}% attack speed and +${frenzyMove(l)}% move speed per stack`,
+  }),
   S({ id: "whirlwind", name: "Whirlwind", tab: "combat", reqLvl: 30, row: 5, col: 1, glyph: "↻", prereq: ["leap_attack", "concentrate"], blurb: "Spin through enemies, striking everything nearby." }),
   S({ id: "berserk", name: "Berserk", tab: "combat", reqLvl: 30, row: 5, col: 0, glyph: "☠", prereq: ["concentrate"], blurb: "A reckless magic-damage attack." }),
 

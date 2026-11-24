@@ -1,4 +1,4 @@
-import type { SaveData } from "./game";
+import { type SaveData, migrateSave } from "./game";
 
 const KEY = "ember-crypt-save-v1";
 const SKEY = "ember-crypt-settings-v1";
@@ -17,8 +17,7 @@ export function loadGame(): SaveData | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
-    const d = JSON.parse(raw) as SaveData;
-    return d && d.v === 1 ? d : null;
+    return migrateSave(JSON.parse(raw));
   } catch {
     return null;
   }

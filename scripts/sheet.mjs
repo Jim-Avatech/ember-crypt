@@ -1,0 +1,11 @@
+import { chromium } from "@playwright/test";
+const [,, q = "", out = "/tmp/sheet.png"] = process.argv;
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 2600, height: 2000 } });
+const errs = [];
+p.on("pageerror", (e) => errs.push(e.message));
+await p.goto(`http://127.0.0.1:5174/ember-crypt/dev/${process.env.PAGE||"sprites"}.html${q}`);
+await p.waitForFunction(() => window.done, null, { timeout: 20000 }).catch(() => {});
+await p.locator("#c").screenshot({ path: out });
+console.log(errs);
+await b.close();
