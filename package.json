@@ -1,0 +1,20 @@
+{
+  "name": "ember-crypt",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A Diablo II-style isometric action RPG for phones in landscape.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "e2e": "node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vitest": "^3.2.4"
+  }
+}

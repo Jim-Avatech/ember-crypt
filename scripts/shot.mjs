@@ -1,0 +1,13 @@
+import { chromium } from "@playwright/test";
+const url = process.argv[2] ?? "http://127.0.0.1:5174/ember-crypt/?new&seed=42";
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 852, height: 393 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const page = await ctx.newPage();
+const errs = [];
+page.on("pageerror", (e) => errs.push(e.message));
+page.on("console", (m) => m.type() === "error" && errs.push(m.text()));
+await page.goto(url);
+await page.waitForTimeout(1500);
+await page.screenshot({ path: "/tmp/ec-shot.png" });
+console.log("errors:", errs);
+await browser.close();
