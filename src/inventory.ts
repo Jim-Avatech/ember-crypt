@@ -1,7 +1,11 @@
 import { BASE_BY_ID, type Item } from "./data/items";
 
+/** Backpack: 10×8 (v0.7, was 10×4; old positions stay valid since the grid only grew downward). */
 export const GRID_W = 10;
-export const GRID_H = 4;
+export const GRID_H = 8;
+/** Camp stash: 10×10. */
+export const STASH_W = 10;
+export const STASH_H = 10;
 
 export interface BagEntry {
   item: Item;
@@ -61,12 +65,12 @@ export function addItem(bag: BagEntry[], it: Item, gw = GRID_W, gh = GRID_H): bo
  * Move an item already in the bag so its top-left is at (x,y).
  * If it overlaps exactly one other item, the two trade places when the other fits somewhere.
  */
-export function moveItem(bag: BagEntry[], uid: number, x: number, y: number): boolean {
+export function moveItem(bag: BagEntry[], uid: number, x: number, y: number, gw = GRID_W, gh = GRID_H): boolean {
   const e = bag.find((q) => q.item.uid === uid);
   if (!e) return false;
   const s = sizeOf(e.item);
-  if (x < 0 || y < 0 || x + s.w > GRID_W || y + s.h > GRID_H) return false;
-  if (fits(bag, s.w, s.h, x, y, uid)) {
+  if (x < 0 || y < 0 || x + s.w > gw || y + s.h > gh) return false;
+  if (fits(bag, s.w, s.h, x, y, uid, gw, gh)) {
     e.x = x;
     e.y = y;
     return true;
@@ -80,8 +84,8 @@ export function moveItem(bag: BagEntry[], uid: number, x: number, y: number): bo
   // tentatively place the moved item, then find the other a home (prefer the moved item's old corner)
   const rest = bag.filter((q) => q !== e && q !== other);
   const placed = [...rest, { item: e.item, x, y }];
-  let spot: { x: number; y: number } | null = fits(placed, os.w, os.h, ox, oy) ? { x: ox, y: oy } : null;
-  if (!spot) spot = findSpot(placed, os.w, os.h);
+  let spot: { x: number; y: number } | null = fits(placed, os.w, os.h, ox, oy, -1, gw, gh) ? { x: ox, y: oy } : null;
+  if (!spot) spot = findSpot(placed, os.w, os.h, gw, gh);
   if (!spot) return false;
   e.x = x;
   e.y = y;

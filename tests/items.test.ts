@@ -4,7 +4,7 @@ import {
   BASE_BY_ID, ITEM_BASES, type Item, baseDamage, baseDefense, itemDamage, itemDefense, itemName, itemPrice, itemReqs,
   makeItem, migrateItem, sellPrice,
 } from "../src/data/items";
-import { BASE_RUN, Game, type GameEvents, migrateSave } from "../src/game";
+import { BASE_RUN, Game, type GameEvents, SAVE_VERSION, migrateSave } from "../src/game";
 
 /** Small deterministic RNG so failures reproduce. */
 function rng(seed: number) {
@@ -210,7 +210,7 @@ describe("migration", () => {
       },
     };
     const s = migrateSave(v2)!;
-    expect(s.v).toBe(4);
+    expect(s.v).toBe(SAVE_VERSION);
     expect(s.player.equip.main!.baseId).toBe("axe");
     expect(s.player.equip.chest!.baseId).toBe("armor");
     expect(s.player.equip.ring1!.q).toBe("magic");

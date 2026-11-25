@@ -1,3 +1,4 @@
+import { GRID_H, GRID_W, STASH_H, STASH_W } from "./inventory";
 /**
  * In-game wiki ("Guide" tab). Every table is generated from the game data, so it stays in sync
  * when classes, affixes, monsters or skills change.
@@ -46,7 +47,7 @@ function classesHtml(): string {
     if (b.potion) facts.push(`${b.price} gold`);
     return `<div class="gcard"><div class="gic">${icon}</div><div class="gtx"><b>${esc(b.name)}</b><small>${facts.map(esc).join(" · ")}</small><p>${esc(CLASS_USE[b.id] ?? "")}</p></div></div>`;
   }).join("");
-  return `<p class="gnote">One base per class. The <b>class</b> sets damage spread, speed, size and requirements; <b>item level</b> sets the numbers; <b>rarity</b> sets the number of random affixes. Magic and rare items also need character level ¾ × item level.</p><div class="gcards">${rows}</div>`;
+  return `<p class="gnote">One base per class. The <b>class</b> sets damage spread, speed, size and requirements; <b>item level</b> sets the numbers; <b>rarity</b> sets the number of random affixes. Magic and rare items also need character level ¾ × item level.</p><p class="gnote">Storage: your <b>backpack</b> is ${GRID_W}×${GRID_H} (${GRID_W * GRID_H} cells). The <b>stash</b> chest in Ember Camp holds ${STASH_W}×${STASH_H} more; it's saved with your hero and included in save exports. Walk up to it (or tap it) to open it. The "grid" size below is how many cells an item takes.</p><div class="gcards">${rows}</div>`;
 }
 
 function levelsHtml(): string {

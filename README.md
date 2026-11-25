@@ -3,6 +3,11 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.7 — bigger backpack and a camp stash
+
+- **Backpack doubled to 10×8 (80 cells)**, beside the equipment at 852×393. Cells stay about the same size (32 px), so nothing needs scrolling. Saves migrate to v5 with every item in the same spot, since the grid only grew downward.
+- **Stash:** an iron-bound chest in Ember Camp, left of the campfire. Walk up to it ("▣ Open stash") or tap it. The 10×10 stash sits beside your backpack. Drag between them using the normal fit/swap rules, tap an item then a cell, or tap an item twice to send it across. It's usable only in camp, saved with the hero, and included in save exports.
+
 ## v0.6.1 — iPhone sound fix
 
 - Audio now starts on the **end** of a tap (touchend / pointerup / click / keydown). iOS ignores touchstart/pointerdown for this, which is where the game used to start it, so the AudioContext stayed suspended and nothing played.
@@ -44,7 +49,7 @@ A small Diablo II–style isometric action RPG for phones, played in landscape. 
 ## v0.2 — camp, grid inventory, dual wield, pixel art
 
 - **Ember Camp:** every session starts in a fenced camp with tents, a campfire, and **Hilde the Trader** (sell loot, buy potions and a few white items, and her stock refreshes each visit). A **waypoint** links camp and every crypt level you've reached. Dying sends you back to camp.
-- **D2-style grid inventory:** 10×4 backpack. Items take their D2 sizes (sword 1×3, axe 2×3, armor 2×3, helm 2×2, ring/potion 1×1…). Drag with your finger to move items (green = fits, yellow = swap, red = won't fit), or tap an item and then tap a cell. Drag out of the window to drop. Saves from v0.1 are converted automatically; anything that doesn't fit is sold for gold.
+- **D2-style grid inventory:** 10×4 backpack (10×8 since v0.7). Items take their D2 sizes (sword 1×3, axe 2×3, armor 2×3, helm 2×2, ring/potion 1×1…). Drag with your finger to move items (green = fits, yellow = swap, red = won't fit), or tap an item and then tap a cell. Drag out of the window to drop. Saves from v0.1 are converted automatically; anything that doesn't fit is sold for gold.
 - **Equipment doll:** head, chest, gloves, boots, belt, two rings, amulet, main hand and off-hand. Drag onto a slot, tap item → tap slot, or tap a selected item again to equip. New bases: sashes and belts (more potion room), and plain rings and amulets (small fixed bonuses, since D2 has no white jewelry).
 - **Dual wield:** a one-handed weapon fits in the off-hand. Basic attacks alternate hands. Two-handed weapons lock the off-hand.
 - **Double Swing:** one hit with each weapon when dual wielding, or two hits with the main hand.

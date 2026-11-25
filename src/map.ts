@@ -25,7 +25,7 @@ export interface Torch {
   y: number;
 }
 
-export type PropKind = "tree" | "tent" | "campfire" | "crate" | "barrel" | "stump";
+export type PropKind = "tree" | "tent" | "campfire" | "crate" | "barrel" | "stump" | "chest";
 
 export interface Prop {
   kind: PropKind;
@@ -47,6 +47,8 @@ export interface Level {
   props: Prop[];
   waypoint: { x: number; y: number };
   vendor: { x: number; y: number } | null;
+  /** camp stash chest (town only) */
+  stash: { x: number; y: number } | null;
   spawn: { x: number; y: number };
   /** 1 = floor, 0 = solid */
   tiles: Uint8Array;
@@ -144,6 +146,7 @@ export function generateLevel(seed: number): Level {
     props: [],
     waypoint: { x: rooms[0].cx + 0.5, y: rooms[0].cy + 0.5 },
     vendor: null,
+    stash: null,
     spawn: { x: rooms[0].cx + 1.5, y: rooms[0].cy + 1.5 },
     w: MAP_W,
     h: MAP_H,
@@ -271,6 +274,7 @@ export function generateTown(): Level {
     props.push({ kind, x: x + w - 1, y: y + h - 1, w, h, v: rng.int(0, 3) });
   };
   place("campfire", 16, 13);
+  place("chest", 14, 17);
   place("tent", 4, 4, 3, 3);
   place("tent", 24, 4, 3, 3);
   place("tent", 4, 20, 3, 3);
@@ -304,6 +308,7 @@ export function generateTown(): Level {
     torches: [],
     waypoint: { x: 21.5, y: 18.5 },
     vendor: { x: 25.5, y: 8.6 },
+    stash: { x: 14.5, y: 17.5 },
     spawn: { x: 19.5, y: 17.5 },
   };
 }

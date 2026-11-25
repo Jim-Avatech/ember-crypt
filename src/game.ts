@@ -12,7 +12,7 @@ import {
   incSpeed, ironSkinDef, leapAttackDmg, leapRange, masteryAR, masteryCrit, masteryDmg, shoutDef, shoutDur,
   stunAR, stunDur,
 } from "./data/skills";
-import { type BagEntry, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
+import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
 import { type Level, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
 import { Rng, chance, rand, randInt } from "./rng";
 
@@ -61,6 +61,8 @@ export interface Player {
   skills: Record<string, number>;
   slots: (string | null)[];
   bag: BagEntry[];
+  /** camp stash (10×10), usable only in town */
+  stash: BagEntry[];
   equip: Partial<Record<EquipSlot, Item>>;
   nextHand: number;
   frenzy: { stacks: number; t: number; decay: number };
@@ -235,7 +237,7 @@ export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
 export const xpForLevel = (L: number) => (L <= 1 ? 0 : Math.round(100 * Math.pow(L - 1, 1.9)));
 
 /** Current save schema. Bump it (and add a migration step) whenever the save shape changes. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export interface SaveData {
   /** schema version (SAVE_VERSION when written) */
@@ -247,7 +249,7 @@ export interface SaveData {
   seed: number;
   floor: number;
   maxFloor: number;
-  player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills">;
+  player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & { stash?: BagEntry[] };
   /** items that didn't fit when an old save was converted */
   migratedSold?: number;
   migratedFrom?: number;
@@ -296,7 +298,9 @@ const TWO_HIT = new Set(["double_swing", "frenzy"]);
 function sanitizeV3(d: SaveData): SaveData {
   const p = d.player;
   if (!p || typeof p !== "object") return d;
-  if (Array.isArray(p.bag)) p.bag = p.bag.filter((e) => e && e.item && BASE_BY_ID[e.item.baseId] && Number.isFinite(e.x) && Number.isFinite(e.y));
+  const okEntry = (e: BagEntry) => e && e.item && BASE_BY_ID[e.item.baseId] && Number.isFinite(e.x) && Number.isFinite(e.y);
+  if (Array.isArray(p.bag)) p.bag = p.bag.filter(okEntry);
+  p.stash = Array.isArray(p.stash) ? p.stash.filter(okEntry) : [];
   if (p.equip && typeof p.equip === "object") for (const k of Object.keys(p.equip) as EquipSlot[]) if (!p.equip[k] || !BASE_BY_ID[p.equip[k]!.baseId]) delete p.equip[k];
   if (!p.skills || typeof p.skills !== "object") p.skills = {};
   if (!Array.isArray(p.slots)) p.slots = [null, null, null];
@@ -312,10 +316,18 @@ function sanitizeV3(d: SaveData): SaveData {
 export function migrateSave(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== "object") return null;
   const d = raw as { v: number };
-  if (d.v === 4) return sanitizeV3(d as SaveData);
+  if (d.v === 5) return sanitizeV3(d as SaveData);
+  if (d.v === 4) return toV5(sanitizeV3(d as SaveData));
   const v3 = d.v === 3 ? sanitizeV3(d as SaveData) : migrateToV3(raw);
   if (!v3) return null;
-  return toV4(v3);
+  return toV5(toV4(v3));
+}
+
+/** v5: backpack grew from 10×4 to 10×8 (positions unchanged) and the camp stash was added (empty). */
+function toV5(d: SaveData): SaveData {
+  d.v = 5;
+  if (!Array.isArray(d.player.stash)) d.player.stash = [];
+  return d;
 }
 
 function toV4(d: SaveData): SaveData {
@@ -436,13 +448,14 @@ export class Game {
     this.player = {
       x: 0, y: 0, r: 0.28, fx: 1, fy: 1, hp: 1, mana: 1, level: 1, xp: 0,
       base: { ...BASE_STATS }, statPoints: 0, skillPoints: 1, skills: {}, slots: [null, null, null],
-      bag: [], equip: {}, nextHand: 0, frenzy: { stacks: 0, t: 0, decay: 0 }, gold: 0, hpPots: 3, mpPots: 1,
+      bag: [], stash: [], equip: {}, nextHand: 0, frenzy: { stacks: 0, t: 0, decay: 0 }, gold: 0, hpPots: 3, mpPots: 1,
       action: null, walkPhase: 0, moving: false, buffs: { shout: 0, bo: 0 }, flash: 0, z: 0,
       moveTarget: null, dead: false, healLeft: 0, manaLeft: 0, kills: 0,
     };
     if (save) {
       Object.assign(this.player, JSON.parse(JSON.stringify(save.player)));
       this.player.bag = this.player.bag ?? [];
+      this.player.stash = this.player.stash ?? [];
       this.floor = save.floor;
       this.maxFloor = Math.max(save.maxFloor ?? save.floor, save.floor);
     } else {
@@ -463,7 +476,7 @@ export class Game {
       v: SAVE_VERSION, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor,
       player: {
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
-        skills: p.skills, slots: p.slots, bag: p.bag, equip: p.equip, gold: p.gold,
+        skills: p.skills, slots: p.slots, bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold,
         hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills,
       },
     };
@@ -1857,6 +1870,60 @@ export class Game {
     return null;
   }
 
+  // ------------------------------------------------------------------ camp stash
+  stashEntry(uid: number) {
+    return this.player.stash.find((e) => e.item.uid === uid);
+  }
+
+  nearStash(): boolean {
+    const s = this.level.stash;
+    return !!s && this.inTown && !this.player.dead && Math.hypot(s.x - this.player.x, s.y - this.player.y) < 1.9;
+  }
+
+  /** Bag → stash, at (x, y) or the first free spot. */
+  toStash(uid: number, x?: number, y?: number): string | null {
+    const p = this.player;
+    if (!this.inTown) return "The stash is in Ember Camp";
+    const e = this.bagEntry(uid);
+    if (!e) return "Nothing to store";
+    const { w, h } = sizeOf(e.item);
+    let spot = x !== undefined && y !== undefined && fits(p.stash, w, h, x, y, -1, STASH_W, STASH_H) ? { x, y } : null;
+    if (!spot && x === undefined) spot = findSpot(p.stash, w, h, STASH_W, STASH_H);
+    if (!spot) return x === undefined ? "Your stash is full" : "It doesn't fit there";
+    p.bag = p.bag.filter((q) => q !== e);
+    p.stash.push({ item: e.item, ...spot });
+    this.events.sound("equip");
+    this.events.changed();
+    return null;
+  }
+
+  /** Stash → bag, at (x, y) or the first free spot. */
+  fromStash(uid: number, x?: number, y?: number): string | null {
+    const p = this.player;
+    if (!this.inTown) return "The stash is in Ember Camp";
+    const e = this.stashEntry(uid);
+    if (!e) return "Nothing to take";
+    const { w, h } = sizeOf(e.item);
+    let spot = x !== undefined && y !== undefined && fits(p.bag, w, h, x, y) ? { x, y } : null;
+    if (!spot && x === undefined) spot = findSpot(p.bag, w, h);
+    if (!spot) return x === undefined ? "Your backpack is full" : "It doesn't fit there";
+    p.stash = p.stash.filter((q) => q !== e);
+    p.bag.push({ item: e.item, ...spot });
+    this.events.sound("equip");
+    this.events.changed();
+    return null;
+  }
+
+  moveInStash(uid: number, x: number, y: number): boolean {
+    if (!this.inTown) return false;
+    const ok = moveItem(this.player.stash, uid, x, y, STASH_W, STASH_H);
+    if (ok) {
+      this.events.sound("equip");
+      this.events.changed();
+    }
+    return ok;
+  }
+
   /** Move an item within the bag (swaps with a single overlapping item). */
   moveInBag(uid: number, x: number, y: number): boolean {
     const ok = moveItem(this.player.bag, uid, x, y);
@@ -1993,9 +2060,10 @@ export class Game {
   }
 
   /** The one context action shown above the controls. */
-  contextAction(): "descend" | "waypoint" | "trade" | "portal" | null {
+  contextAction(): "descend" | "waypoint" | "trade" | "stash" | "portal" | null {
     if (this.nearStairs()) return "descend";
     if (this.nearVendor()) return "trade";
+    if (this.nearStash()) return "stash";
     if (this.nearPortal()) return "portal";
     if (this.nearWaypoint()) return "waypoint";
     return null;

@@ -612,6 +612,91 @@ check("Hilde sells some blue (magic) items", blue.n >= 2 && blue.boxes === blue.
 await page.locator(".pclose").tap();
 await wait(200);
 
+// ---------------------------------------------------------------- 12a. bigger backpack + camp stash
+{
+  await ev(() => __ec.ui.open("inv"));
+  await wait(250);
+  const inv = await ev(() => {
+    const b = document.querySelector(".pbody");
+    const r = document.querySelector('[data-grid="bag"]').getBoundingClientRect();
+    return { cols: Math.round(r.width / __ec.ui.C), rows: Math.round(r.height / __ec.ui.C), C: __ec.ui.C, noScroll: b.scrollHeight <= b.clientHeight + 1 };
+  });
+  check("Backpack is 10×8 (80 cells) beside the equipment, no scrolling, cells ≥ 30 px", inv.cols === 10 && inv.rows === 8 && inv.noScroll && inv.C >= 30, JSON.stringify(inv));
+  await ev(() => __ec.ui.close());
+  await ev(() => {
+    const g = __ec.game;
+    const p = g.player;
+    const { makeItem } = __ec.items;
+    const mk = (uid, id, l = 8) => { const it = makeItem(id, l); it.uid = uid; return it; };
+    p.bag = [
+      { item: mk(7001, "great_sword"), x: 0, y: 0 }, { item: mk(7002, "ring"), x: 9, y: 7 }, { item: mk(7003, "javelin"), x: 4, y: 4 },
+      { item: mk(7004, "helm"), x: 2, y: 0 },
+    ];
+    p.stash = [{ item: mk(7101, "armor", 10), x: 0, y: 0 }, { item: mk(7102, "amulet", 9), x: 9, y: 9 }];
+    p.x = g.level.stash.x + 1.2;
+    p.y = g.level.stash.y + 0.2;
+    g.events.changed();
+  });
+  await wait(400);
+  const lbl = await ev(() => document.getElementById("btn-ctx").textContent);
+  await page.screenshot({ path: `${outDir}/stash-chest.png` });
+  await tap("#btn-ctx");
+  await wait(300);
+  const open = await ev(() => __ec.ui.openTab);
+  check("Walking up to the camp chest offers the stash, which opens beside the backpack", open === "stash" && /stash/i.test(lbl) && (await ev(() => !!document.querySelector('[data-grid="stash"]') && !!document.querySelector('[data-grid="bag"]'))), JSON.stringify({ lbl, open }));
+  const fitsScreen = await ev(() => {
+    const b = document.querySelector(".pbody");
+    const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+    return { noScroll: b.scrollHeight <= b.clientHeight + 1 && b.scrollWidth <= b.clientWidth + 1, stash: [Math.round(r('[data-grid="stash"]').width), Math.round(r('[data-grid="stash"]').height)], bag: [Math.round(r('[data-grid="bag"]').width), Math.round(r('[data-grid="bag"]').height)], C: __ec.ui.C };
+  });
+  check("Stash 10×10 and backpack 10×8 fit at 852×393 without scrolling", fitsScreen.noScroll && Math.abs(fitsScreen.stash[1] - 10 * fitsScreen.C) <= 2 && Math.abs(fitsScreen.bag[1] - 8 * fitsScreen.C) <= 2, JSON.stringify(fitsScreen));
+  // drag the javelin from the backpack into stash cell (5, 3)
+  const sCell = async (cx, cy, w, h) => {
+    const r = await page.locator('[data-grid="stash"]').boundingBox();
+    const C = await ev(() => __ec.ui.C);
+    return { x: r.x + (cx + w / 2) * C, y: r.y + (cy + h / 2) * C + LIFT };
+  };
+  await drag(await center('[data-src="bag"][data-uid="7003"]'), await sCell(5, 3, 1, 4));
+  const st1 = await ev(() => { const e = __ec.game.stashEntry(7003); return { e: e ? [e.x, e.y] : null, inBag: !!__ec.game.bagEntry(7003) }; });
+  check("Drag a backpack item into the stash, at the cell you drop it on", st1.e && st1.e[0] === 5 && st1.e[1] === 3 && !st1.inBag, JSON.stringify(st1));
+  // a drop that overlaps is refused
+  await drag(await center('[data-src="bag"][data-uid="7004"]'), await sCell(0, 0, 2, 2));
+  check("A stash drop that doesn't fit is refused", !!(await ev(() => __ec.game.bagEntry(7004))) && !(await ev(() => __ec.game.stashEntry(7004))));
+  // drag the armor from the stash into the bottom rows of the backpack (rows 4–7 are new)
+  await drag(await center('[data-src="stash"][data-uid="7101"]'), await bagCell(6, 5, 2, 3));
+  const b1 = await bagPos(7101);
+  check("Drag a stash item into the new lower rows of the backpack", b1 && b1[0] === 6 && b1[1] === 5, JSON.stringify(b1));
+  // tap twice to send across
+  await tap('[data-src="stash"][data-uid="7102"]');
+  await tap('[data-src="stash"][data-uid="7102"]');
+  await wait(150);
+  check("Tapping a stash item twice moves it to the backpack", !!(await ev(() => __ec.game.bagEntry(7102))));
+  await ev(() => { __ec.game.player.gold = 1234; __ec.ui.refresh(); });
+  await tap('[data-src="bag"][data-uid="7002"]');
+  await wait(150);
+  await page.screenshot({ path: `${outDir}/stash.png` });
+  await tap('[data-act="stash-put"]');
+  check("“To stash” button stores the selected item", !!(await ev(() => __ec.game.stashEntry(7002))));
+  // saved with the hero and in the export code
+  await page.locator(".pclose").tap();
+  await wait(700);
+  const saved = await ev(() => {
+    const raw = JSON.parse(localStorage.getItem("ember-crypt-save-v1"));
+    const code = __ec.ui["hooks"].save.exportCode();
+    const back = JSON.parse(decodeURIComponent(escape(atob(code.slice("EMBERCRYPT1:".length)))));
+    return { v: raw.v, stash: raw.player.stash.map((e) => e.item.uid).sort(), exp: (back.player.stash || []).length };
+  });
+  check("The stash is saved with the hero (v5) and included in the export code", saved.v === 5 && saved.stash.join() === "7002,7003" && saved.exp === 2, JSON.stringify(saved));
+  // town only
+  await ev(() => __ec.game.goDungeon(1));
+  await wait(200);
+  await ev(() => __ec.ui.open("stash"));
+  await wait(150);
+  check("The stash can't be opened outside camp", (await ev(() => __ec.ui.openTab)) !== "stash");
+  await ev(() => __ec.game.goTown());
+  await wait(300);
+}
+
 // ---------------------------------------------------------------- 12b. magic & rare items
 await ev(() => __ec.game.goDungeon(1));
 await wait(400);
@@ -953,7 +1038,7 @@ await page.close();
     const e = g.player.equip;
     return { main: e.main?.baseId, off: e.off?.baseId, chest: e.chest?.baseId, head: e.head?.baseId, bag: g.player.bag.length, gold: g.player.gold, maxFloor: g.maxFloor, lvl: g.player.level, toast: document.getElementById("toast").textContent };
   });
-  check("Old v0.1 saves convert to the grid bag, new slots and item classes", mig.main === "sword" && mig.off === "shield" && mig.chest === "armor" && mig.lvl === 7 && mig.bag >= 6 && mig.gold > 100 && /grid/.test(mig.toast), JSON.stringify(mig));
+  check("Old v0.1 saves convert to the grid bag, new slots and item classes", mig.main === "sword" && mig.off === "shield" && mig.chest === "armor" && mig.lvl === 7 && mig.bag >= 6 && mig.gold >= 100 && /grid/.test(mig.toast), JSON.stringify(mig));
   check("No page errors after migration", errs2.length === 0, errs2.join(" | "));
   await p2.close();
   await ctx2.close();

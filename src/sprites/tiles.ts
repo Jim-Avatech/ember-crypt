@@ -195,6 +195,27 @@ export function crateSprite(): HTMLCanvasElement {
   return pb.canvas();
 }
 
+/** The camp stash: an iron-bound chest with a brass lock. */
+export function chestSprite(): HTMLCanvasElement {
+  const pb = new PB(24, 22);
+  const wood = hex("#7a4a26");
+  const iron = hex("#4a4a52");
+  const grain = (_x: number, y: number) => (y % 3 === 0 ? 0.82 : 1);
+  // body: left face, right face
+  pb.part(pb.mask().poly([[1, 9], [11, 14], [11, 21], [1, 16]]), mul(wood, 0.72), { shade: false, pattern: grain });
+  pb.part(pb.mask().poly([[11, 14], [23, 8], [23, 15], [11, 21]]), wood, { shade: false, pattern: grain });
+  // domed lid
+  pb.part(pb.mask().poly([[1, 9], [1, 6], [4, 3], [14, 0], [20, 2], [23, 5], [23, 8], [11, 14]]), mul(wood, 1.18), { shade: false, pattern: (x) => (x % 4 === 0 ? 0.85 : 1) });
+  // iron bands
+  pb.part(pb.mask().poly([[4, 4], [6, 3], [6, 17.5], [4, 16.5]]), iron, { shade: false });
+  pb.part(pb.mask().poly([[17, 1], [19, 2], [19, 17], [17, 18]]), iron, { shade: false });
+  pb.part(pb.mask().poly([[1, 9], [11, 14], [23, 8], [23, 9.5], [11, 15.5], [1, 10.5]]), mul(iron, 1.2), { shade: false });
+  // brass lock
+  pb.part(pb.mask().rect(12, 14, 3, 4), hex("#e0b040"), { shade: false });
+  pb.outline();
+  return pb.canvas();
+}
+
 export function barrelSprite(): HTMLCanvasElement {
   const pb = new PB(14, 18);
   const c = hex("#7a5430");

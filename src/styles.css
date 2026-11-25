@@ -671,7 +671,8 @@ body.portrait #rotate {
 
 /* inventory: D2-style grid + paper doll */
 .pbody-inv,
-.pbody-shop {
+.pbody-shop,
+.pbody-stash {
   gap: 12px;
   touch-action: none;
 }
@@ -1155,7 +1156,8 @@ body.portrait #rotate {
   font-size: 11px;
 }
 .pbody-inv .idetail,
-.pbody-shop .idetail {
+.pbody-shop .idetail,
+.pbody-stash .idetail {
   overflow-y: auto;
   touch-action: pan-y;
   min-width: 170px;

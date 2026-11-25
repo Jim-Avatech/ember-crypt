@@ -7,12 +7,12 @@ import type { Derived, SaveData } from "./game";
 import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, type Tab, TAB_NAMES } from "./data/skills";
 import { type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
-import { GRID_H, GRID_W, overlapping, sizeOf } from "./inventory";
+import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
 import type { Settings } from "./save";
 import { type GuideSec, guideHtml } from "./guide";
 import { itemIconUrl } from "./sprites/items";
 
-export type PanelTab = "char" | "inv" | "skills" | "guide" | "settings" | "shop" | "wp";
+export type PanelTab = "char" | "inv" | "skills" | "guide" | "settings" | "shop" | "wp" | "stash";
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -35,14 +35,15 @@ const DOLL_H = 7.75;
 /** On touch, the dragged item floats this far above the finger so it stays visible. */
 export const DRAG_LIFT = 26;
 
-type Src = "bag" | "eq" | "vendor";
+type Src = "bag" | "eq" | "vendor" | "stash";
+type GridName = "bag" | "stash";
 interface Sel {
   src: Src;
   uid?: number;
   slot?: EquipSlot;
 }
 type Target =
-  | { kind: "grid"; grid: "bag"; x: number; y: number; ok: "ok" | "swap" | "bad" }
+  | { kind: "grid"; grid: GridName; x: number; y: number; ok: "ok" | "swap" | "bad" }
   | { kind: "grid"; grid: "vendor"; ok: "ok" | "bad" }
   | { kind: "slot"; slot: EquipSlot; ok: "ok" | "bad" }
   | { kind: "ground"; ok: "ok" | "bad" }
@@ -53,7 +54,7 @@ interface Press {
   x: number;
   y: number;
   sel: Sel | null;
-  grid?: "bag" | "vendor";
+  grid?: "bag" | "vendor" | "stash";
   slot?: EquipSlot;
   moved: boolean;
   touch: boolean;
@@ -243,6 +244,7 @@ export class Ui {
     const a = g.contextAction();
     if (a === "descend") g.descend();
     else if (a === "trade") this.open("shop");
+    else if (a === "stash") this.open("stash");
     else if (a === "waypoint") this.open("wp");
     else if (a === "portal") g.usePortal();
   }
@@ -310,7 +312,7 @@ export class Ui {
     const btn = $(r, "#btn-ctx");
     btn.hidden = !ctx;
     btn.dataset.kind = ctx ?? "";
-    btn.textContent = ctx === "descend" ? `▼ Descend to Level ${g.floor + 1}` : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to Level ${g.portal?.floor}` : "";
+    btn.textContent = ctx === "descend" ? `▼ Descend to Level ${g.floor + 1}` : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to Level ${g.portal?.floor}` : "";
     const buffs: string[] = [];
     if (p.frenzy.stacks > 0) {
       const left = p.frenzy.t > 0 ? Math.ceil(p.frenzy.t) : 0;
@@ -360,6 +362,10 @@ export class Ui {
 
   // ------------------------------------------------------------ panel
   open(tab: PanelTab) {
+    if (tab === "stash" && !this.game().inTown) {
+      this.toast("The stash is in Ember Camp");
+      return;
+    }
     this.hooks.click();
     this.openTab = tab;
     this.confirmReset = false;
@@ -388,11 +394,14 @@ export class Ui {
     const sa = (n: string) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)) || 0;
     const W = Math.min(820, window.innerWidth - 16 - Math.max(sa("--sal"), 0) - Math.max(sa("--sar"), 0)) - 28;
     const H = window.innerHeight - 70;
-    if (this.openTab === "shop") {
-      this.C = Math.max(16, Math.min(30, Math.floor((W - 190 - 30) / 18.6), Math.floor((H - 30) / 5.2)));
+    if (this.openTab === "stash") {
+      // stash 10×10 and backpack 10×8 side by side, same cell size so items drag 1:1
+      this.C = Math.max(16, Math.min(30, Math.floor((W - 170 - 24) / (STASH_W + GRID_W)), Math.floor((H - 52) / STASH_H)));
+    } else if (this.openTab === "shop") {
+      this.C = Math.max(16, Math.min(30, Math.floor((W - 190 - 30) / 18.6), Math.floor((H - 60) / GRID_H)));
       this.VC = Math.max(14, Math.min(26, Math.floor(this.C * 0.86), Math.floor((H - 24) / VENDOR_H)));
     } else {
-      this.C = Math.max(18, Math.min(34, Math.floor((W - 200 - 28) / (10 + DOLL_W * 0.9)), Math.floor((H - 6) / (DOLL_H * 0.9))));
+      this.C = Math.max(18, Math.min(34, Math.floor((W - 200 - 28) / (10 + DOLL_W * 0.9)), Math.floor((H - 6) / (DOLL_H * 0.9)), Math.floor((H - 60) / GRID_H)));
       this.U = Math.round(this.C * 0.9);
     }
   }
@@ -409,11 +418,13 @@ export class Ui {
     ];
     if (tab === "shop") tabs.unshift(["shop", "Trade"]);
     if (tab === "wp") tabs.unshift(["wp", "Waypoint"]);
+    if (tab === "stash") tabs.unshift(["stash", "Stash"]);
     let body = "";
     if (tab === "char") body = this.charHtml();
     else if (tab === "inv") body = this.invHtml();
     else if (tab === "skills") body = this.skillsHtml();
     else if (tab === "shop") body = this.shopHtml();
+    else if (tab === "stash") body = this.stashHtml();
     else if (tab === "wp") body = this.wpHtml();
     else if (tab === "guide") body = guideHtml(this.guideSec);
     else body = this.settingsHtml();
@@ -548,6 +559,14 @@ export class Ui {
           this.sel = null;
         }
         break;
+      case "stash-put":
+      case "stash-take":
+        if (this.sel?.uid !== undefined) {
+          const err = act === "stash-put" ? g.toStash(this.sel.uid) : g.fromStash(this.sel.uid);
+          if (err) this.toast(err);
+          else this.sel = null;
+        }
+        break;
       case "sell":
         if (this.sel?.src === "bag" && this.sel.uid !== undefined && selItem) {
           const price = g.sell(this.sel.uid);
@@ -593,6 +612,7 @@ export class Ui {
     const g = this.game();
     if (s.src === "bag") return g.bagEntry(s.uid!)?.item ?? null;
     if (s.src === "eq") return g.player.equip[s.slot!] ?? null;
+    if (s.src === "stash") return g.stashEntry(s.uid!)?.item ?? null;
     return g.vendorStock.find((q) => q.item.uid === s.uid)?.item ?? null;
   }
 
@@ -617,7 +637,7 @@ export class Ui {
     }
     this.press = {
       pid: e.pointerId, x: e.clientX, y: e.clientY, sel, moved: false, touch: e.pointerType === "touch",
-      grid: gridEl?.dataset.grid as "bag" | "vendor" | undefined, slot: slotEl?.dataset.slot as EquipSlot | undefined,
+      grid: gridEl?.dataset.grid as "bag" | "vendor" | "stash" | undefined, slot: slotEl?.dataset.slot as EquipSlot | undefined,
     };
     try {
       this.panel.setPointerCapture(e.pointerId);
@@ -678,23 +698,26 @@ export class Ui {
     for (const sl of this.panel.querySelectorAll<HTMLElement>(".slot[data-slot]")) {
       if (!inRect(sl.getBoundingClientRect())) continue;
       const slot = sl.dataset.slot as EquipSlot;
-      if (src === "vendor") return { kind: "slot", slot, ok: "bad" };
+      if (src === "vendor" || src === "stash") return { kind: "slot", slot, ok: "bad" };
       if (src === "eq") return { kind: "slot", slot, ok: slot === pr.sel!.slot || !g.slotsFor(it).includes(slot) ? "bad" : "ok" };
       return { kind: "slot", slot, ok: g.equipError(it, slot) ? "bad" : "ok" };
     }
-    const bagEl = this.panel.querySelector<HTMLElement>('[data-grid="bag"]');
-    if (bagEl) {
-      const r = bagEl.getBoundingClientRect();
-      if (inRect(r, this.C * 0.5)) {
-        const C = this.C;
-        const cx = Math.max(0, Math.min(GRID_W - w, Math.round((x - r.left) / C - w / 2)));
-        const cy = Math.max(0, Math.min(GRID_H - h, Math.round((y - r.top) / C - h / 2)));
-        if (src === "vendor") return { kind: "grid", grid: "bag", x: cx, y: cy, ok: "ok" };
-        const ignore = src === "bag" ? it.uid : -1;
-        const over = overlapping(g.player.bag, w, h, cx, cy, ignore);
-        const ok = over.length === 0 ? "ok" : over.length === 1 && src === "bag" ? "swap" : "bad";
-        return { kind: "grid", grid: "bag", x: cx, y: cy, ok };
-      }
+    for (const gname of ["bag", "stash"] as const) {
+      const gEl = this.panel.querySelector<HTMLElement>(`[data-grid="${gname}"]`);
+      if (!gEl) continue;
+      const r = gEl.getBoundingClientRect();
+      if (!inRect(r, this.C * 0.5)) continue;
+      const C = this.C;
+      const [GW, GH] = gname === "bag" ? [GRID_W, GRID_H] : [STASH_W, STASH_H];
+      const cx = Math.max(0, Math.min(GW - w, Math.round((x - r.left) / C - w / 2)));
+      const cy = Math.max(0, Math.min(GH - h, Math.round((y - r.top) / C - h / 2)));
+      if (src === "vendor") return { kind: "grid", grid: gname, x: cx, y: cy, ok: gname === "bag" ? "ok" : "bad" };
+      if (src === "eq" && gname === "stash") return { kind: "grid", grid: gname, x: cx, y: cy, ok: "bad" };
+      const entries = gname === "bag" ? g.player.bag : g.player.stash;
+      const same = src === gname;
+      const over = overlapping(entries, w, h, cx, cy, same ? it.uid : -1);
+      const ok = over.length === 0 ? "ok" : over.length === 1 && same ? "swap" : "bad";
+      return { kind: "grid", grid: gname, x: cx, y: cy, ok };
     }
     const vEl = this.panel.querySelector<HTMLElement>('[data-grid="vendor"]');
     if (vEl && inRect(vEl.getBoundingClientRect(), 6)) return { kind: "grid", grid: "vendor", ok: src === "bag" ? "ok" : "bad" };
@@ -707,8 +730,8 @@ export class Ui {
     this.panel.querySelectorAll(".hl").forEach((n) => n.remove());
     this.panel.querySelectorAll(".drop-ok,.drop-bad").forEach((n) => n.classList.remove("drop-ok", "drop-bad"));
     if (!t) return;
-    if (t.kind === "grid" && t.grid === "bag") {
-      const el = this.panel.querySelector<HTMLElement>('[data-grid="bag"]')!;
+    if (t.kind === "grid" && (t.grid === "bag" || t.grid === "stash")) {
+      const el = this.panel.querySelector<HTMLElement>(`[data-grid="${t.grid}"]`)!;
       const hl = document.createElement("div");
       hl.className = `hl ${t.ok}`;
       hl.style.cssText = `left:${t.x * this.C}px;top:${t.y * this.C}px;width:${w * this.C}px;height:${h * this.C}px`;
@@ -761,8 +784,17 @@ export class Ui {
       if (s.src === "bag") {
         if (!g.moveInBag(s.uid!, t.x, t.y)) err = "It doesn't fit there";
       } else if (s.src === "eq") err = g.unequip(s.slot!, t.x, t.y);
+      else if (s.src === "stash") err = g.fromStash(s.uid!, t.x, t.y);
       else err = g.buy(s.uid!);
-      if (!err && s.src !== "bag") this.sel = null;
+      if (!err && s.src === "stash") this.sel = { src: "bag", uid: s.uid };
+      else if (!err && s.src !== "bag") this.sel = null;
+    } else if (t.kind === "grid" && t.grid === "stash") {
+      if (s.src === "stash") {
+        if (!g.moveInStash(s.uid!, t.x, t.y)) err = "It doesn't fit there";
+      } else if (s.src === "bag") {
+        err = g.toStash(s.uid!, t.x, t.y);
+        if (!err) this.sel = { src: "stash", uid: s.uid };
+      }
     } else if (t.kind === "grid" && t.grid === "vendor") {
       const price = g.sell(s.uid!);
       if (price) this.toast(`Sold ${itemName(it)} for ${price} gold`);
@@ -783,6 +815,12 @@ export class Ui {
         // second tap: the obvious action
         const it = this.selItem();
         if (!it) return;
+        if (this.openTab === "stash" && (pr.sel.src === "bag" || pr.sel.src === "stash")) {
+          const err = pr.sel.src === "bag" ? g.toStash(pr.sel.uid!) : g.fromStash(pr.sel.uid!);
+          if (err) return this.toast(err);
+          this.sel = null;
+          return;
+        }
         if (pr.sel.src === "bag" && this.openTab === "inv") {
           if (BASE_BY_ID[it.baseId].potion) g.drinkFromBag(pr.sel.uid!);
           else {
@@ -832,6 +870,10 @@ export class Ui {
         const ty = Math.max(0, Math.min(GRID_H - h, cy));
         if (cur.src === "bag") {
           if (!g.moveInBag(cur.uid!, tx, ty)) this.toast("It doesn't fit there");
+        } else if (cur.src === "stash") {
+          const err = g.fromStash(cur.uid!, tx, ty);
+          if (err) this.toast(err);
+          else this.sel = { src: "bag", uid: cur.uid };
         } else if (cur.src === "eq") {
           const err = g.unequip(cur.slot!, tx, ty);
           if (err) this.toast(err);
@@ -839,6 +881,22 @@ export class Ui {
         } else {
           const err = g.buy(cur.uid!);
           if (err) this.toast(err);
+        }
+      }
+      return;
+    }
+    if (pr.grid === "stash") {
+      const el = this.panel.querySelector<HTMLElement>('[data-grid="stash"]')!.getBoundingClientRect();
+      if (cur && it && (cur.src === "bag" || cur.src === "stash")) {
+        const { w, h } = sizeOf(it);
+        const tx = Math.max(0, Math.min(STASH_W - w, Math.floor((x - el.left) / this.C)));
+        const ty = Math.max(0, Math.min(STASH_H - h, Math.floor((y - el.top) / this.C)));
+        if (cur.src === "stash") {
+          if (!g.moveInStash(cur.uid!, tx, ty)) this.toast("It doesn't fit there");
+        } else {
+          const err = g.toStash(cur.uid!, tx, ty);
+          if (err) this.toast(err);
+          else this.sel = { src: "stash", uid: cur.uid };
         }
       }
       return;
@@ -1020,6 +1078,10 @@ export class Ui {
     const g = this.game();
     const s = this.sel;
     const it = this.selItem();
+    const stash = this.openTab === "stash";
+    if ((!s || !it) && stash) {
+      return `<div class="hint">Your stash keeps items safe in camp, saved with your hero.<br/>Drag items between the stash and your backpack, or tap an item twice to move it across.</div>`;
+    }
     if (!s || !it) {
       return shop
         ? `<div class="hint">Tap an item to see its price.<br/>Drag your items onto Hilde's stock to sell. Drag hers into your bag to buy.</div>`
@@ -1032,6 +1094,10 @@ export class Ui {
       const cost = itemPrice(it);
       price = `<div class="price ${g.player.gold < cost ? "bad" : ""}">Price: ${cost} gold</div>`;
       btns.push(`<button class="gbtn" data-act="buy" ${g.player.gold < cost ? "disabled" : ""}>Buy</button>`);
+    } else if (s.src === "stash") {
+      btns.push(`<button class="gbtn" data-act="stash-take">To backpack</button>`);
+    } else if (s.src === "bag" && stash) {
+      btns.push(`<button class="gbtn" data-act="stash-put">To stash</button>`);
     } else if (s.src === "bag") {
       if (shop) {
         price = `<div class="price">Sells for ${sellPrice(it)} gold</div>`;
@@ -1101,6 +1167,23 @@ export class Ui {
         ${this.beltLine()}
       </div>
       <div class="idetail">${this.detailHtml(true)}</div>`;
+  }
+
+  private stashHtml() {
+    const g = this.game();
+    const p = g.player;
+    const C = this.C;
+    const items = p.stash.map((e) => this.itemBox(e.item, "stash", e.x, e.y, C)).join("");
+    return `
+      <div class="vendwrap">
+        <div class="bagtop"><span>Stash</span><span class="muted">${p.stash.length} item${p.stash.length === 1 ? "" : "s"}</span></div>
+        <div class="dnd"><div class="grid sgrid2" data-grid="stash" style="--c:${C}px;width:${STASH_W * C}px;height:${STASH_H * C}px">${items}</div></div>
+      </div>
+      <div class="bagwrap">
+        <div class="bagtop"><span>Your backpack</span><span class="gold">${p.gold.toLocaleString()} gold</span></div>
+        <div class="dnd">${this.bagGrid()}</div>
+      </div>
+      <div class="idetail">${this.detailHtml(false)}</div>`;
   }
 
   private wpHtml() {
@@ -1267,7 +1350,7 @@ export class Ui {
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.6.1 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.7 · all art made in code for this game</p>
       </div>`;
   }
 

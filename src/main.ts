@@ -217,7 +217,10 @@ function frame(now: number) {
     for (const t of input.taps) {
       const g = renderer.hitTest(game, t.x, t.y);
       if (g) game.tapGround(g);
-      else if (renderer.hitVendor(game, t.x, t.y)) {
+      else if (renderer.hitStash(game, t.x, t.y)) {
+        if (game.nearStash()) ui.open("stash");
+        else ui.toast("Walk up to the stash chest to open it");
+      } else if (renderer.hitVendor(game, t.x, t.y)) {
         if (game.nearVendor()) ui.open("shop");
         else ui.toast("Walk up to Hilde to trade");
       }

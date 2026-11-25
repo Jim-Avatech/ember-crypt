@@ -38,6 +38,7 @@ interface Art {
   tents: HTMLCanvasElement[];
   fire: HTMLCanvasElement[];
   crate: HTMLCanvasElement;
+  chest: HTMLCanvasElement;
   barrel: HTMLCanvasElement;
   stump: HTMLCanvasElement;
   waypoint: HTMLCanvasElement[];
@@ -61,6 +62,7 @@ function art(): Art {
       tents: [0, 1].map(T.tentSprite),
       fire: T.campfireFrames(),
       crate: T.crateSprite(),
+      chest: T.chestSprite(),
       barrel: T.barrelSprite(),
       stump: T.stumpSprite(),
       waypoint: T.waypointFrames(),
@@ -315,6 +317,7 @@ export class Renderer {
             pr.kind === "tree" ? A.trees[pr.v % 3]
             : pr.kind === "campfire" ? A.fire[fi(game.time * 9, 4)]
             : pr.kind === "crate" ? A.crate
+            : pr.kind === "chest" ? A.chest
             : pr.kind === "barrel" ? A.barrel
             : A.stump;
           const footY = pr.kind === "tree" ? 52 : c.height - (pr.kind === "campfire" ? 5 : 3);
@@ -737,6 +740,14 @@ export class Renderer {
   }
 
   /** Is a CSS-px point on the trader? */
+  hitStash(game: Game, x: number, y: number): boolean {
+    const s = game.level.stash;
+    if (!s) return false;
+    const cx = this.cx(s.x, s.y);
+    const cy = this.cy(s.x, s.y) - 8 * this.ascale;
+    return Math.abs(x - cx) < 16 * this.ascale && Math.abs(y - cy) < 14 * this.ascale;
+  }
+
   hitVendor(game: Game, x: number, y: number): boolean {
     const v = game.level.vendor;
     if (!v) return false;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BASE_BY_ID, makeItem } from "../src/data/items";
 import { SKILL_BY_ID, SKILLS } from "../src/data/skills";
-import { Game, type GameEvents, type FrameInput, migrateSave, refundSkills } from "../src/game";
+import { Game, type GameEvents, type FrameInput, SAVE_VERSION, migrateSave, refundSkills } from "../src/game";
 
 const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, levelUp() {}, shake() {} };
 const idle: FrameInput = { mx: 0, my: 0, mag: 0, attack: false, skills: [false, false, false] };
@@ -43,7 +43,7 @@ describe("v4 migration refunds skills that no longer qualify", () => {
   });
   it("Frenzy before level 24 is refunded and cleared from the hotbar", () => {
     const d = migrateSave(v3(18, { bash: 5, double_swing: 4, frenzy: 3 }, ["bash", "frenzy", null]))!;
-    expect(d.v).toBe(4);
+    expect(d.v).toBe(SAVE_VERSION);
     expect(d.player.skills).toEqual({ bash: 5, double_swing: 4 });
     expect(d.player.skillPoints).toBe(4);
     expect(d.player.slots).toEqual(["bash", null, null]);
