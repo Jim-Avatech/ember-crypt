@@ -6,7 +6,7 @@
 import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, qualityOf } from "./data/items";
 import { ARTIFACT_BY_ID, ARTIFACT_COLOR, type Theme, actDef } from "./data/acts";
 import { ELEM_COLOR, ELITE_MODS } from "./data/monsters";
-import type { Game, GroundItem, Monster, MonsterShot, Nova, Projectile } from "./game";
+import type { Ally, Game, GroundItem, Monster, MonsterShot, Nova, Projectile } from "./game";
 import { artifactIcon } from "./sprites/artifacts";
 import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
@@ -263,6 +263,8 @@ export class Renderer {
     }
     // boss novas: a warning ring on the ground, then the burst
     for (const n of game.novas) this.drawNova(n, game.time);
+    // v1.0: burning / poisoned ground
+    for (const pa of game.patches) this.drawPatch(pa, game.time);
     // ground items
     for (const g of game.ground) {
       if (g.artifact) {
@@ -386,11 +388,36 @@ export class Renderer {
       list.push({ d: v.x + v.y, f: () => this.drawVendor(game) });
     }
     list.push({ d: pD, f: () => this.drawPlayer(game) });
+    for (const al of game.allies) list.push({ d: al.x + al.y, f: () => this.drawAlly(game, al) });
     for (const q of game.projectiles) list.push({ d: q.x + q.y + 0.3, f: () => this.drawProjectile(q) });
     for (const q of game.shots) list.push({ d: q.x + q.y + 0.3, f: () => this.drawShot(q) });
     list.sort((a, b) => a.d - b.d);
     for (const it of list) it.f();
 
+    // v1.0 lightning arcs
+    for (const z of game.zaps) {
+      const k = 1 - z.t / z.life;
+      if (k <= 0 || z.pts.length < 2) continue;
+      for (const [w, c] of [[3, `rgba(120,160,255,${(0.35 * k).toFixed(2)})`], [1, `rgba(240,245,255,${k.toFixed(2)})`]] as const) {
+        ctx.strokeStyle = c;
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        for (let i = 0; i < z.pts.length; i++) {
+          const a = z.pts[i];
+          const x = this.ax(a.x, a.y);
+          const y = this.ay(a.x, a.y, 0.6);
+          if (i === 0) ctx.moveTo(x, y);
+          else {
+            const b = z.pts[i - 1];
+            const mx = (x + this.ax(b.x, b.y)) / 2 + (((i * 37 + Math.floor(z.t * 30)) % 7) - 3);
+            const my = (y + this.ay(b.x, b.y, 0.6)) / 2 + (((i * 53 + Math.floor(z.t * 30)) % 5) - 2);
+            ctx.lineTo(mx, my);
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+      }
+    }
     // particles
     for (const q of game.particles) {
       const a = 1 - q.t / q.life;
@@ -677,7 +704,50 @@ export class Renderer {
     };
     ctx.save();
     ctx.lineCap = "round";
-    if (q.cls === "javelin") {
+    const ec = q.elem && q.elem !== "phys" ? ELEM_COLOR[q.elem] : null;
+    if (q.kind === "arrow") {
+      if (q.cls === "magic_arrow") {
+        ctx.globalAlpha = 0.45;
+        line(-12, 2, "#8ab4ff", 3);
+        ctx.globalAlpha = 1;
+        line(-7, 5, "#d8e6ff", 1.4);
+      } else {
+        if (ec) {
+          ctx.globalAlpha = 0.45;
+          line(-12, 3, ec, 3.2);
+          ctx.globalAlpha = 1;
+        }
+        line(-7, 4, "#b08a5a", 1.2);
+        line(4, 6.5, ec ?? "#d8dde6", 2);
+        line(-8, -5.5, "#c84a32", 1.8);
+      }
+    } else if (q.kind === "bolt") {
+      // Lightning Bolt javelin: a crackling streak
+      ctx.globalAlpha = 0.5;
+      line(-16, 6, "#7aa0ff", 4);
+      ctx.globalAlpha = 1;
+      for (let i = -14; i < 6; i += 4) {
+        const j = ((Math.floor(q.t * 40) + i) % 3) - 1;
+        ctx.strokeStyle = "#f0f4ff";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + dx * i - dy * j * 2, y + dy * i + dx * j * 2);
+        ctx.lineTo(x + dx * (i + 4) + dy * j * 2, y + dy * (i + 4) - dx * j * 2);
+        ctx.stroke();
+      }
+    } else if (q.kind === "cbolt") {
+      ctx.fillStyle = "rgba(140,170,255,0.5)";
+      ctx.beginPath();
+      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f4f6ff";
+      ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2);
+    } else if (q.cls === "javelin") {
+      if (ec) {
+        ctx.globalAlpha = 0.5;
+        line(-11, 9, ec, 3.4);
+        ctx.globalAlpha = 1;
+      }
       line(-9, 5, "#a8743e", 1.6);
       line(5, 9, "#d8dde6", 2.4);
       line(-9, -6, "#5a3a1e", 2);
@@ -741,10 +811,17 @@ export class Renderer {
       }
       return { anim: hand === 1 ? "thr1" : "thr0", f: Math.min(5, Math.floor(prog * 6)) };
     }
+    if (a?.type === "shoot") {
+      const prog = a.t / a.dur;
+      // Strafe: one draw-and-release cycle per arrow
+      const n = a.releaseAt.length;
+      const local = n > 1 ? Math.min(0.999, (prog * n) % 1) : prog;
+      return { anim: "shoot", f: Math.min(5, Math.floor(local * 6)) };
+    }
     if (a?.type === "whirl") return { anim: a.hand % 2 ? "atk1" : "atk0", f: 3 }; // blade held out while spinning
     if (a?.type === "leap") return { anim: "leap", f: Math.min(2, Math.floor((a.t / a.dur) * 3)) };
     if (game.recall) return { anim: "cry", f: Math.min(3, Math.floor((game.recall.t / game.recall.dur) * 6)) };
-    if (a?.type === "cry") return { anim: "cry", f: Math.min(3, Math.floor((a.t / a.dur) * 4)) };
+    if (a?.type === "cry") return { anim: p.cls === "amazon" ? "cast" : "cry", f: Math.min(3, Math.floor((a.t / a.dur) * 4)) };
     if (p.moving) return { anim: "walk", f: Math.floor((p.walkPhase / (Math.PI * 2)) * 8) };
     return { anim: "idle", f: Math.floor(game.time * 3) };
   }
@@ -757,7 +834,7 @@ export class Renderer {
     if (!p.dead) this.shadow(sx, sy0, 8);
     const look = this.playerLook(game);
     const { anim, f } = this.playerAnim(game);
-    const fr = getFrame("barb", look, lookKey(look), anim, dirOf(p.fx, p.fy), f, p.flash > 0.5);
+    const fr = getFrame(p.cls === "amazon" ? "amazon" : "barb", look, lookKey(look), anim, dirOf(p.fx, p.fy), f, p.flash > 0.5);
     const rc = game.recall;
     if (rc) {
       // a portal forms behind you while you channel
@@ -829,6 +906,62 @@ export class Renderer {
     }
   }
 
+  /** v1.0: Immolation fire / poison cloud on the ground. */
+  private drawPatch(pa: Game["patches"][number], t: number) {
+    const ctx = this.ctx;
+    const k = Math.min(1, (pa.life - pa.t) / 0.5, pa.t / 0.2);
+    if (k <= 0) return;
+    const cx = this.ax(pa.x, pa.y);
+    const cy = this.ay(pa.x, pa.y);
+    const rx = pa.r * HW * 1.41;
+    const fire = pa.elem === "fire";
+    ctx.fillStyle = fire ? `rgba(255,110,30,${(0.18 * k).toFixed(2)})` : `rgba(110,200,60,${(0.2 * k).toFixed(2)})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, rx * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const n = Math.round(pa.r * 9);
+    for (let i = 0; i < n; i++) {
+      const a = i * 2.39996;
+      const rr = Math.sqrt((i + 0.5) / n) * rx;
+      const h = fire ? ((t * 22 + i * 5) % 9) : ((t * 6 + i * 3) % 6);
+      ctx.fillStyle = fire ? (i % 3 ? `rgba(255,170,60,${(0.85 * k).toFixed(2)})` : `rgba(255,240,160,${(0.9 * k).toFixed(2)})`) : `rgba(150,230,90,${(0.6 * k).toFixed(2)})`;
+      ctx.fillRect(Math.round(cx + Math.cos(a) * rr), Math.round(cy + Math.sin(a) * rr * 0.5 - h), 1, fire ? 2 : 1);
+    }
+  }
+
+  /** v1.0: Decoy (a shimmering copy of the hero) and the Valkyrie (a pale spearmaiden). */
+  private drawAlly(game: Game, al: Ally) {
+    const ctx = this.ctx;
+    const sx = this.ax(al.x, al.y);
+    const sy = this.ay(al.x, al.y);
+    this.shadow(sx, sy, 8);
+    const look: Look = al.kind === "decoy" ? this.playerLook(game) : { main: "pike", head: "full_helm", chest: "scale_mail", gloves: "chain_gloves", boots: "chain_boots" };
+    let anim: Anim = "idle";
+    let f = Math.floor(game.time * 3);
+    if (al.swingT > 0) {
+      anim = "atk0";
+      f = Math.min(5, Math.floor((1 - al.swingT / 0.4) * 6));
+    } else if (al.moving) {
+      anim = "walk";
+      f = Math.floor((al.walkPhase / (Math.PI * 2)) * 8);
+    }
+    const fr = getFrame("amazon", look, lookKey(look), anim, dirOf(al.fx, al.fy), f);
+    ctx.globalAlpha = al.kind === "decoy" ? 0.55 + 0.15 * Math.sin(game.time * 6) : 0.9;
+    ctx.drawImage(fr.c, sx - fr.ax, sy - fr.ay);
+    if (al.kind === "valkyrie") {
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = "#bcd8ff";
+      ctx.fillRect(sx - Math.round(fr.c.width * 0.2), sy - fr.ay + 4, Math.round(fr.c.width * 0.4), fr.ay - 4);
+    }
+    ctx.globalAlpha = 1;
+    // life bar
+    const top = sy - Math.round(spriteTop("amazon") * 1.6);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(sx - 9, top - 1, 18, 4);
+    ctx.fillStyle = al.kind === "valkyrie" ? "#8ab4ff" : "#e8d8b0";
+    ctx.fillRect(sx - 8, top, Math.max(0, Math.round(16 * (al.hp / al.maxHp))), 2);
+  }
+
   private drawMonster(m: Monster) {
     const model = m.def.species;
     const sx = this.ax(m.x, m.y);
@@ -883,6 +1016,19 @@ export class Renderer {
       ctx.beginPath();
       ctx.ellipse(sx, sy - (fr.ay >> 1), Math.max(6, fr.c.width >> 2), fr.ay >> 1, 0, 0, Math.PI * 2);
       ctx.fill();
+    }
+    if ((m.frozenT ?? 0) > 0 || (m.chillT ?? 0) > 0) {
+      // v1.0 cold: frozen solid (icy block) or chilled (blue tint)
+      const frozen = (m.frozenT ?? 0) > 0;
+      ctx.fillStyle = frozen ? "rgba(170,220,255,0.45)" : "rgba(110,170,255,0.22)";
+      ctx.fillRect(sx - Math.round(fr.c.width * 0.22), top + 3, Math.round(fr.c.width * 0.44), fr.ay - 3);
+    }
+    if (m.sight && m.sight.t > 0) {
+      ctx.strokeStyle = "rgba(255,240,170,0.8)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(sx, top - 4, 3, 1.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
     }
     if (m.stunT > 0) {
       for (let i = 0; i < 3; i++) {

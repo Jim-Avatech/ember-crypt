@@ -8,7 +8,7 @@ import { Mask, PB, type RGB, hex, mul, whiteOf } from "../pixel";
 
 import type { Species } from "../data/monsters";
 
-export type Model = "barb" | "vendor" | Species;
+export type Model = "barb" | "amazon" | "vendor" | Species;
 /** Body families: each species borrows one family's skeleton, scaled. */
 type Fam = "barb" | "zombie" | "fallen" | "boss" | "vendor";
 type Acc =
@@ -34,6 +34,8 @@ interface SpeciesDef {
 }
 const SPECIES: Record<Model, SpeciesDef> = {
   barb: { fam: "barb", pose: "barb", scale: 1, eye: "#1a0e08", acc: [] },
+  // v1.0: slimmer frame, ponytail, light armor (see AMA_DIMS and the "amazon" branches in render)
+  amazon: { fam: "barb", pose: "barb", scale: 1, eye: "#1a2a3a", acc: [] },
   vendor: { fam: "vendor", pose: "vendor", scale: 1, eye: "#1a0e08", acc: [] },
   zombie: { fam: "zombie", pose: "zombie", scale: 1, eye: "#e8f0a0", acc: [] },
   fallen: { fam: "fallen", pose: "fallen", scale: 1, eye: "#ffe14a", acc: ["horns", "blade"] },
@@ -62,8 +64,8 @@ const SPECIES: Record<Model, SpeciesDef> = {
   boss4: { fam: "boss", pose: "zombie", scale: 1.04, eye: "#ffe040", outline: "#140404", pal: { skin: "#7a2a1a", leg: "#4a1a10", boot: "#2a0e08", torso: "#5a1e12", pat: "plate" }, acc: ["bigHorns", "spikes"], a1: "#2a1a14", pad: 1.1 },
   malakar: { fam: "boss", pose: "upright", scale: 1.2, eye: "#ffe040", outline: "#140202", pal: { skin: "#b02a14", leg: "#4a2420", boot: "#2a1210", torso: "#5a2a22", pat: "plate" }, acc: ["bigHorns", "wings", "sword", "flames", "tail"], a1: "#3a1410", a2: "#ff6a1a", pad: 1.2 },
 };
-export type Anim = "idle" | "walk" | "atk0" | "atk1" | "thr0" | "thr1" | "cry" | "leap" | "death";
-export const FRAMES: Record<Anim, number> = { idle: 4, walk: 8, atk0: 6, atk1: 6, thr0: 6, thr1: 6, cry: 4, leap: 3, death: 6 };
+export type Anim = "idle" | "walk" | "atk0" | "atk1" | "thr0" | "thr1" | "cry" | "leap" | "death" | "shoot" | "cast";
+export const FRAMES: Record<Anim, number> = { idle: 4, walk: 8, atk0: 6, atk1: 6, thr0: 6, thr1: 6, cry: 4, leap: 3, death: 6, shoot: 6, cast: 4 };
 
 export interface Look {
   main?: string;
@@ -119,6 +121,9 @@ const DIMS: Record<Fam, Dims> = {
   vendor: { hipZ: 12, hipW: 1.8, thigh: 6, shin: 6, torso: 8, shW: 3.8, upper: 5, fore: 4.5, neck: 2.4, headR: 3, limb: 1.25 },
 };
 
+/** v1.0 Amazon: narrower shoulders, slightly wider hips, slimmer limbs, a touch shorter than the Barbarian. */
+const AMA_DIMS: Dims = { hipZ: 12.8, hipW: 2.3, thigh: 6.4, shin: 6.4, torso: 8.1, shW: 3.85, upper: 5.2, fore: 4.9, neck: 2.5, headR: 3.0, limb: 1.18 };
+
 const SIZE: Record<Fam, [number, number, number, number]> = {
   // w, h, anchorX, anchorY (feet)
   barb: [52, 58, 26, 52],
@@ -156,10 +161,41 @@ function keyed(keys: [number, Pose][], t: number): Pose {
 // ------------------------------------------------------------------ animations
 function barbPose(anim: Anim, f: number, look: Look): Pose {
   const offKind = look.off ? BASE_BY_ID[look.off].slot : null;
-  const twoHanded = look.main ? BASE_BY_ID[look.main].hands === 2 : false;
-  const restL = offKind === "shield" ? arm(0.55, 1.0, 0.15) : offKind === "weapon" ? arm(0.3, 0.55, 0.1, 1.25) : twoHanded ? arm(0.6, 0.9, 0.0, 1.2) : arm(0.12, 0.3, 0.12);
-  const restR = twoHanded ? arm(0.45, 0.6, 0.1, 1.55) : arm(0.3, 0.55, 0.1, 1.25); // two-handers: blade raised in a guard
+  const mainB = look.main ? BASE_BY_ID[look.main] : null;
+  const bow = mainB?.kind === "bow";
+  const twoHanded = !!mainB && mainB.hands === 2 && !bow;
+  const spear2 = twoHanded && mainB?.kind === "spear";
+  const restL =
+    bow ? arm(0.55, 0.45, 0.14, 0)
+    : offKind === "shield" ? arm(0.55, 1.0, 0.15)
+    : offKind === "weapon" ? arm(0.3, 0.55, 0.1, 1.25)
+    : twoHanded ? arm(0.6, 0.9, 0.0, 1.2)
+    : look.main === "javelin" ? arm(0.6, 0.7, 0.12) // v1.0: free hand forward for balance under the overhead javelin
+    : arm(0.12, 0.3, 0.12);
+  const restR =
+    bow ? arm(0.5, 0.9, 0.02, 0)
+    : spear2 ? arm(0.7, 0.55, 0.1, 0.75) // spear point up and forward
+    : twoHanded ? arm(0.45, 0.6, 0.1, 1.55) // two-handers: blade raised in a guard
+    : arm(0.3, 0.55, 0.1, 1.25);
   const base = pose({ armL: restL, armR: restR });
+  if (anim === "shoot") {
+    // v1.0: archer stance, bow side forward (the arms themselves are placed by bowArms in render)
+    return pose({ armL: arm(1.5, 0.05, 0.1), armR: arm(1.4, 1.6, 0.0), twist: 0.55, lean: 0.04, head: -0.1, legL: leg(0.32, 0.18), legR: leg(-0.28, 0.12), spread: 0.25 });
+  }
+  if (anim === "cast") {
+    // v1.0 Amazon spellcast: free hand thrust forward, palm out, the weapon hand back
+    const t = smooth(Math.min(1, (f + 1) / 3));
+    return pose({ armL: arm(0.5 + 1.0 * t, 0.5 - 0.4 * t, 0.15), armR: bow ? restR : arm(0.3 + 0.9 * t, 0.9, 0.25 * t, 1.0), lean: 0.12 * t, head: -0.2 * t, legL: leg(0.3, 0.2), legR: leg(-0.25, 0.12) });
+  }
+  if (spear2 && (anim === "atk0" || anim === "atk1")) {
+    // v1.0 spear: pull back, then a straight two-handed thrust (gripTwoHanded puts the other hand on the shaft)
+    const t = (f + 0.5) / 6;
+    const legs2 = (fr: Leg, bk: Leg) => ({ legL: fr, legR: bk });
+    const wind = pose({ armR: arm(0.95, 0.95, 0.1, -0.35), twist: 0.35, lean: -0.05, ...legs2(leg(0.2, 0.2), leg(-0.3, 0.2)) });
+    const thrust = pose({ armR: arm(1.5, 0.02, 0.06, 0.0), twist: -0.15, lean: 0.34, ...legs2(leg(0.55, 0.35), leg(-0.4, 0.1)) });
+    const hold = pose({ armR: arm(1.4, 0.15, 0.06, 0.0), twist: -0.1, lean: 0.28, ...legs2(leg(0.45, 0.3), leg(-0.3, 0.1)) });
+    return keyed([[0, base], [0.3, wind], [0.52, thrust], [0.72, hold], [1, base]], t);
+  }
   switch (anim) {
     case "idle": {
       const b = (1 - Math.cos((f / 4) * Math.PI * 2)) * 0.5;
@@ -431,6 +467,106 @@ function gripTwoHanded(sk: Skel, d: Dims) {
 export let lastGrip = 0;
 export let lastGripErr = 0;
 
+const norm = (v: V): V => scl(v, 1 / (len(v) || 1));
+const lerpV = (a: V, b: V, t: number): V => add(a, scl(sub(b, a), t));
+const X: V = [1, 0, 0]; // the true facing (aim) direction, independent of torso twist
+const UP: V = [0, 0, 1];
+
+/** Keyframed hand target + weapon direction, eased between keys. */
+function keyedIK(keys: [number, V, V][], t: number): [V, V] {
+  if (t <= keys[0][0]) return [keys[0][1], keys[0][2]];
+  for (let i = 1; i < keys.length; i++) {
+    if (t <= keys[i][0]) {
+      const [t0, p0, w0] = keys[i - 1];
+      const [t1, p1, w1] = keys[i];
+      const u = smooth((t - t0) / (t1 - t0));
+      return [lerpV(p0, p1, u), norm(lerpV(w0, w1, u))];
+    }
+  }
+  const k = keys[keys.length - 1];
+  return [k[1], k[2]];
+}
+
+/**
+ * v1.0 overhead javelin grip (D2 style), for the Barbarian and the Amazon: the throwing hand is held up beside
+ * the head with the shaft level above the shoulder, point forward. The melee stab thrusts forward from there and
+ * the throw cocks back and releases from the same grip. Re-solves the right arm with IK; true facing is +X.
+ */
+function javArms(sk: Skel, d: Dims, anim: Anim, f: number, walkPh: number) {
+  const S = sk.sh[1];
+  const sd = sk.side;
+  const at = (fw: number, out: number, up: number): V => add(S, add(scl(X, fw), add(scl(sd, out), scl(UP, up))));
+  const restW = norm([1, 0, -0.12]);
+  const rest = at(0.6 + 0.25 * Math.sin(walkPh), 1.1, 3.4);
+  let T = rest;
+  let w = restW;
+  const n = FRAMES[anim];
+  const t = (f + 0.5) / n;
+  if (anim === "atk0") {
+    [T, w] = keyedIK([
+      [0, rest, restW],
+      [0.28, at(-0.9, 1.1, 3.9), norm([1, 0, -0.05])],
+      [0.5, at(d.upper + d.fore - 1.4, 0.3, 2.4), norm([1, 0, -0.1])],
+      [0.72, at(d.upper + d.fore - 2.4, 0.4, 2.6), norm([1, 0, -0.1])],
+      [1, rest, restW],
+    ], t);
+  } else if (anim === "thr0") {
+    [T, w] = keyedIK([
+      [0, rest, restW],
+      [0.35, at(-2.6, 1.3, 3.6), norm([1, 0, 0.2])],
+      [0.55, at(6, 0.4, 3.0), norm([1, 0, -0.05])],
+      [0.78, at(5, 0.2, -1.5), norm([1, 0, -0.6])],
+      [1, rest, restW],
+    ], t);
+  }
+  const [E, Hd] = reach(S, T, d.upper, d.fore, add(scl(sd, 3), [0, 0, -2]));
+  sk.el[1] = E;
+  sk.hand[1] = Hd;
+  sk.wdir[1] = w;
+}
+export let lastJavHand: V = [0, 0, 0];
+
+interface BowState {
+  /** where the string is pulled to (null = string at rest) */
+  nock: V | null;
+  arrow: boolean;
+}
+/**
+ * v1.0 bow hold: the bow is held in the LEFT hand (vertical), the right hand sits on the string. In the shoot
+ * animation the bow arm extends toward the target and the right hand draws the string back to the chin, then
+ * releases. Both arms are re-solved with IK so the hands are always on the bow and the string.
+ */
+function bowArms(sk: Skel, d: Dims, anim: Anim, f: number): BowState {
+  const sd = sk.side;
+  if (anim === "shoot") {
+    const ext = [0.7, 0.95, 1, 1, 0.95, 0.8][f] ?? 1;
+    const draw = [0.3, 0.75, 1, 0, 0, 0][f] ?? 0;
+    const released = f >= 3;
+    const G = add(sk.sh[0], add(scl(X, (d.upper + d.fore - 0.6) * ext), [0, 0, 0.4 - (1 - ext) * 3]));
+    const chin = add(sk.head, add(scl(X, 0.8), add(scl(sd, 0.9), [0, 0, -2.4])));
+    const N = released ? add(chin, add(scl(X, -1.6 + f * 0.3), add(scl(sd, 1.4), [0, 0, -0.4 * (f - 3)]))) : lerpV(add(G, scl(X, -1.2)), chin, draw);
+    const [E0, H0] = reach(sk.sh[0], G, d.upper, d.fore, add(scl(sd, -3), [0, 0, -2]));
+    const [E1, H1] = reach(sk.sh[1], N, d.upper, d.fore, add(scl(sd, 3), [0, 0, 0.5]));
+    sk.el[0] = E0;
+    sk.hand[0] = H0;
+    sk.el[1] = E1;
+    sk.hand[1] = H1;
+    sk.wdir[0] = UP;
+    return { nock: released ? null : H1, arrow: !released };
+  }
+  // idle / walk / cast / leap: bow low in front, right hand resting near the grip on the string
+  const G = sk.hand[0];
+  const R = add(G, add(scl(X, -1.3), add(scl(sd, 0.9), [0, 0, 1.6])));
+  const [E1, H1] = reach(sk.sh[1], R, d.upper, d.fore, add(scl(sd, 3), [0, 0, -2]));
+  if (anim !== "cast" && anim !== "cry") {
+    sk.el[1] = E1;
+    sk.hand[1] = H1;
+  }
+  // canted across the body so it reads from the front as well as the side
+  sk.wdir[0] = norm(add(add(UP, scl(sd, -0.55)), scl(X, 0.3)));
+  return { nock: null, arrow: false };
+}
+
 // ------------------------------------------------------------------ rasterize
 interface Pt {
   x: number;
@@ -480,6 +616,30 @@ function armorColor(id?: string): { c: RGB; pat?: (x: number, y: number) => numb
   }
 }
 
+/** v1.0 Amazon take on the same armor items: cloth, leathers and bronze-toned scales, never grey plate. */
+function amaArmor(id?: string): { c: RGB; pat?: (x: number, y: number) => number } {
+  switch (id) {
+    case undefined:
+      return { c: hex("#d9a274") };
+    case "quilted_armor":
+      return { c: hex("#d4ccb4"), pat: (x, y) => ((x + y) % 4 === 0 ? 0.85 : 1) };
+    case "leather_armor":
+      return { c: hex("#74401f") };
+    case "hard_leather":
+      return { c: hex("#683a1c"), pat: (_x, y) => (y % 3 === 0 ? 0.8 : 1) };
+    case "studded_leather":
+      return { c: hex("#6a3c22"), pat: (x, y) => ((x % 3 === 0 && y % 3 === 0) ? 1.8 : 1) };
+    case "ring_mail":
+      return { c: hex("#a08a5a"), pat: (x, y) => ((x + (y % 2)) % 2 === 0 ? 0.85 : 1.05) };
+    case "scale_mail":
+      return { c: hex("#b0904e"), pat: (x, y) => ((x + ((y >> 1) % 2)) % 3 === 0 ? 0.74 : 1.06) };
+    case "chain_mail":
+      return { c: hex("#b8aa86"), pat: (x, y) => ((x ^ y) & 1 ? 0.86 : 1.05) };
+    default:
+      return { c: hex("#9a6e44") };
+  }
+}
+
 const tierColor = (id: string | undefined, leather: string, metal: string, metalFrom = 7) =>
   id ? hex(BASE_BY_ID[id].qlvl >= metalFrom ? metal : leather) : null;
 
@@ -493,6 +653,7 @@ function sizeOf(model: Model): [number, number, number, number] {
   return [W, H, Math.floor(W / 2), H - Math.ceil((bh - bay) * sp.scale)];
 }
 function dimsOf(model: Model): Dims {
+  if (model === "amazon") return AMA_DIMS;
   const sp = SPECIES[model];
   const b = DIMS[sp.fam];
   if (sp.scale === 1 && !sp.thin && !sp.head) return b;
@@ -519,7 +680,17 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
   if (sp.pose === "float") p = { ...p, bob: p.bob + 3 + Math.sin((f / 4) * Math.PI) * 0.8, legL: leg(0.9, 1.6), legR: leg(0.7, 1.5) };
   const fam = sp.fam;
   const sk = solve(d, p);
-  if (sp.pose === "barb" && anim !== "death" && isTwoHanded(look.main)) gripTwoHanded(sk, d);
+  const hero = model === "barb" || model === "amazon";
+  const ama = model === "amazon";
+  const mainKind = look.main ? BASE_BY_ID[look.main]?.kind : undefined;
+  let bowSt: BowState = { nock: null, arrow: false };
+  if (sp.pose === "barb" && anim !== "death") {
+    if (mainKind === "bow") bowSt = bowArms(sk, d, anim, f);
+    else if (look.main === "javelin" && (anim === "idle" || anim === "walk" || anim === "atk0" || anim === "thr0")) {
+      javArms(sk, d, anim, f, anim === "walk" ? (f / FRAMES.walk) * Math.PI * 2 : 0);
+      lastJavHand = sk.hand[1];
+    } else if (isTwoHanded(look.main)) gripTwoHanded(sk, d);
+  }
   const a = (dir * Math.PI) / 4;
   const ca = Math.cos(a);
   const sa = Math.sin(a);
@@ -575,6 +746,15 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     bootC = hex("#3a2a1c");
     torsoC = hex("#3c7262");
     handC = skin;
+  } else if (ama) {
+    // v1.0: same armor items, lighter look: leather and bronze scale instead of steel plates
+    skin = hex("#d9a274");
+    legC = skin;
+    const ar = amaArmor(look.chest);
+    torsoC = ar.c;
+    torsoPat = ar.pat;
+    bootC = tierColor(look.boots, "#5a3418", "#9a7a4a", 12) ?? hex("#5a3418");
+    handC = tierColor(look.gloves, "#8a6040", "#a88a58", 12) ?? skin;
   } else if (model !== "barb") {
     // set from the species palette below
   } else {
@@ -611,6 +791,7 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     cap(sk.knees[i], sk.feet[i], scale, legC);
     cap(sk.feet[i], sk.toes[i], scale * 0.95, bootC, 0.2);
     if (model === "barb") cap(add(sk.knees[i], [0, 0, -1.5]), sk.feet[i], scale * 1.05, bootC, 0.1);
+    if (ama) cap(add(sk.knees[i], [0, 0, -0.8]), sk.feet[i], scale * 1.0, bootC, 0.1, (_x, y) => (y % 3 === 0 ? 0.78 : 1));
   }
   // torso
   if (acc.has("robe")) {
@@ -626,14 +807,21 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     cap(add(sk.P, [0, -3, 1]), add(sk.P, [0, 3, 1]), 1, hex("#8a6a2a"), 4.4);
   } else {
     const belly = add(sk.P, [0, 0, 1]);
-    const tw = (fam === "fallen" ? 2.6 : fam === "boss" ? 5.2 : 3.6) * sp.scale * (sp.thin ? Math.max(0.8, sp.thin) : 1);
-    cap(belly, sk.C, tw, torsoC, 0, torsoPat);
+    const tw = ama ? 2.85 : (fam === "fallen" ? 2.6 : fam === "boss" ? 5.2 : 3.6) * sp.scale * (sp.thin ? Math.max(0.8, sp.thin) : 1);
+    cap(ama ? add(sk.P, [0, 0, 2.2]) : belly, sk.C, tw, torsoC, 0, torsoPat);
     if (acc.has("belly")) {
       // swollen gut, drawn as a sphere around the lower torso so it shows from every side
       const c = add(sk.P, add(scl(fwd, tw * 0.35), [0, 0, d.torso * 0.4]));
       parts.push({ d: pr(c).d + 0.6, color: A1, pattern: (x, y) => (hash2(x, y) < 0.2 ? 1.25 : (x + y) % 7 === 0 ? 0.85 : 1), shape: (m) => { const q = pr(c); m.ellipse(q.x, q.y, tw * 1.45, tw * 1.25); } });
     }
     cap(add(sk.C, scl(sk.side, -tw * 0.45)), add(sk.C, scl(sk.side, tw * 0.45)), tw * 0.95, torsoC, 0.05, torsoPat);
+    if (ama) {
+      // leather strip skirt (pteruges) and belt; bare midriff only without armor
+      const skirt = mul(torsoC, 0.82);
+      disc(add(sk.P, [0.2, 0, -0.6]), 3.0, look.chest ? skirt : hex("#8a5a32"), 0.3, 2.6, (x) => (x % 2 === 0 ? 0.78 : 1));
+      cap(add(sk.P, add(scl(sk.side, -2.4), [0, 0, 1])), add(sk.P, add(scl(sk.side, 2.4), [0, 0, 1])), 0.8, hex("#5a3a1e"), 2.2);
+      if (!look.chest) cap(add(sk.C, scl(sk.side, -2)), add(sk.C, scl(sk.side, 2)), 1.6, hex("#8a3a2a"), 2.4);
+    }
     if (model === "barb") {
       // fur loincloth and belt
       disc(add(sk.P, [0.3, 0, 0]), 3.1, C.fur, 0.3, 2.2, (x, y) => (hash2(x, y) < 0.25 ? 0.8 : 1));
@@ -649,6 +837,8 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     cap(sk.el[i], sk.hand[i], scale * 0.95, armC, 0.4);
     disc(sk.hand[i], scale * 0.95, i === 1 || model !== "barb" ? handC : handC, 0.5);
     if (model === "barb") disc(sk.sh[i], 1.9, look.chest && BASE_BY_ID[look.chest].qlvl >= 11 ? hex("#a2aab2") : C.fur, 0.6);
+    if (ama && look.chest && BASE_BY_ID[look.chest].qlvl >= 7) disc(sk.sh[i], 1.35, BASE_BY_ID[look.chest].qlvl >= 11 ? hex("#b89a5a") : mul(torsoC, 0.85), 0.6, 1.1);
+    if (ama && look.gloves) cap(add(sk.el[i], scl(sub(sk.hand[i], sk.el[i]), 0.45)), sk.hand[i], scale * 1.02, handC, 0.45);
     if (acc.has("spikes")) cap(sk.sh[i], add(sk.sh[i], [0, i ? 1.5 * sp.scale : -1.5 * sp.scale, 4 * sp.scale]), 1, model === "boss" ? hex("#e2d6b8") : A1, 0.7);
     if (acc.has("flames")) disc(add(sk.hand[i], [0, 0, 1.2]), d.limb * 1.5, A2, 0.7, d.limb * 2);
   }
@@ -661,6 +851,17 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     if (faceVisible) disc(add(hd, scl(fwd, 1.2)), hr * 0.62, skin, 0.4);
   } else {
     disc(hd, hr, skin, 0.1);
+    if (ama) {
+      // blonde hair with a ponytail; no beard
+      const hairC = hex("#d8a84a");
+      disc(add(hd, add(scl(fwd, -1.0), [0, 0, 0.9])), hr * 0.92, hairC, -0.1);
+      const tie = add(hd, add(scl(fwd, -hr * 0.95), [0, 0, 0.6]));
+      const t1 = add(tie, add(scl(fwd, -1.6), [0, 0, -2.6]));
+      const t2 = add(t1, add(scl(fwd, -0.4), [0, 0, -2.6]));
+      cap(tie, t1, 1.05, hairC, -0.3);
+      cap(t1, t2, 0.8, mul(hairC, 0.9), -0.3);
+      if (faceVisible) disc(add(hd, add(scl(fwd, 0.9), [0, 0, 1.9])), hr * 0.62, hairC, 0.2, hr * 0.32); // fringe
+    }
     if (model === "barb") {
       // hair at the back, beard in front
       disc(add(hd, add(scl(fwd, -1.2), [0, 0, 0.8])), hr * 0.85, C.hair, -0.1);
@@ -725,6 +926,18 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
   }
   if (model === "soul") disc(add(hd, [0, 0, hr * 0.9]), hr * 0.9, A2, 0.5, hr * 1.4);
   // helm
+  if (ama && look.head) {
+    // light headgear: headband -> leather cap -> winged circlet; the hair and ponytail stay visible
+    const q = BASE_BY_ID[look.head].qlvl;
+    const hc = q >= 11 ? hex("#c8b070") : q >= 5 ? hex("#9a7a52") : hex("#7a5636");
+    if (q >= 5 && q < 11) {
+      const top = pr(add(hd, [0, 0, 1.3]));
+      parts.push({ d: headDepth + 0.25, color: hc, shape: (m) => { m.ellipse(top.x, top.y, hr + 0.3, hr * 0.62); } });
+    }
+    const band = add(hd, [0, 0, 1.2]);
+    for (const s of [-1, 1]) cap(add(band, scl(fwd, hr * 0.9)), add(band, add(scl(sk.side, s * hr * 0.95), scl(fwd, -hr * 0.2))), 0.55, hc, 0.3);
+    if (q >= 11) for (const s of [-1, 1]) cap(add(hd, add(scl(sk.side, s * hr), [0, 0, 1.4])), add(hd, add(scl(sk.side, s * hr * 1.5), add(scl(fwd, -1.2), [0, 0, 3.2]))), 0.55, hex("#e8e0d0"), 0.4);
+  }
   if (model === "barb" && look.head) {
     const q = BASE_BY_ID[look.head].qlvl;
     const hc = q >= 11 ? hex("#a8b0b8") : q >= 5 ? hex("#8e7458") : hex("#7a5636");
@@ -751,6 +964,53 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
       return;
     }
     const two = b.hands === 2;
+    if (b.kind === "quiver") {
+      // on the back, diagonal, fletchings poking out over the right shoulder
+      const back = scl(fwd, -1);
+      const top = add(sk.C, add(scl(back, 2.4), add(scl(sk.side, 1.6), [0, 0, 1.6])));
+      const bot = add(sk.P, add(scl(back, 2.2), add(scl(sk.side, -1.2), [0, 0, 1])));
+      cap(top, bot, 1.15, hex("#6a4224"), 0, (_x, y) => (y % 4 === 0 ? 0.75 : 1));
+      const dirQ = norm(sub(top, bot));
+      for (const k of [-0.6, 0, 0.6]) {
+        const base = add(top, scl(sk.side, k));
+        cap(base, add(base, scl(dirQ, 2.2)), 0.45, k === 0 ? hex("#e8e0d0") : hex("#b83a2a"), 0.05);
+      }
+      return;
+    }
+    if (b.kind === "bow") {
+      const L = b.h >= 4 ? 10.5 : 8.2; // long bows are taller
+      const g = sk.hand[0];
+      const u: V = norm(sk.wdir[0]);
+      const out = norm(sub(X, scl(u, dot(X, u))));
+      const pts: V[] = [];
+      for (const t of [-1, -0.62, -0.28, 0, 0.28, 0.62, 1]) pts.push(add(g, add(scl(u, L * t), scl(out, -1.9 * t * t + 0.3))));
+      const limb = id.includes("battle") ? hex("#3e2614") : hex("#5a3418");
+      for (let k = 0; k < pts.length - 1; k++) cap(pts[k], pts[k + 1], k === 2 || k === 3 ? 0.62 : 0.5, limb, bias + 0.2);
+      disc(g, 0.75, hex("#3a2616"), bias + 0.3);
+      if (id.includes("battle")) for (const e of [pts[0], pts[6]]) disc(e, 0.55, C.steel, bias + 0.25);
+      const s0 = pts[0];
+      const s1 = pts[6];
+      const sc = hex("#e8e0d0");
+      if (bowSt.nock) {
+        cap(s0, bowSt.nock, 0.18, sc, bias + 0.35);
+        cap(bowSt.nock, s1, 0.18, sc, bias + 0.35);
+        if (bowSt.arrow) {
+          const tip = add(g, scl(X, 2.6));
+          cap(bowSt.nock, tip, 0.3, hex("#b08a5a"), bias + 0.4);
+          disc(tip, 0.5, C.steel, bias + 0.45);
+          disc(add(bowSt.nock, scl(X, 0.6)), 0.5, hex("#b83a2a"), bias + 0.42);
+        }
+      } else cap(s0, s1, 0.18, sc, bias + 0.15);
+      return;
+    }
+    if (b.kind === "spear" && two) {
+      // two-handed spear / pike: long shaft past both hands, leaf blade
+      const L = id === "pike" ? 18 : 15.5;
+      cap(add(hnd, scl(w, -(GRIP + 5))), add(hnd, scl(w, L)), 0.55, hex("#8a5e34"), bias);
+      cap(add(hnd, scl(w, L - 0.5)), add(hnd, scl(w, L + 4)), 1.0, C.steel, bias + 0.1);
+      cap(add(hnd, add(scl(w, L - 0.4), scl(perp, -1.2))), add(hnd, add(scl(w, L - 0.4), scl(perp, 1.2))), 0.4, C.steelDark, bias + 0.12);
+      return;
+    }
     if (b.kind === "sword") {
       const L = small ? 5 : two ? 16 : 10 + Math.min(4, b.qlvl / 5) + (b.w === 2 ? 1.5 : 0);
       cap(add(hnd, scl(w, two ? -(GRIP + 1.4) : -1.6)), hnd, 0.7, C.wood, bias);
@@ -787,7 +1047,7 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
         for (const k of [-1, 1]) cap(tip, add(tip, add(scl(perp, 3 * k), scl(w, 1))), 0.45, C.steel, bias + 0.12);
     }
   };
-  if (model === "barb") {
+  if (hero) {
     drawWeapon(1, look.main);
     drawWeapon(0, look.off);
   }
