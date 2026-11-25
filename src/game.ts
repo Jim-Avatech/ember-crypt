@@ -932,10 +932,11 @@ export class Game {
     for (const id of ["sword", "axe", "mace", "great_sword", "quarterstaff", "throwing_knife", "throwing_axe", "javelin", "spear", "short_bow", "long_bow", "arrows", "armor", "helm", "shield", "gloves", "boots", "belt"]) add(makeItem(id, Math.max(1, lvl - 1 + Math.floor(r() * 3))));
     // a few magic pieces (Hilde never sells rares)
     const n = 2 + Math.floor(r() * 3);
-    for (let i = 0; i < n; i++) {
-      const pool = ITEM_BASES.filter((b) => b.weight > 0);
+    const pool = ITEM_BASES.filter((b) => b.weight > 0 && b.slot !== "quiver"); // arrows are never magic
+    for (let i = 0, got = 0; i < n * 4 && got < n; i++) {
       const b = pool[Math.floor(r() * pool.length)];
-      add(enchant(makeItem(b.id, lvl + Math.floor(r() * 3)), "magic", r));
+      const it = enchant(makeItem(b.id, lvl + Math.floor(r() * 3)), "magic", r);
+      if (it.q === "magic" && add(it)) got++;
     }
     this.vendorStock = stock;
   }
