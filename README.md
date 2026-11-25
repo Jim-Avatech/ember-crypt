@@ -10,6 +10,32 @@ A small Diablo II–style isometric action RPG for phones, played in landscape. 
 - Settings shows **Last file backup**. After a level-up or a boss kill, if your hero (level 3+) hasn't been backed up for over 24 hours, a gentle reminder appears, at most every 12 hours.
 - Tests: `tests/filebackup.test.ts` and `npm run test:file-backup` (share sheet, download fallback, restore, a bad file refused, reminder; Chromium and WebKit).
 
+## Cloud save (ready, switched off until a free Supabase project exists)
+
+Code: `src/cloud.ts`, schema `supabase/schema.sql`, tests `tests/cloud.test.ts` + `scripts/cloud-ui.mjs` (two devices against a fake Supabase).
+
+- **Sign-in:** email + 6-digit code. There's no password, and no link that would open Safari instead of the Home Screen app.
+- **Storage:** one row per player, protected by row-level security. Writes go through `put_save()`, a server-side compare-and-swap.
+- **Sync:** 2.5 s after opening, every 60 s, when the app is hidden or comes back online, and with **Sync now**.
+- **Conflicts:**
+  - Newest wins. The losing copy is kept: on the device it goes into Backups; in the cloud it goes into `prev_data`.
+  - A device's **first** sync keeps the hero with more progress, so a fresh level-1 hero on a new phone never overwrites the real one.
+- **Flag:** off unless the build has `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` and `VITE_CLOUD=1` (or `?cloud` in the URL). With it off, nothing is loaded or shown.
+
+**To switch it on (free tier, no card):**
+
+1. Create a free account at supabase.com (sign in with GitHub or email), then create a project on the Free plan.
+2. Run `supabase/schema.sql` in the SQL editor.
+3. Auth → Providers → Email: keep it enabled.
+4. Auth → Email Templates → "Magic Link": make sure the body contains `{{ .Token }}` so the email shows the 6-digit code.
+5. Project Settings → API: copy the Project URL and the `anon` public key into a `.env.local`:
+   `VITE_SUPABASE_URL=…`, `VITE_SUPABASE_ANON_KEY=…`, `VITE_CLOUD=1`
+6. Build and deploy.
+
+**Free-tier limits:**
+- Free projects pause after about a week with no activity; resuming is one click in the dashboard. The game keeps working offline meanwhile.
+- The built-in email sender allows only a few emails per hour. That's fine for signing in a couple of devices.
+
 ## v0.8.2 — compare cards scroll
 
 - Each card in the compare sheet now scrolls on its own by touch. Before, the game's touch handler blocked scrolling outside the panel body, so long items were cut off. A "▾ more" fade shows while a card has more below it, and spacing is tighter so most items fit without scrolling at 852×393.

@@ -11,7 +11,8 @@
     "test": "vitest run",
     "e2e": "node scripts/e2e.mjs",
     "test:compare-scroll": "node scripts/compare-scroll.mjs http://127.0.0.1:5174/ember-crypt/ \"\" 300 && node scripts/compare-scroll.mjs",
-    "test:file-backup": "node scripts/file-backup.mjs"
+    "test:file-backup": "node scripts/file-backup.mjs",
+    "test:cloud-ui": "node scripts/cloud-ui.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",

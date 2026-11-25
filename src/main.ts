@@ -10,6 +10,7 @@ import {
   canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings, cleanSettings,
   keepDamaged, pauseSaving, requestPersist, saveGame, saveSettings, lastFileBackup, markFileBackup, backupFileName, takeBackupReminder,
 } from "./save";
+import { Cloud, cloudConfig } from "./cloud";
 import { Ui } from "./ui";
 
 const app = document.getElementById("app")!;
@@ -80,6 +81,8 @@ function startGame(): Game {
     throw err;
   }
 }
+const cloudCfg = cloudConfig(import.meta.env as Record<string, string | undefined>, location.search);
+const cloud = cloudCfg ? new Cloud(cloudCfg) : null;
 let game = startGame();
 
 const ui = new Ui(app, () => game, input, settings, {
@@ -111,6 +114,7 @@ const ui = new Ui(app, () => game, input, settings, {
     lastFileBackup: () => lastFileBackup(),
     markFileBackup: () => markFileBackup(),
     fileName: () => backupFileName(game.player.level),
+    cloud: cloud ? cloudHooks(cloud) : undefined,
   },
   click: () => sfx.play("click"),
   testSound: () => sfx.test(),
@@ -121,6 +125,48 @@ function applyAuto() {
   game.auto = { hp: settings.autoHp, hpAt: settings.autoHpAt, mp: settings.autoMp };
 }
 applyAuto();
+
+// ---- v0.9: cloud save (off unless the build has a free Supabase project configured and VITE_CLOUD=1, or ?cloud)
+function cloudHooks(c: Cloud) {
+  return {
+    signedIn: () => c.signedIn,
+    email: () => c.session?.email ?? "",
+    status: () => (c.lastSyncAt ? `synced ${new Date(c.lastSyncAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "not synced yet"),
+    sendCode: (email: string) => c.sendCode(email).catch((e) => String(e?.message ?? e)),
+    verify: (email: string, code: string) => c.verify(email, code).catch((e) => String(e?.message ?? e)),
+    syncNow: () => cloudSync(true),
+    signOut: () => c.signOut(),
+  };
+}
+let cloudBusy = false;
+async function cloudSync(manual = false): Promise<string> {
+  if (!cloud?.signedIn || cloudBusy || !canSave()) return "";
+  cloudBusy = true;
+  try {
+    if (dirty) doSave();
+    const local = lastSavedAt() ? { ...withSettings(), savedAt: lastSavedAt() } : null;
+    const r = await cloud.sync(local);
+    if (r.kind === "pulled") {
+      replaceGame(r.data); // the hero on this device goes into Backups first
+      cloud.adopted(lastSavedAt());
+      ui.toast(`Cloud save: loaded your level ${r.data.player.level} hero from your other device. This device's hero is in Backups.`, 6000);
+      return "Loaded the newer hero from the cloud.";
+    }
+    if (r.kind === "pushed") return manual ? "Saved to the cloud." : "";
+    if (r.kind === "none") return manual ? "Already in sync." : "";
+    if (r.kind === "offline") return "Offline: will sync when you're back online.";
+    if (r.kind === "signed-out") return "Signed out (session expired). Sign in again to sync.";
+    return `Sync failed: ${r.message ?? "unknown error"}`;
+  } finally {
+    cloudBusy = false;
+  }
+}
+if (cloud) {
+  setTimeout(() => void cloudSync(), 2500);
+  setInterval(() => void cloudSync(), 60_000);
+  addEventListener("online", () => void cloudSync());
+  document.addEventListener("visibilitychange", () => void cloudSync());
+}
 
 /** v0.8.3: a gentle nudge to back up to Files when the last file backup is over a day old. */
 function remindBackup(delay: number) {

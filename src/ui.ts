@@ -87,6 +87,16 @@ export interface SaveTools {
   importCode(text: string): SaveData | null;
   backups(): { key: string; level: number; savedAt: number }[];
   lastFileBackup(): number;
+  /** v0.9 cloud save (only present when the build has a Supabase project and the flag is on) */
+  cloud?: {
+    signedIn(): boolean;
+    email(): string;
+    status(): string;
+    sendCode(email: string): Promise<string | null>;
+    verify(email: string, code: string): Promise<string | null>;
+    syncNow(): Promise<string>;
+    signOut(): void;
+  };
   markFileBackup(): void;
   fileName(): string;
   loadBackup(key: string): SaveData | null;
@@ -531,6 +541,13 @@ export class Ui {
       case "imp-no":
       case "bak":
         void this.saveAction(act, el);
+        return;
+      case "cloud-send":
+      case "cloud-verify":
+      case "cloud-sync":
+      case "cloud-out":
+      case "cloud-back":
+        void this.cloudAction(act);
         return;
       case "testsnd": {
         this.hooks.testSound();
@@ -1406,6 +1423,21 @@ export class Ui {
       saveBox += `<div class="baks">Backups: ${baks
         .map((b) => `<button class="gbtn dim bak" data-act="bak" data-key="${b.key}">Lv ${b.level} · ${b.savedAt ? new Date(b.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "?"}</button>`)
         .join("")}</div>`;
+    const cl = sv.cloud;
+    if (cl) {
+      saveBox += `<div class="cloudbox"><b>☁ Cloud save</b>`;
+      if (cl.signedIn())
+        saveBox += `<div class="saved-at">Signed in as ${esc(cl.email())} · <span id="cloudstat">${esc(cl.status())}</span></div>
+          <div class="srow2"><button class="gbtn" data-act="cloud-sync">Sync now</button><button class="gbtn dim" data-act="cloud-out">Sign out</button></div>`;
+      else if (this.cloudStep === "code")
+        saveBox += `<div class="saved-at">We emailed a 6-digit code to ${esc(this.cloudEmail)}.</div>
+          <div class="srow2"><input id="cloud-code" class="codebox" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456"/><button class="gbtn" data-act="cloud-verify">Sign in</button><button class="gbtn dim" data-act="cloud-back">Back</button></div>`;
+      else
+        saveBox += `<div class="saved-at">Sign in with your email to keep your hero in sync across devices.</div>
+          <div class="srow2"><input id="cloud-email" class="codebox" type="email" autocomplete="email" placeholder="you@example.com" value="${esc(this.cloudEmail)}"/><button class="gbtn" data-act="cloud-send">Email me a code</button></div>`;
+      if (this.cloudMsg) saveBox += `<div class="savemsg">${esc(this.cloudMsg)}</div>`;
+      saveBox += `</div>`;
+    }
     saveBox += `<small class="savenote">Saves on this device after every change and when you leave the app. On iPhone, add the game to your Home Screen so Safari doesn&rsquo;t clear it, and tap 📁 Back up to Files now and then (Save to Files → iCloud Drive) so your hero survives a lost or reset phone.</small></div>`;
     return `
       <div class="set-col">
@@ -1524,6 +1556,40 @@ export class Ui {
       box.select();
       box.setSelectionRange(0, box.value.length);
     }
+  }
+
+  private cloudStep: "email" | "code" = "email";
+  private cloudEmail = "";
+  private cloudMsg = "";
+  private async cloudAction(act: string) {
+    const cl = this.hooks.save.cloud;
+    if (!cl) return;
+    this.cloudMsg = "";
+    const val = (id: string) => this.panel.querySelector<HTMLInputElement>(id)?.value.trim() ?? "";
+    if (act === "cloud-send") {
+      const email = val("#cloud-email");
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) this.cloudMsg = "Enter your email address.";
+      else {
+        this.cloudEmail = email;
+        this.cloudMsg = "Sending…";
+        this.renderPanel();
+        const err = await cl.sendCode(email);
+        this.cloudMsg = err ? `Couldn't send the code: ${err}` : "";
+        if (!err) this.cloudStep = "code";
+      }
+    } else if (act === "cloud-verify") {
+      const err = await cl.verify(this.cloudEmail, val("#cloud-code"));
+      if (err) this.cloudMsg = `That code didn't work: ${err}`;
+      else {
+        this.cloudStep = "email";
+        this.cloudMsg = await cl.syncNow();
+      }
+    } else if (act === "cloud-sync") this.cloudMsg = await cl.syncNow();
+    else if (act === "cloud-out") {
+      cl.signOut();
+      this.cloudMsg = "Signed out. Your hero stays on this device.";
+    } else if (act === "cloud-back") this.cloudStep = "email";
+    if (this.openTab === "settings") this.renderPanel();
   }
 
   /** File chosen in the import box. */

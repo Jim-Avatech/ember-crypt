@@ -1314,3 +1314,5 @@ body.portrait #rotate {
 .gbtn.hot { border-color: #c7a050; color: #ffe2a0; }
 .filebak .gbtn { flex: 1; }
 #filebak-at { margin-top: 2px; }
+.cloudbox { margin-top: 8px; padding-top: 6px; border-top: 1px solid #3a2c1c; }
+.cloudbox .codebox { flex: 1; min-width: 0; height: 34px; }
