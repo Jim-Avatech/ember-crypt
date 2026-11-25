@@ -211,6 +211,7 @@ export class Renderer {
       const f = A.waypoint[fi(game.time * 5, 4)];
       ctx.drawImage(f, this.ax(wp.x - 0.5, wp.y - 0.5) - HW, this.ay(wp.x - 0.5, wp.y - 0.5));
     }
+    if (game.portal && game.inTown) this.drawPortal(ctx, game.portal.x, game.portal.y, game.time, 1);
     // rings
     for (const rg of game.rings) {
       const kk = rg.t / rg.life;
@@ -501,6 +502,27 @@ export class Renderer {
     }
   }
 
+  /** Blue oval portal (camp → where you recalled from), or the forming one while channeling. */
+  private drawPortal(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, k: number) {
+    const cx = Math.round(this.ax(x, y));
+    const cy = Math.round(this.ay(x, y));
+    const H = Math.round(34 * k);
+    const W = Math.round(12 * k);
+    // ground glow
+    ctx.fillStyle = `rgba(80,150,255,${0.25 * k})`;
+    ctx.fillRect(cx - W - 3, cy - 1, W * 2 + 7, 3);
+    for (let yy = 0; yy < H; yy++) {
+      const v = (yy - H / 2) / (H / 2);
+      const half = Math.round(W * Math.sqrt(Math.max(0, 1 - v * v)));
+      for (let xx = -half; xx <= half; xx++) {
+        const edge = Math.abs(xx) >= half - 1;
+        const swirl = Math.sin(xx * 0.9 + yy * 0.5 - t * 6) > 0.4;
+        ctx.fillStyle = edge ? `rgba(170,215,255,${0.95 * k})` : swirl ? `rgba(90,160,255,${0.8 * k})` : `rgba(30,70,170,${0.75 * k})`;
+        ctx.fillRect(cx + xx, cy - H + yy, 1, 1);
+      }
+    }
+  }
+
   playerLook(game: Game): Look {
     const e = game.player.equip;
     return { main: lookOf(e.main), off: lookOf(e.off), head: lookOf(e.head), chest: lookOf(e.chest), gloves: lookOf(e.gloves), boots: lookOf(e.boots) };
@@ -524,6 +546,7 @@ export class Renderer {
       return { anim: hand === 1 ? "atk1" : "atk0", f: Math.min(5, Math.floor(prog * 6)) };
     }
     if (a?.type === "leap") return { anim: "leap", f: Math.min(2, Math.floor((a.t / a.dur) * 3)) };
+    if (game.recall) return { anim: "cry", f: Math.min(3, Math.floor((game.recall.t / game.recall.dur) * 6)) };
     if (a?.type === "cry") return { anim: "cry", f: Math.min(3, Math.floor((a.t / a.dur) * 4)) };
     if (p.moving) return { anim: "walk", f: Math.floor((p.walkPhase / (Math.PI * 2)) * 8) };
     return { anim: "idle", f: Math.floor(game.time * 3) };
@@ -538,7 +561,22 @@ export class Renderer {
     const look = this.playerLook(game);
     const { anim, f } = this.playerAnim(game);
     const fr = getFrame("barb", look, lookKey(look), anim, dirOf(p.fx, p.fy), f, p.flash > 0.5);
+    const rc = game.recall;
+    if (rc) {
+      // a portal forms behind you while you channel
+      const k = Math.min(1, rc.t / rc.dur);
+      this.drawPortal(this.ctx, p.x - 0.55, p.y - 0.55, game.time, 0.3 + 0.7 * k);
+    }
     this.ctx.drawImage(fr.c, sx - fr.ax, sy - fr.ay);
+    if (rc) {
+      // blue sparks spiralling up
+      for (let i = 0; i < 10; i++) {
+        const a = game.time * 5 + i * 0.63;
+        const h = ((game.time * 18 + i * 7) % 30);
+        this.ctx.fillStyle = `rgba(140,200,255,${(0.9 - h / 34).toFixed(2)})`;
+        this.ctx.fillRect(Math.round(sx + Math.cos(a) * 9), Math.round(sy0 - h + Math.sin(a) * 3), 1, 2);
+      }
+    }
     // frenzy glow under the feet
     if (p.frenzy.stacks > 0 && !p.dead) {
       this.ctx.fillStyle = `rgba(255,90,40,${0.12 + p.frenzy.stacks * 0.05})`;

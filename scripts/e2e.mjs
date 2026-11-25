@@ -36,6 +36,7 @@ const center = async (sel) => {
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 };
 async function tapAt(pt, id = 3) {
+  if (typeof id !== "number") id = 3;
   await touch("touchStart", [{ ...pt, id }]);
   await wait(50);
   await touch("touchEnd", []);
@@ -547,6 +548,137 @@ await page.goto(`${base}?debug`);
 await wait(1200);
 const reloaded = await ev(() => ({ off: __ec.game.player.equip.off?.baseId, q: __ec.game.player.equip.off?.q, mods: __ec.game.player.equip.off?.mods?.length, town: __ec.game.inTown, bag: __ec.game.player.bag.length }));
 check("A saved game reloads (in camp, gear kept)", reloaded.off === "sword" && reloaded.q === "rare" && reloaded.mods > 2 && reloaded.town, JSON.stringify(reloaded));
+
+// ---------------------------------------------------------------- 14b. tap targets in every panel
+{
+  // simulate iPhone landscape safe areas (notch side + home indicator)
+  await ev(() => { const s = document.documentElement.style; s.setProperty("--sal", "59px"); s.setProperty("--sar", "59px"); s.setProperty("--sab", "21px"); });
+  await wait(100);
+  const panels = ["char", "inv", "skills", "settings"];
+  let small = [];
+  let misses = [];
+  for (const tab of panels) {
+    // open with a real tap on the HUD button; the lifting finger must not hit what appears under it
+    await tap(`.mbtn[data-tab="${tab}"]`);
+    await wait(250);
+    if ((await ev(() => __ec.ui.openTab)) !== tab) misses.push(`open ${tab}`);
+    const rects = await ev(() => [...document.querySelectorAll("#panel .ptab, #panel .pclose")].map((e) => { const r = e.getBoundingClientRect(); return { t: e.dataset.tab ?? "X", x: r.x, y: r.y, w: r.width, h: r.height }; }));
+    for (const r of rects) if (r.w < 44 || r.h < 44) small.push(`${tab}/${r.t} ${r.w.toFixed(0)}x${r.h.toFixed(0)}`);
+    // the X stays clear of the notch inset
+    const X = rects.find((r) => r.t === "X");
+    if (X.x + X.w > 852 - 59) misses.push(`X under notch (${X.x + X.w})`);
+    for (const r of rects) {
+      // corners, edges and a near miss just above the bar
+      const pts = [[3, 3], [r.w - 3, 3], [3, r.h - 3], [r.w - 3, r.h - 3], [r.w / 2, -5]];
+      for (const [dx, dy] of pts) {
+        await ev((t) => { if (__ec.ui.openTab !== t) { __ec.ui.close(); __ec.ui.open(t); } }, tab);
+        await wait(80);
+        await tapAt({ x: r.x + dx, y: r.y + dy }, 9);
+        const now = await ev(() => __ec.ui.openTab);
+        const want = r.t === "X" ? null : r.t;
+        if (now !== want) misses.push(`${tab}: ${r.t} @${dx.toFixed(0)},${dy.toFixed(0)} → ${now}`);
+      }
+    }
+    // a slightly sloppy tap (finger drifts 14px) still counts
+    await ev((t) => { __ec.ui.close(); __ec.ui.open(t); }, tab);
+    await wait(80);
+    const sk = rects.find((r) => r.t === "skills");
+    await touch("touchStart", [{ x: sk.x + sk.w / 2, y: sk.y + sk.h / 2, id: 9 }]);
+    await touch("touchMove", [{ x: sk.x + sk.w / 2 + 12, y: sk.y + sk.h / 2 + 7, id: 9 }]);
+    await wait(40);
+    await touch("touchEnd", []);
+    await wait(120);
+    if ((await ev(() => __ec.ui.openTab)) !== "skills") misses.push(`${tab}: drifting tap on Skills`);
+    // panels block the game: a left-side touch doesn't grab the joystick
+    await touch("touchStart", [{ x: 150, y: 300, id: 10 }]);
+    await wait(60);
+    const joy = await ev(() => __ec.input.joyId);
+    await touch("touchEnd", []);
+    await wait(60);
+    if (joy !== null) misses.push(`${tab}: joystick grabbed under panel`);
+    await ev(() => __ec.ui.close());
+    await wait(100);
+  }
+  // tapping the dim backdrop far from any button closes the panel
+  await tap('.mbtn[data-tab="settings"]');
+  await wait(200);
+  await tapAt({ x: 20, y: 380 });
+  if ((await ev(() => __ec.ui.openTab)) !== null) misses.push("backdrop tap didn't close");
+  // shop and waypoint panels too
+  await ev(() => __ec.ui.open("shop"));
+  await wait(150);
+  const sx = await ev(() => { const r = document.querySelector("#panel .pclose").getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  await tapAt({ x: sx.x + sx.w - 3, y: sx.y + 3 });
+  if ((await ev(() => __ec.ui.openTab)) !== null) misses.push("shop X corner");
+  check("Every tab and X is at least 44x44", small.length === 0, small.join(", "));
+  check("Taps on tab/X edges, near misses and drifting taps all land (with iPhone safe areas)", misses.length === 0, misses.slice(0, 8).join(" | "));
+  await ev(() => { const s = document.documentElement.style; s.removeProperty("--sal"); s.removeProperty("--sar"); s.removeProperty("--sab"); });
+}
+
+// settings panel screenshot
+await tap('.mbtn[data-tab="settings"]');
+await wait(250);
+await page.screenshot({ path: `${outDir}/settings.png` });
+await ev(() => __ec.ui.close());
+
+// ---------------------------------------------------------------- 14c. Return to Town + portal back
+{
+  await ev(() => __ec.game.goDungeon(1));
+  await wait(400);
+  const hud = await ev(() => { const b = document.getElementById("btn-town"); const r = b.getBoundingClientRect(); return { shown: !b.hidden, w: r.width, h: r.height }; });
+  check("Town button shows in the crypt HUD (44pt+ hit area)", hud.shown && hud.h >= 40, JSON.stringify(hud));
+  // walk somewhere, then recall while a monster is hitting us
+  const spot = await ev(() => {
+    const g = __ec.game; const p = g.player;
+    const alive = g.monsters.filter((m) => m.state !== "dead" && m.def.kind !== "boss");
+    alive.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y));
+    const m = alive[0];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (!g.blocked(m.x + dx, m.y + dy, p.r)) { p.x = m.x + dx; p.y = m.y + dy; break; }
+    p.hp = g.derived().maxHp;
+    return { x: p.x, y: p.y, n: g.monsters.length, floor: g.floor, dead: g.monsters.filter((q) => q.state === "dead").length };
+  });
+  await wait(300);
+  await page.screenshot({ path: `${outDir}/hud-town-button.png` });
+  await tap("#btn-town");
+  await wait(500);
+  const mid = await ev(() => {
+    const g = __ec.game;
+    const m = g.monsters.find((q) => q.state !== "dead");
+    const hp0 = g.player.hp;
+    m.ar = 9999; m.mlvl = 500; m.dmgMin = 2; m.dmgMax = 3;
+    for (let i = 0; i < 3; i++) g["monsterHit"](m, g.derived());
+    return { recall: !!g.recall, hit: g.player.hp < hp0, hp0, hp: g.player.hp, act: g.player.action, t: g.time, en: __ec.input.enabled };
+  });
+  await page.screenshot({ path: `${outDir}/return-to-town.png` });
+  await wait(1100);
+  const town = await ev(() => ({ town: __ec.game.inTown, portal: __ec.game.portal?.floor, ctx: __ec.game.contextAction(), r: __ec.game.recall, dead: __ec.game.player.dead, toast: document.getElementById("toast").textContent, joy: __ec.input.joyId, tab: __ec.ui.openTab, hidden: document.hidden, portrait: document.body.classList.contains("portrait"), time: __ec.game.time, hp: __ec.game.player.hp }));
+  check("Return to Town: monster hits don't interrupt it, and you arrive in camp", mid.recall && mid.hit && town.town && town.portal === spot.floor, JSON.stringify({ mid, town, e: errors.slice(0, 3) }));
+  // walk to the portal and take it back
+  await ev(() => { const g = __ec.game; g.player.x = g.portal.x + 0.6; g.player.y = g.portal.y + 0.6; });
+  await wait(300);
+  await page.screenshot({ path: `${outDir}/camp-portal.png` });
+  const lbl = await ev(() => document.getElementById("btn-ctx").textContent);
+  await tap("#btn-ctx");
+  await wait(400);
+  const back = await ev(() => { const g = __ec.game; const p = g.player; return { town: g.inTown, floor: g.floor, x: p.x, y: p.y, n: g.monsters.length, portal: !!g.portal }; });
+  check("Camp portal takes you back to the same spot and level", /Portal/.test(lbl) && !back.town && back.floor === spot.floor && Math.hypot(back.x - spot.x, back.y - spot.y) < 0.6 && back.n === spot.n && !back.portal, JSON.stringify({ lbl, back, spot }));
+  // walking cancels it
+  await tap("#btn-town");
+  await wait(200);
+  await touch("touchStart", [{ x: 200, y: 250, id: 1 }]);
+  for (let i = 1; i <= 6; i++) { await touch("touchMove", [{ x: 200 + i * 8, y: 250, id: 1 }]); await wait(30); }
+  await touch("touchEnd", []);
+  await wait(1300);
+  check("Walking cancels Return to Town", await ev(() => !__ec.game.inTown && !__ec.game.recall));
+  // the menu has it too
+  await ev(() => __ec.ui.open("settings"));
+  await wait(150);
+  await tap('[data-act="recall"]');
+  await wait(1600);
+  check("Return to Town is also in the Settings menu", await ev(() => __ec.game.inTown));
+  // nothing ever needs identifying
+  check("Items never need identifying", await ev(() => { const it = __ec.items.rollDrop(10, 0, true); return !("identified" in it) && it.mods?.length > 0; }));
+}
 
 // ---------------------------------------------------------------- 15. portrait + perf
 await page.setViewportSize({ width: 393, height: 852 });

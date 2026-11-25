@@ -3,6 +3,11 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.4 — easier taps, Return to Town
+
+- **Tap targets:** every tab, close button and menu button is at least 44×44 pt. Panel buttons now act on finger-up with some slack (a tap that drifts a little or lands just above a tab still counts). Tapping the dim area around a panel only closes it when you're clearly away from any button. The game ignores touches while a panel is open.
+- **Return to Town:** a ⌂ Town button (top right, in the crypt) and a menu entry in Settings. Stand still for 1.2 s; monster hits don't interrupt it, walking cancels it. A blue portal appears next to the camp waypoint and takes you back to the exact spot, with the level as you left it. Items never need identifying.
+
 ## v0.3 — magic and rare items, simpler item classes, faster movement
 
 - **One base per item class.** Sword, Axe, Mace, Great Sword (two-handed), Armor, Helm, Shield, Gloves, Boots, Belt, Ring, Amulet. The class sets damage spread (axe swingy, mace steady), attack speed, grid size and requirements. **Item level** sets the damage or defense numbers. **Rarity** sets how many random affixes it gets. Old saves are converted to the new classes automatically (the old item art is kept, picked by class and level).

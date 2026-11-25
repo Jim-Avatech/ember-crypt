@@ -77,6 +77,7 @@ export class Ui {
   private toastT = 0;
   private confirmReset = false;
   private openedAt = 0;
+  private btnTap: { id: number; x: number; y: number } | null = null;
   private lastPanelDown = 0;
   private press: Press | null = null;
   /** a click synthesized right where a drag ended is ignored */
@@ -108,6 +109,7 @@ export class Ui {
           <canvas id="minimap" width="150" height="90"></canvas>
         </div>
         <div class="hud-tr">
+          <button class="mbtn town" id="btn-town" aria-label="Return to Town" hidden><span class="ti">⌂</span> Town<i class="rfill"></i></button>
           <button class="mbtn" data-tab="char" aria-label="Character">Char<i class="dot" id="dot-char"></i></button>
           <button class="mbtn" data-tab="inv" aria-label="Inventory">Bag</button>
           <button class="mbtn" data-tab="skills" aria-label="Skills">Skills<i class="dot" id="dot-skills"></i></button>
@@ -159,19 +161,47 @@ export class Ui {
     Input.tapButton($(root, "#btn-hp"), () => this.game().usePotion("hp"));
     Input.tapButton($(root, "#btn-mp"), () => this.game().usePotion("mp"));
     Input.tapButton($(root, "#btn-ctx"), () => this.contextTap());
+    Input.tapButton($(root, "#btn-town"), () => this.recallTap());
     Input.tapButton($(root, "#btn-respawn"), () => {
       this.game().respawn();
       $(root, "#death").hidden = true;
     });
-    root.querySelectorAll<HTMLElement>(".mbtn").forEach((b) => Input.tapButton(b, () => this.open(b.dataset.tab as PanelTab)));
+    root.querySelectorAll<HTMLElement>(".mbtn[data-tab]").forEach((b) => Input.tapButton(b, () => this.open(b.dataset.tab as PanelTab)));
     this.panel.addEventListener("pointerdown", (e) => {
       this.lastPanelDown = performance.now();
+      // buttons: our own tap tracking (fires on pointerup), so iOS's click rules can't drop taps
+      if (!(e.target as HTMLElement).closest(".dnd")) this.btnTap = { id: e.pointerId, x: e.clientX, y: e.clientY };
       this.onDown(e);
     });
     this.panel.addEventListener("pointermove", (e) => this.onMove(e));
-    this.panel.addEventListener("pointerup", (e) => this.onUp(e));
-    this.panel.addEventListener("pointercancel", () => this.cancelDrag());
-    this.panel.addEventListener("click", (e) => this.onPanelClick(e));
+    this.panel.addEventListener("pointerup", (e) => {
+      const bt = this.btnTap;
+      if (bt && bt.id === e.pointerId) {
+        this.btnTap = null;
+        if (Math.hypot(e.clientX - bt.x, e.clientY - bt.y) < 24 && !(e.target as HTMLElement).closest(".dnd")) {
+          e.preventDefault();
+          this.onPanelTap(e.target as HTMLElement, e.clientX, e.clientY);
+          return;
+        }
+      }
+      this.onUp(e);
+    });
+    this.panel.addEventListener("pointercancel", () => {
+      this.btnTap = null;
+      this.cancelDrag();
+    });
+    // synthesized clicks are ignored: every panel action runs from pointerup above
+    this.panel.addEventListener("click", (e) => e.preventDefault());
+  }
+
+  /** Town button: start (or cancel) Return to Town. */
+  recallTap() {
+    const g = this.game();
+    if (g.inTown) return;
+    if (g.recall) {
+      g.recall = null;
+      this.toast("Return to Town cancelled");
+    } else if (g.startRecall()) this.toast("Returning to Ember Camp…");
   }
 
   /** The button above the controls: descend, trade or use the waypoint. */
@@ -181,6 +211,7 @@ export class Ui {
     if (a === "descend") g.descend();
     else if (a === "trade") this.open("shop");
     else if (a === "waypoint") this.open("wp");
+    else if (a === "portal") g.usePortal();
   }
 
   // ------------------------------------------------------------ HUD
@@ -199,6 +230,7 @@ export class Ui {
       Math.round(hpPct * 200), Math.round(mpPct * 200), Math.round(xpPct * 300), Math.ceil(p.hp), Math.ceil(p.mana),
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
       Math.ceil(p.buffs.shout), Math.ceil(p.buffs.bo), p.frenzy.stacks, Math.ceil(p.frenzy.t), g.maxFloor,
+      g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0,
     ].join("|");
     if (key === this.lastHud) return;
     this.lastHud = key;
@@ -213,7 +245,7 @@ export class Ui {
     $(r, "#btn-hp").classList.toggle("empty", p.hpPots === 0);
     $(r, "#btn-mp").classList.toggle("empty", p.mpPots === 0);
     $(r, "#floor-label").textContent = `${g.inTown ? "Ember Camp" : `Ember Crypt · Level ${g.floor}`}   ·   Lv ${p.level} Barbarian`;
-    $(r, "#objective").textContent = g.inTown ? (g.maxFloor <= 1 && p.kills === 0 ? "Walk to the glowing waypoint ✦ to enter the crypt" : "Trade with Hilde, then take the waypoint ✦") : "";
+    $(r, "#objective").textContent = g.inTown ? (g.maxFloor <= 1 && p.kills === 0 ? "Walk to the glowing waypoint ✦ to enter the crypt" : g.portal ? `The blue portal ◎ leads back to Level ${g.portal.floor}` : "Trade with Hilde, then take the waypoint ✦") : g.recall ? "Returning to town… (walk to cancel)" : "";
     $(r, "#dot-char").textContent = p.statPoints ? `${p.statPoints}` : "";
     $(r, "#dot-skills").textContent = p.skillPoints ? `${p.skillPoints}` : "";
     for (let i = 0; i < 3; i++) {
@@ -231,10 +263,14 @@ export class Ui {
         el.classList.toggle("nomana", cost > p.mana);
       }
     }
+    const tb = $(r, "#btn-town");
+    tb.hidden = g.inTown || p.dead;
+    tb.classList.toggle("channel", !!g.recall);
+    ($(r, "#btn-town .rfill") as HTMLElement).style.width = g.recall ? `${Math.min(100, (g.recall.t / g.recall.dur) * 100)}%` : "0";
     const btn = $(r, "#btn-ctx");
     btn.hidden = !ctx;
     btn.dataset.kind = ctx ?? "";
-    btn.textContent = ctx === "descend" ? `▼ Descend to Level ${g.floor + 1}` : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "waypoint" ? "✦ Waypoint" : "";
+    btn.textContent = ctx === "descend" ? `▼ Descend to Level ${g.floor + 1}` : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to Level ${g.portal?.floor}` : "";
     const buffs: string[] = [];
     if (p.frenzy.stacks > 0) {
       const left = p.frenzy.t > 0 ? Math.ceil(p.frenzy.t) : 0;
@@ -283,6 +319,7 @@ export class Ui {
     this.confirmReset = false;
     this.sel = null;
     this.input.reset();
+    this.input.enabled = false; // the game ignores touches while a panel is open
     this.openedAt = performance.now();
     this.panel.hidden = false;
     this.renderPanel();
@@ -291,6 +328,7 @@ export class Ui {
   close() {
     this.cancelDrag();
     this.openTab = null;
+    this.input.enabled = true;
     this.panel.hidden = true;
     this.sel = null;
   }
@@ -341,18 +379,36 @@ export class Ui {
       </div>`;
   }
 
-  private onPanelClick(e: Event) {
-    // ignore the click that iOS synthesizes from the tap that opened the panel
-    if (this.lastPanelDown < this.openedAt) return;
-    const t = e.target as HTMLElement;
-    const me = e as MouseEvent;
-    if (performance.now() < this.suppress.t && Math.hypot(me.clientX - this.suppress.x, me.clientY - this.suppress.y) < 40) return;
-    if (t.closest(".dnd")) return; // grids and the doll use pointer handlers
-    const el = t.closest<HTMLElement>("[data-act]");
-    if (!el) {
-      if (e.target === this.panel) this.close();
-      return;
+  /** Nearest panel button within `r` px of a point (for taps that land just outside a button). */
+  private nearButton(x: number, y: number, r: number): HTMLElement | null {
+    let best: HTMLElement | null = null;
+    let bd = r;
+    for (const el of this.panel.querySelectorAll<HTMLElement>("[data-act]")) {
+      const b = el.getBoundingClientRect();
+      if (!b.width) continue;
+      const d = Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom));
+      if (d < bd) {
+        bd = d;
+        best = el;
+      }
     }
+    return best;
+  }
+
+  private onPanelTap(t: HTMLElement, x: number, y: number) {
+    // a tap must start and end inside the open panel (the finger that opened it doesn't count)
+    if (this.lastPanelDown < this.openedAt) return;
+    if (performance.now() < this.suppress.t && Math.hypot(x - this.suppress.x, y - this.suppress.y) < 40) return;
+    let el = t.closest<HTMLElement>("[data-act]");
+    if (!el && (t === this.panel || t.classList.contains("ptabs"))) {
+      // just missed a button (e.g. above a tab or beside the X): take the nearest one
+      el = this.nearButton(x, y, 28);
+      if (!el) {
+        if (t === this.panel) this.close();
+        return;
+      }
+    }
+    if (!el) return;
     const g = this.game();
     const act = el.dataset.act!;
     this.hooks.click();
@@ -360,6 +416,10 @@ export class Ui {
     switch (act) {
       case "close":
         this.close();
+        return;
+      case "recall":
+        this.close();
+        this.recallTap();
         return;
       case "tab":
         this.openTab = el.dataset.tab as PanelTab;
@@ -1076,6 +1136,7 @@ export class Ui {
       </button>`;
     return `
       <div class="set-col">
+        ${this.game().inTown ? "" : `<button class="gbtn town" data-act="recall">⌂ Return to Town</button>`}
         ${t("showJoystick", "Show joystick", "Debug: draw the movement stick where your thumb lands")}
         ${t("sound", "Sound", "Sound effects")}
         ${t("shake", "Screen shake", "Shake on big hits")}
@@ -1089,7 +1150,8 @@ export class Ui {
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
-        <p class="ver">Ember Crypt v0.3 · progress saves on this device · all art made in code for this game</p>
+        <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
+        <p class="ver">Ember Crypt v0.4 · progress saves on this device · all art made in code for this game</p>
       </div>`;
   }
 }

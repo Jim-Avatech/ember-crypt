@@ -1176,3 +1176,20 @@ body.portrait #rotate {
 .sval small { font-size: 10px; color: #8a7858; }
 .idetail b.mod, .kv b.mod { color: #7a7aff; }
 .gi.q-normal { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.12); }
+
+/* v0.4 tap targets: everything in panels is at least 44x44 pt */
+.ptab { height: 44px; min-width: 44px; touch-action: none; }
+.pclose { width: 60px; height: 44px; font-size: 22px; touch-action: none; }
+.ptabs { touch-action: none; }
+.gbtn, .wprow, .toggle { min-height: 44px; }
+#panel { padding-top: calc(var(--sat) + 8px); }
+
+/* v0.4 HUD: 44pt buttons and the Town button */
+.mbtn { height: 40px; min-width: 46px; }
+.mbtn::after { content: ""; position: absolute; inset: -4px -3px; }
+.mbtn.town { color: #a8c8ff; border-color: #3a5a8a; overflow: hidden; }
+.mbtn.town[hidden] { display: none; }
+.mbtn.town .ti { font-size: 16px; }
+.mbtn.town .rfill { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: #5aa8ff; box-shadow: 0 0 8px #5aa8ff; }
+.mbtn.town.channel { background: linear-gradient(#1a2c48, #0c1628); color: #fff; }
+#btn-ctx[data-kind="portal"] { border-color: #3a7ad0; color: #cfe4ff; background: linear-gradient(#14284a, #0a1428); box-shadow: 0 0 18px rgba(80, 150, 255, 0.6); }

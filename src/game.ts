@@ -284,6 +284,18 @@ export function migrateSave(raw: unknown): SaveData | null {
   };
 }
 
+interface DungeonSnap {
+  level: Level;
+  monsters: Monster[];
+  ground: GroundItem[];
+  stairs: { x: number; y: number } | null;
+  boss: Monster | null;
+  px: number;
+  py: number;
+}
+
+export const RECALL_TIME = 1.2;
+
 export class Game {
   level!: Level;
   floor = 1;
@@ -307,6 +319,10 @@ export class Game {
   private exploreT = 0;
   private skillCd = 0;
   events: GameEvents;
+  /** Return to Town channel in progress (seconds done / total). Monster hits don't stop it; walking does. */
+  recall: { t: number; dur: number } | null = null;
+  /** Blue portal in camp that leads back to the exact spot you recalled from (kept in memory only). */
+  portal: { x: number; y: number; floor: number; snap: DungeonSnap } | null = null;
   /** world-space joystick direction from last frame (used by Leap) */
   moveDir = { x: 0, y: 0, active: false };
 
@@ -580,6 +596,21 @@ export class Game {
       this.moveDir = { x: wx, y: wy, active: true };
     } else this.moveDir.active = false;
 
+    if (this.recall && !p.dead) {
+      // channeling Return to Town: moving cancels it, monster hits don't
+      if (input.mag > 0.35) {
+        this.recall = null;
+        this.events.toast("Return to Town cancelled");
+      } else {
+        this.recall.t += dt;
+        if (this.recall.t >= this.recall.dur) {
+          this.recall = null;
+          this.finishRecall();
+          return;
+        }
+        input = { ...input, mx: 0, my: 0, mag: 0, attack: false, skills: input.skills.map(() => false) };
+      }
+    } else if (p.dead) this.recall = null;
     if (!p.dead) this.updatePlayer(dt, input, d);
     this.updateMonsters(dt, d);
     this.updateFx(dt);
@@ -1473,6 +1504,72 @@ export class Game {
     return null;
   }
 
+  /** Start the Return to Town channel (always available in the crypt). */
+  startRecall(): boolean {
+    const p = this.player;
+    if (this.inTown || p.dead || this.recall) return false;
+    p.action = null;
+    p.moveTarget = null;
+    this.recall = { t: 0, dur: RECALL_TIME };
+    this.events.sound("shout");
+    this.events.changed();
+    return true;
+  }
+
+  private finishRecall() {
+    const p = this.player;
+    const snap: DungeonSnap = { level: this.level, monsters: this.monsters, ground: this.ground, stairs: this.stairs, boss: this.boss, px: p.x, py: p.y };
+    const floor = this.floor;
+    this.goTown(true);
+    const wp = this.level.waypoint;
+    // portal stands next to the waypoint
+    let px = wp.x + 2.2;
+    let py = wp.y + 0.6;
+    if (this.blocked(px, py, 0.4)) {
+      px = wp.x - 2;
+      py = wp.y + 0.8;
+    }
+    this.portal = { x: px, y: py, floor, snap };
+    this.events.sound("stairs");
+    this.events.toast(`Back in Ember Camp. The blue portal returns you to Level ${floor}.`);
+    this.events.changed();
+  }
+
+  nearPortal(): boolean {
+    const q = this.portal;
+    return !!q && this.inTown && !this.player.dead && Math.hypot(q.x - this.player.x, q.y - this.player.y) < 1.8;
+  }
+
+  /** Step through the camp portal: back to the same spot, with the level as you left it. */
+  usePortal(): boolean {
+    const q = this.portal;
+    if (!q || !this.inTown) return false;
+    const s = q.snap;
+    this.portal = null;
+    this.inTown = false;
+    this.floor = q.floor;
+    this.level = s.level;
+    this.monsters = s.monsters;
+    this.ground = s.ground;
+    this.stairs = s.stairs;
+    this.boss = s.boss;
+    this.floaters = [];
+    this.particles = [];
+    this.rings = [];
+    this.flowFrom = -1;
+    const p = this.player;
+    p.x = s.px;
+    p.y = s.py;
+    p.action = null;
+    p.moveTarget = null;
+    // monsters that were chasing you lose interest while you were away
+    for (const m of this.monsters) if (m.state !== "dead") { m.state = "idle"; }
+    this.events.sound("stairs");
+    this.events.toast(`Ember Crypt — Level ${this.floor}`);
+    this.events.changed();
+    return true;
+  }
+
   /** Waypoint travel: 0 = camp, n = crypt level n (if reached before). */
   travel(floor: number) {
     if (floor <= 0) this.goTown();
@@ -1623,9 +1720,10 @@ export class Game {
   }
 
   /** The one context action shown above the controls. */
-  contextAction(): "descend" | "waypoint" | "trade" | null {
+  contextAction(): "descend" | "waypoint" | "trade" | "portal" | null {
     if (this.nearStairs()) return "descend";
     if (this.nearVendor()) return "trade";
+    if (this.nearPortal()) return "portal";
     if (this.nearWaypoint()) return "waypoint";
     return null;
   }
