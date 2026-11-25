@@ -1302,3 +1302,31 @@ body.portrait #rotate {
 .cloudbox .codebox { flex: 1; min-width: 0; height: 34px; }
 .buff.conc { color: #9cc0ff; }
 .buff.bers { color: #ff7ab0; }
+
+/* ---------------- HUD layout mockups (dev flag ?hud=a|b|c; not shipped) ----------------
+   The attack button and the three skill buttons are never touched here. */
+#vitals { display: none; }
+#hud { --hp: 1; --mp: 1; }
+.vb { position: relative; height: 17px; background: rgba(0, 0, 0, 0.78); border: 1px solid #5a4630; border-radius: 3px; overflow: hidden; box-shadow: 0 0 0 1px #000, 0 2px 6px rgba(0, 0, 0, 0.6); }
+.vb i { position: absolute; inset: 0; transform-origin: left; transform: scaleX(var(--hp)); background: linear-gradient(#ff6a4a, #c01a0e 55%, #5a0604); transition: transform 0.12s linear; }
+.vb.mana { height: 12px; }
+.vb.mana i { transform: scaleX(var(--mp)); background: linear-gradient(#80b0ff, #1c48c8 55%, #0a1a5a); }
+.vb span { position: absolute; inset: 0; font: 700 11.5px/17px system-ui, sans-serif; text-align: center; color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
+.vb.mana span { font-size: 9.5px; line-height: 12px; }
+
+/* A: D2 orbs in the top corners; minimap/buffs and the menu buttons slide inward */
+html[data-hud="a"] .globe { bottom: auto; top: calc(var(--sat) + 6px); width: 62px; height: 62px; }
+html[data-hud="a"] .globe.life { left: calc(var(--sal) + 6px); }
+html[data-hud="a"] .globe.mana { right: calc(var(--sar) + 6px); }
+html[data-hud="a"] .hud-tl { top: calc(var(--sat) + 72px); }
+html[data-hud="a"] .hud-tr { right: calc(var(--sar) + 80px); }
+html[data-hud="a"] #xpbar { left: calc(var(--sal) + 250px); }
+
+/* B: one vitals strip, top centre (life bar with numbers, mana bar, XP line); boss bar sits under it */
+html[data-hud="b"] .globe { display: none; }
+html[data-hud="b"] #vitals { display: flex; flex-direction: column; gap: 3px; position: absolute; top: calc(var(--sat) + 8px); left: calc(50% - 150px); width: 210px; }
+html[data-hud="b"] #xpbar { top: calc(var(--sat) + 44px); bottom: auto; left: calc(50% - 150px); right: auto; width: 210px; height: 4px; }
+
+/* C: life and mana curve under the hero's feet (drawn on the canvas); no orbs; XP bar out from under the thumb */
+html[data-hud="c"] .globe { display: none; }
+html[data-hud="c"] #xpbar { left: calc(var(--sal) + 250px); }

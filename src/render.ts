@@ -463,7 +463,20 @@ export class Renderer {
       f.fillText(b.def.name, this.W / 2, y + 14);
     }
     const maxHp = game.derived().maxHp;
-    if (p.flash > 0 || (p.hp / maxHp < 0.3 && !p.dead)) {
+    const hudMode = document.documentElement.dataset.hud;
+    if (hudMode === "c" && !p.dead) this.drawVitalRing(game, p.hp / maxHp, p.mana / game.derived().maxMana);
+    if (hudMode && !p.dead && p.hp / maxHp < 0.35) {
+      // mockup low-life warning: a heartbeat (double thump) red edge, stronger the lower you are
+      const ph = (game.time % 1.0) / 1.0;
+      const beat = Math.max(0, 1 - Math.abs(ph - 0.08) / 0.08) + 0.8 * Math.max(0, 1 - Math.abs(ph - 0.3) / 0.08);
+      const depth = 1 - p.hp / maxHp / 0.35;
+      const a = Math.max(p.flash * 0.45, 0.22 + 0.25 * depth + 0.25 * beat);
+      const grd = f.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.32, this.W / 2, this.H / 2, this.W * 0.62);
+      grd.addColorStop(0, "rgba(150,0,0,0)");
+      grd.addColorStop(1, `rgba(185,0,0,${Math.min(0.8, a).toFixed(2)})`);
+      f.fillStyle = grd;
+      f.fillRect(0, 0, this.W, this.H);
+    } else if (p.flash > 0 || (p.hp / maxHp < 0.3 && !p.dead)) {
       const low = p.hp / maxHp < 0.3 ? 0.25 + Math.sin(game.time * 5) * 0.08 : 0;
       const a = Math.max(p.flash * 0.45, low);
       const grd = f.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.3, this.W / 2, this.H / 2, this.W * 0.7);
@@ -544,6 +557,37 @@ export class Renderer {
     for (const fr of fires) glow(fr.x + 0.5, fr.y + 0.5, 4.5, "150,70,10", 0.3 + Math.sin(game.time * 11) * 0.03);
     glow(L.waypoint.x, L.waypoint.y, 2, "40,90,200", 0.25 + Math.sin(game.time * 3) * 0.06);
     ctx.globalCompositeOperation = "source-over";
+  }
+
+  /** Mockup C: life (red) and mana (blue) arcs curving under the hero's feet, with the life number. */
+  private drawVitalRing(game: Game, hp: number, mp: number) {
+    const f = this.fctx;
+    const p = game.player;
+    const x = this.cx(p.x, p.y), y = this.cy(p.x, p.y) + 2 * this.ascale;
+    const rx = 17 * this.ascale, ry = 7.5 * this.ascale;
+    const arc = (k: number, r: number, w: number, col: string) => {
+      // bottom half, left → right (PI → 0 going through PI/2 at the front)
+      f.beginPath();
+      f.ellipse(x, y, rx * r, ry * r, 0, Math.PI, Math.PI - Math.PI * Math.max(0, Math.min(1, k)), true);
+      f.lineWidth = w;
+      f.strokeStyle = col;
+      f.stroke();
+    };
+    f.save();
+    f.lineCap = "round";
+    arc(1, 1, 8, "rgba(0,0,0,.7)");
+    arc(hp, 1, 5.5, hp < 0.35 ? "#ff3020" : "#e0281c");
+    arc(1, 1.25, 5.5, "rgba(0,0,0,.65)");
+    arc(mp, 1.25, 3.5, "#3a78ff");
+    f.font = "bold 12px system-ui, sans-serif";
+    f.textAlign = "left";
+    f.lineWidth = 3;
+    f.strokeStyle = "rgba(0,0,0,.9)";
+    const t = `${Math.ceil(p.hp)}`;
+    f.strokeText(t, x + rx * 1.25 + 6, y + 4);
+    f.fillStyle = hp < 0.35 ? "#ff6a50" : "#ffb0a0";
+    f.fillText(t, x + rx * 1.25 + 6, y + 4);
+    f.restore();
   }
 
   // -------------------------------------------------------------- actors

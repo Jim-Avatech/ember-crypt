@@ -13,6 +13,12 @@ import {
 import { Cloud, cloudConfig } from "./cloud";
 import { Ui } from "./ui";
 
+// HUD layout mockups (dev only, not shipped): ?hud=a top-corner orbs, ?hud=b top-centre vitals strip, ?hud=c hero ring
+{
+  const h = new URLSearchParams(location.search).get("hud");
+  if (h === "a" || h === "b" || h === "c") document.documentElement.dataset.hud = h;
+}
+
 const app = document.getElementById("app")!;
 app.innerHTML = `<canvas id="view"></canvas><canvas id="fx"></canvas>`;
 const canvas = document.getElementById("view") as HTMLCanvasElement;
@@ -130,7 +136,7 @@ function placeToast() {
   if (toastEl && top !== toastTop) toastEl.style.top = toastTop = top;
 }
 {
-  const els = ["#hud .hud-tr", "#buffs", "#minimap"].map((s) => document.querySelector<HTMLElement>(s));
+  const els = ["#hud .hud-tr", "#buffs", "#minimap", "#vitals", "#xpbar", ".globe.life", ".globe.mana"].map((s) => document.querySelector<HTMLElement>(s));
   renderer.hudAvoid = () => {
     const c = canvas.getBoundingClientRect();
     return els.filter((e): e is HTMLElement => !!e).map((e) => {
