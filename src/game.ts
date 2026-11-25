@@ -23,8 +23,10 @@ import { Rng, chance, rand, randInt } from "./rng";
 
 /** v0.9.1 drop rates: a normal monster drops an item 8.5% of the time (was 17%); a champion has a 50% chance of one item (was always 1). */
 /** v0.9.2: every monster (elites and bosses build on these) has +30% life and +25% damage. */
-export const MON_HP = 1.3;
-export const MON_DMG = 1.25;
+export const MON_HP = 1.69; // v0.9.3: +30% on v0.9.2's 1.3
+export const MON_DMG = 1.875; // v0.9.3: +50% on v0.9.2's 1.25
+/** v0.9.3: level and act bosses end up with 1.9x their v0.9.2 life (the general +30% is not stacked on top). */
+export const BOSS_HP_EXTRA = 1.9 / 1.3;
 export const ITEM_DROP = 0.0425; // v0.9.2: halved again (was 0.085, originally 0.17)
 export const ELITE_ITEM_CHANCE = 0.25; // champions (was 0.5, originally always 1)
 export const UNIQUE_ITEM_CHANCE = 0.5; // uniques: one item half the time (was always 1, originally 2); always magic or better
@@ -486,6 +488,15 @@ function sanitizeV3(d: SaveData): SaveData {
  * Never wipe: every step keeps the hero, and anything that can't be kept is turned into gold or points.
  */
 export function migrateSave(raw: unknown): SaveData | null {
+  const d = migrateSaveSteps(raw);
+  // v0.9.3: three skill buttons; a value on a 4th (from v0.9-v0.9.2) is dropped, the skill stays learned
+  if (d?.player && Array.isArray(d.player.slots)) {
+    d.player.slots = d.player.slots.slice(0, SKILL_SLOTS);
+    while (d.player.slots.length < SKILL_SLOTS) d.player.slots.push(null);
+  }
+  return d;
+}
+function migrateSaveSteps(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== "object") return null;
   const d = raw as { v: number };
   if (d.v === 6) return sanitizeV6(sanitizeV3(d as SaveData));
@@ -694,7 +705,7 @@ export class Game {
       v: SAVE_VERSION, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor,
       player: {
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
-        skills: p.skills, slots: p.slots, bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold,
+        skills: p.skills, slots: p.slots.slice(0, SKILL_SLOTS), bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold,
         hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills, artifacts: p.artifacts,
       },
     };
@@ -858,13 +869,13 @@ export class Game {
     if (isFinalLevel(floor)) {
       const m = this.spawn(act.finalBoss, ml + 2, x, y, pack);
       m.cd = 3;
-      m.maxHp = m.hp = Math.round(m.hp * 1.2); // v0.8: tougher final bosses
+      m.maxHp = m.hp = Math.round(m.hp * 1.2 * BOSS_HP_EXTRA); // v0.8: tougher final bosses; v0.9.3: 1.9x v0.9.2
       return m;
     }
     const m = this.spawn(act.levelBoss, ml + 1, x, y, pack, { ...MONSTERS[act.levelBoss], name: bossName(act, lvl) });
     // on top of the climbing monster level, each level's boss gets +4% life and +2% damage
     const k = 1 + 0.04 * (lvl - 1);
-    m.maxHp = m.hp = Math.round(m.hp * k * 1.25); // v0.8: +25% life on every level boss
+    m.maxHp = m.hp = Math.round(m.hp * k * 1.25 * BOSS_HP_EXTRA); // v0.8: +25% life on every level boss; v0.9.3: 1.9x v0.9.2
     m.dmgMin = Math.round(m.dmgMin * (1 + 0.02 * (lvl - 1)));
     m.dmgMax = Math.round(m.dmgMax * (1 + 0.02 * (lvl - 1)));
     m.xp = Math.round(m.xp * k);
@@ -1305,6 +1316,7 @@ export class Game {
   }
 
   assignSlot(slot: number, id: string | null) {
+    if (!Number.isInteger(slot) || slot < 0 || slot >= SKILL_SLOTS) return; // v0.9.3: buttons 1-3 only
     const p = this.player;
     if (id) {
       const prev = p.slots.indexOf(id);

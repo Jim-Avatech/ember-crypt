@@ -3,6 +3,20 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.9.3: harder monsters, skill page matches the three buttons
+
+- **Monsters, on top of v0.9.2:** +30% life and +50% damage for every monster. Totals vs v0.9.1 are life ×1.69 and damage ×1.875; champions and uniques build on these.
+- **Bosses:** level bosses and act bosses have **1.9× their v0.9.2 life** (the general +30% isn't stacked on top), and take the general +50% damage.
+- **Representative averages, v0.9.2 → v0.9.3:**
+
+  | Floor | Normal life | Normal damage | Boss life | Boss damage |
+  |---|---|---|---|---|
+  | 1 | 14 → 18 | 4 → 5 | 265 → 502 | 11 → 16 |
+  | 20 | 84 → 109 | 16 → 23 | 2711 → 5151 | 59 → 87 |
+  | 40 | 273 → 354 | 38 → 56 | 6084 → 11560 | 113 → 169 |
+  | 80 | 544 → 708 | 107 → 161 | 14820 → 28158 | 213 → 319 |
+- **Skill page:** it now offers only buttons 1–3, and the game refuses any other slot. A save with a value on a 4th button is cleaned when it loads and when it saves; the skill stays learned.
+
 ## v0.9.2: fewer drops, three skill buttons, cleaner HUD, tougher monsters, more throwing ammo, ring choice
 
 - **Drops halved again** (40,000 simulated kills):

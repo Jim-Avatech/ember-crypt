@@ -36,6 +36,8 @@ await page.waitForTimeout(200);
 await page.locator('[data-act="skill"][data-id="war_cry"]').tap();
 await page.waitForTimeout(300);
 check("no 'Coming soon' anywhere in the tree", (await page.locator(".seff.soon, .soon").count()) === 0);
+const slotBtns = await page.$$eval(".assign .slotb", (bs) => bs.map((b) => b.textContent.trim()));
+check("skill page offers only buttons 1-3", slotBtns.length === 3 && slotBtns.join(",").replace(/ ✓/g, "") === "1,2,3", JSON.stringify(slotBtns));
 await page.screenshot({ path: `${out}/skills-tree.png` });
 await page.locator('[data-act="stree"]').first().tap();
 await page.waitForTimeout(200);
