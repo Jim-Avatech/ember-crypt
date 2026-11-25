@@ -197,7 +197,7 @@ check("Tapping an item label picks it up into the grid bag", after > before, `(b
 await ev(() => {
   const g = __ec.game;
   const p = g.player;
-  const alive = g.monsters.filter((m) => m.state !== "dead");
+  const alive = g.monsters.filter((m) => m.state !== "dead" && m.def.rank === "normal");
   alive.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y));
   const m = alive[0];
   for (const [dx, dy] of [[2, 1], [-2, 1], [1, 2], [2, -1], [-1, 2]]) if (!g.blocked(m.x + dx, m.y + dy, p.r)) { p.x = m.x + dx; p.y = m.y + dy; break; }
@@ -207,6 +207,7 @@ await touch("touchStart", [{ ...atkPt, id: 7 }]);
 await wait(700);
 await page.screenshot({ path: `${outDir}/gameplay.png` });
 await touch("touchEnd", []);
+await ev(() => { const g = __ec.game; g.player.hp = g.derived().maxHp; }); // a level-1 hero in a pack: don't let the next steps start dead
 
 // ---------------------------------------------------------------- 6. grid inventory
 await ev(() => {
@@ -438,6 +439,7 @@ await wait(200);
   }, dist);
   await ev(() => {
     const g = __ec.game;
+    g.goTown(true); g.floorCache.clear(); // v1.0.1: a fresh level for each test step
     g.goDungeon(1);
     const p = g.player;
     p.equip.main = __ec.items.makeItem("throwing_axe", 6);
@@ -467,7 +469,7 @@ await wait(200);
     const p = g.player;
     return { main: p.equip.main.qty, off: p.equip.off.qty, hp: m.hp, dist: Math.hypot(m.x - p.x, m.y - p.y), throws: g.hitLog.filter((h) => h.skill === "throw").length, btn: document.querySelector("#btn-attack span").textContent };
   }, mid);
-  check("Throw: attack button throws from range, uses the stack and hits", shot && thr.throws >= 2 && thr.main < 120 && thr.off < 160 && thr.hp < 99999 && thr.dist > 3 && thr.btn === "➶", JSON.stringify(thr));
+  check("Throw: attack button throws from range, uses the stack and hits", shot && thr.throws >= 2 && thr.main < 240 && thr.off < 320 && thr.hp < 99999 && thr.dist > 3 && thr.btn === "➶", JSON.stringify(thr));
   await placeAt(4);
   const before = await ev(() => [__ec.game.player.equip.main.qty, __ec.game.player.equip.off.qty]);
   await useSkill(1, 120);
@@ -483,11 +485,12 @@ await wait(200);
   await ev(() => { __ec.game.player.equip.main.qty = 0; __ec.game.goTown(); });
   await wait(300);
   const refill = await ev(() => ({ q: __ec.game.player.equip.main.qty, stock: ["quarterstaff", "throwing_knife", "throwing_axe", "javelin"].every((id) => __ec.game.vendorStock.some((e) => e.item.baseId === id)) }));
-  check("Stacks refill in camp; Hilde sells all four new classes", refill.q === 120 && refill.stock, JSON.stringify(refill));
+  check("Stacks refill in camp; Hilde sells all four new classes", refill.q === 240 && refill.stock, JSON.stringify(refill));
 
   // quarterstaff: two-handed melee with Pole Arm Mastery
   await ev(() => {
     const g = __ec.game;
+    g.goTown(true); g.floorCache.clear(); // v1.0.1: a fresh level for each test step
     g.goDungeon(1);
     const p = g.player;
     delete p.equip.off;
@@ -698,7 +701,7 @@ await wait(200);
   });
   check("The stash is saved with the hero (v6) and included in the export code", saved.v >= 6 && saved.stash.join() === "7002,7003" && saved.exp === 2, JSON.stringify(saved));
   // town only
-  await ev(() => __ec.game.goDungeon(1));
+  await ev(() => (__ec.game.goTown(true), __ec.game.floorCache.clear(), __ec.game).goDungeon(1));
   await wait(200);
   await ev(() => __ec.ui.open("stash"));
   await wait(150);
@@ -708,7 +711,7 @@ await wait(200);
 }
 
 // ---------------------------------------------------------------- 12b. magic & rare items
-await ev(() => __ec.game.goDungeon(1));
+await ev(() => (__ec.game.goTown(true), __ec.game.floorCache.clear(), __ec.game).goDungeon(1));
 await wait(400);
 const spd = await ev(() => {
   const d = __ec.game.derived();
@@ -812,7 +815,7 @@ await page.locator(".pclose").tap();
 await wait(200);
 
 // ---------------------------------------------------------------- 13. death → camp
-await ev(() => __ec.game.goDungeon(1));
+await ev(() => (__ec.game.goTown(true), __ec.game.floorCache.clear(), __ec.game).goDungeon(1));
 await wait(300);
 await ev(() => { const g = __ec.game; g.player.hp = 0; g["die"](); });
 await wait(1300);
@@ -907,7 +910,7 @@ await ev(() => __ec.ui.close());
 
 // ---------------------------------------------------------------- 14c. Return to Town + portal back
 {
-  await ev(() => __ec.game.goDungeon(1));
+  await ev(() => (__ec.game.goTown(true), __ec.game.floorCache.clear(), __ec.game).goDungeon(1));
   await wait(400);
   const hud = await ev(() => { const b = document.getElementById("btn-town"); const r = b.getBoundingClientRect(); return { shown: !b.hidden, w: r.width, h: r.height }; });
   check("Town button shows in the crypt HUD (44pt+ hit area)", hud.shown && hud.h >= 40, JSON.stringify(hud));
@@ -1017,7 +1020,7 @@ await ev(() => __ec.ui.close());
   check("Export a save code, then import it (current hero goes to backups)", /Replace your level/.test(ask) && imp.gold === 4242 && imp.baks >= 1, JSON.stringify({ ask: ask.slice(0, 60), imp }));
   // auto health potion
   await ev(() => __ec.ui.close());
-  await ev(() => __ec.game.goDungeon(1));
+  await ev(() => (__ec.game.goTown(true), __ec.game.floorCache.clear(), __ec.game).goDungeon(1));
   await wait(300);
   const ah = await ev(async () => {
     const g = __ec.game;
@@ -1040,6 +1043,7 @@ await ev(() => __ec.ui.close());
     p.base.vit = 600;
     p.base.str = 200;
     g.maxFloor = Math.max(g.maxFloor, 20);
+    g.goTown(true); g.floorCache.clear(); // v1.0.1: a fresh level for each test step
     g.goDungeon(20);
   });
   await wait(400);
@@ -1140,7 +1144,7 @@ await page.setViewportSize({ width: 393, height: 852 });
 await wait(400);
 check("Portrait shows the rotate-your-phone prompt", await ev(() => getComputedStyle(document.getElementById("rotate")).display !== "none"));
 await page.setViewportSize({ width: 852, height: 393 });
-await ev(() => __ec.game.goDungeon(1));
+await ev(() => (__ec.game.goTown(true), __ec.game.floorCache.clear(), __ec.game).goDungeon(1));
 await wait(2500);
 const fps = await ev(() => __ec.fps);
 check("Runs smoothly", fps >= 30, `(${fps} fps headless)`);

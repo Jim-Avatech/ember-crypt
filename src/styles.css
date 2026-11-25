@@ -1466,3 +1466,97 @@ body.portrait #rotate {
   border-radius: 18px;
   white-space: nowrap;
 }
+/* v1.0.1: delete hero */
+.hrow {
+  position: relative;
+  display: flex;
+}
+.hrow .hcard {
+  flex: 1;
+  min-width: 0;
+  padding-right: 40px;
+}
+.hdelb {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #5a2a1a;
+  border-radius: 6px;
+  background: #1a0a06;
+  color: #ff9a80;
+  font-size: 16px;
+  line-height: 1;
+}
+.hcount {
+  font-size: 14px;
+  color: #a08c64;
+  margin-left: 6px;
+}
+.hdel {
+  width: min(560px, 100%);
+  border: 1px solid #7a2a1a;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: linear-gradient(#2a0e0a, #120604);
+  box-shadow: 0 0 0 1px #3a0e08, 0 4px 18px #000;
+}
+.hdel .htitle {
+  color: #ffb8a0;
+}
+.hdelrow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.hdelrow img {
+  width: 60px;
+  height: 88px;
+  image-rendering: pixelated;
+  flex: none;
+}
+.hdeltext {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--gold2);
+  font-size: 16px;
+}
+.hdeltext p {
+  margin: 0;
+  font: 13px/1.35 system-ui, sans-serif;
+  color: #e0b0a0;
+}
+.hdeltext label {
+  font: 13px system-ui, sans-serif;
+  color: #d8c290;
+}
+.hdeltext input {
+  width: 220px;
+  font-size: 16px;
+  padding: 6px 8px;
+  background: #0e0604;
+  color: #ffd8c8;
+  border: 1px solid #7a2a1a;
+  border-radius: 4px;
+  font-family: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.gbtn.hdanger {
+  border-color: #c03a20;
+  background: linear-gradient(#8a1e10, #4a0c06);
+  color: #fff0e8;
+}
+.gbtn.hdanger:disabled {
+  opacity: 0.4;
+}
+/* v1.0.1: patch notes in Settings */
+.notesbox { border: 1px solid #3a2e1e; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; background: rgba(0,0,0,.35); scroll-margin-top: 8px; }
+.notesbox > b { display: block; margin-bottom: 4px; color: var(--gold2); font-size: 15px; }
+.pnote { margin: 6px 0 2px; }
+.pnv { color: #e8c878; font-weight: 700; font-size: 14px; }
+.pnv span { color: #a08c64; font-weight: 400; font-size: 12px; margin-left: 4px; }
+.pnote ul { margin: 2px 0 0; padding-left: 18px; }
+.pnote li { margin: 1px 0; font-size: 12.5px; line-height: 1.35; }

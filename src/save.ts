@@ -18,7 +18,7 @@ const BAD0 = "ember-crypt-save-damaged";
  * slot n > 1 uses the same names with a "#n" suffix. Every slot has its own temp key, 3 rotating backups,
  * damaged copy and IndexedDB mirror.
  */
-export const MAX_HEROES = 8;
+export const MAX_HEROES = 12; // v1.0.1: 8 -> 12
 const LAST = "ember-crypt-last-slot";
 let slot = 1;
 export const slotKey = (base: string, n = slot) => (n === 1 ? base : `${base}#${n}`);
@@ -83,6 +83,47 @@ export function listHeroes(): HeroInfo[] {
 export function freeSlot(): number | null {
   for (let n = 1; n <= MAX_HEROES; n++) if (!slotUsed(n)) return n;
   return null;
+}
+
+// ------------------------------------------------------------------ v1.0.1: deleting a hero
+const DELETED = "ember-crypt-deleted-heroes"; // { [slot]: deletedAt } so a cloud copy isn't pulled back into the slot
+const LAST_DELETED = "ember-crypt-last-deleted-hero"; // one-deep safety copy of the last deleted hero (not in the UI)
+/** When a slot's hero was deleted on this device (0 = never). */
+export function deletedAt(n: number): number {
+  try {
+    return Number((JSON.parse(ls()?.getItem(DELETED) ?? "{}") as Record<string, number>)[n] ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+/**
+ * Delete one hero: every key of that slot (save, temp, backups, damaged copy, IndexedDB mirror). Other slots and the
+ * shared stash are not touched. Slots are never renumbered, so cloud rows and Files backups keep their slot numbers.
+ */
+export function deleteHero(n: number): boolean {
+  const s = ls();
+  if (!s || n < 1 || n > MAX_HEROES || !slotUsed(n)) return false;
+  try {
+    const d = readSlot(n);
+    if (d) s.setItem(LAST_DELETED, JSON.stringify({ slot: n, at: Date.now(), data: d }));
+  } catch {
+    /* full: deleting still goes ahead */
+  }
+  for (const k of [KEY, TMP0, ...BAK0, BAD0]) s.removeItem(slotKey(k, n));
+  try {
+    const t = JSON.parse(s.getItem(DELETED) ?? "{}") as Record<string, number>;
+    t[n] = Date.now();
+    s.setItem(DELETED, JSON.stringify(t));
+  } catch {
+    /* ignore */
+  }
+  mirrorToIdb(null, n);
+  if (lastSlot() === n) {
+    const other = listHeroes()[0];
+    if (other) s.setItem(LAST, String(other.slot));
+    else s.removeItem(LAST);
+  }
+  return true;
 }
 
 // ------------------------------------------------------------------ v1.0: shared stash
@@ -392,8 +433,8 @@ function idb(): Promise<IDBDatabase | null> {
 const idbKey = (n = slot) => slotKey("main", n);
 const idbPending = new Map<string, string | null>();
 let idbBusy = false;
-function mirrorToIdb(json: string | null) {
-  idbPending.set(idbKey(), json);
+function mirrorToIdb(json: string | null, n = slot) {
+  idbPending.set(idbKey(n), json);
   if (idbBusy) return;
   idbBusy = true;
   void (async () => {

@@ -5,6 +5,7 @@
 import { CLASS_NAME, type HeroClass } from "./data/skills";
 import { type Look, getFrame, lookKey } from "./sprites/puppet";
 import { actDef, levelInAct } from "./data/acts";
+import { MAX_HEROES } from "./save";
 
 export interface HeroCard {
   slot: number;
@@ -22,6 +23,8 @@ export interface HeroSelectHooks {
   pick(slot: number): void;
   create(cls: HeroClass, name: string): void;
   click(): void;
+  /** v1.0.1: delete a hero; true when it was the one being played */
+  remove(slot: number): boolean;
 }
 
 const CLASS_BLURB: Record<HeroClass, string> = {
@@ -50,7 +53,8 @@ export function portrait(cls: HeroClass, look: Look, scale = 3): string {
 export class HeroSelect {
   el: HTMLElement;
   open = false;
-  private step: "list" | "new" = "list";
+  private step: "list" | "new" | "delete" = "list";
+  private delSlot = 0;
   private cls: HeroClass = "amazon";
   private name = "";
   private closable = false;
@@ -63,10 +67,19 @@ export class HeroSelect {
     this.el.addEventListener("input", (e) => {
       const t = e.target as HTMLInputElement;
       if (t.id === "hero-name") this.name = t.value;
+      if (t.id === "hero-del-name") {
+        const h = this.h.heroes().find((x) => x.slot === this.delSlot);
+        const ok = !!h && t.value.trim().toLowerCase() === h.name.trim().toLowerCase();
+        const btn = this.el.querySelector<HTMLButtonElement>("[data-hact=del-yes]");
+        if (btn) btn.disabled = !ok;
+      }
     });
   }
+  /** v1.0.1: when it opened; the tap that opened it (Settings → Change hero) must not also "click" a card under it */
+  private shownAt = 0;
   show(opts: { closable: boolean; create?: boolean }) {
     this.open = true;
+    this.shownAt = performance.now();
     this.closable = opts.closable;
     this.step = opts.create || !this.h.heroes().length ? "new" : "list";
     this.el.hidden = false;
@@ -94,24 +107,48 @@ export class HeroSelect {
         </div>`;
       return;
     }
+    if (this.step === "delete") {
+      const x = heroes.find((h) => h.slot === this.delSlot);
+      if (x) {
+        this.el.innerHTML = `
+        <div class="hbox hdel">
+          <div class="htitle">Delete hero?</div>
+          <div class="hdelrow">
+            <img src="${portrait(x.cls, x.look)}" alt=""/>
+            <div class="hdeltext">
+              <div><b>${esc(x.name)}</b> · level ${x.level} ${CLASS_NAME[x.cls]}</div>
+              <p>This deletes the hero, their gear, bag and skills from this device for good. Your other heroes and the shared stash chest are not touched.</p>
+              <label for="hero-del-name">Type <b>${esc(x.name)}</b> to confirm</label>
+              <input id="hero-del-name" maxlength="16" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${esc(x.name)}"/>
+            </div>
+          </div>
+          <div class="hbtns">
+            <button class="gbtn hdanger" data-hact="del-yes" disabled>Delete forever</button>
+            <button class="gbtn dim" data-hact="del-no">Keep hero</button>
+          </div>
+        </div>`;
+        return;
+      }
+      this.step = "list";
+    }
     const cur = this.h.current();
     const list = heroes
       .map((x) => {
         const act = actDef(Math.max(1, x.maxFloor));
         const where = x.maxFloor > 0 ? `Act ${act.roman} · level ${levelInAct(Math.max(1, x.maxFloor))}` : "Ember Camp";
         const when = x.savedAt ? new Date(x.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
-        return `<button class="hcard ${x.slot === cur ? "cur" : ""}" data-hact="pick" data-slot="${x.slot}">
+        return `<div class="hrow"><button class="hcard ${x.slot === cur ? "cur" : ""}" data-hact="pick" data-slot="${x.slot}">
           <img src="${portrait(x.cls, x.look)}" alt=""/>
           <span class="hinfo"><b>${esc(x.name)}</b><span>Level ${x.level} ${CLASS_NAME[x.cls]}</span><small>${where}${when ? ` · played ${when}` : ""}</small></span>
-        </button>`;
+        </button><button class="hdelb" data-hact="del" data-slot="${x.slot}" aria-label="Delete ${esc(x.name)}" title="Delete hero">🗑</button></div>`;
       })
       .join("");
     const canNew = this.h.canCreate();
     this.el.innerHTML = `
       <div class="hbox">
-        <div class="htitle">Choose your hero</div>
+        <div class="htitle">Choose your hero <small class="hcount">${heroes.length}/${MAX_HEROES}</small></div>
         <div class="hlist">${list}
-          <button class="hcard new" data-hact="new" ${canNew ? "" : "disabled"}><span class="plus">+</span><span class="hinfo"><b>New hero</b><small>${canNew ? "Barbarian or Amazon" : "All 8 hero slots are used"}</small></span></button>
+          <button class="hcard new" data-hact="new" ${canNew ? "" : "disabled"}><span class="plus">+</span><span class="hinfo"><b>New hero</b><small>${canNew ? "Barbarian or Amazon" : `All ${MAX_HEROES} hero slots are used: delete one (🗑) to make room`}</small></span></button>
         </div>
         <div class="hnote">The stash chest in camp is shared by all your heroes.</div>
         ${this.closable ? `<div class="hbtns"><button class="gbtn dim" data-hact="close">Cancel</button></div>` : ""}
@@ -120,6 +157,7 @@ export class HeroSelect {
   private onClick(e: Event) {
     const b = (e.target as HTMLElement).closest<HTMLElement>("[data-hact]");
     if (!b || (b as HTMLButtonElement).disabled) return;
+    if (performance.now() - this.shownAt < 400) return; // ghost click from the opening tap
     this.h.click();
     const a = b.dataset.hact;
     if (a === "pick") {
@@ -127,7 +165,21 @@ export class HeroSelect {
       this.h.pick(Number(b.dataset.slot));
       return;
     }
-    if (a === "new") this.step = "new";
+    if (a === "del") {
+      this.delSlot = Number(b.dataset.slot);
+      this.step = "delete";
+      this.render();
+      setTimeout(() => this.el.querySelector<HTMLInputElement>("#hero-del-name")?.focus(), 50);
+      return;
+    }
+    if (a === "del-no") this.step = "list";
+    else if (a === "del-yes") {
+      const wasCurrent = this.h.remove(this.delSlot);
+      this.step = "list";
+      // the hero being played is gone: you must pick another hero or make a new one
+      if (wasCurrent) this.closable = false;
+      if (!this.h.heroes().length) this.step = "new";
+    } else if (a === "new") this.step = "new";
     else if (a === "back") this.step = "list";
     else if (a === "cls") this.cls = b.dataset.cls as HeroClass;
     else if (a === "close") {

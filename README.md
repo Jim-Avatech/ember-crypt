@@ -3,6 +3,16 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.0.1: bigger stacks, levels that stay cleared, delete hero, bosses that chase, patch notes
+
+- **Bigger stacks (×2):** Arrows 600 → 1,200 per quiver; Javelins 100 → 200; Throwing Axes 120 → 240; Throwing Knives 160 → 320. Existing stacks fill to the new max the next time you're in camp (which includes opening the game).
+- **Levels stay as you left them for 5 minutes** (`FLOOR_KEEP_MS` in `src/game.ts`). Leave a level by waypoint, stairs, ⌂ Town or dying, and coming back within 5 minutes gives the same level: killed monsters stay dead, loot stays on the ground, a dead boss stays dead with the stairs open, and the map stays explored. Monsters still alive return to their spots at full life. After 5 minutes away the level is fresh (same layout, as before). Kept in memory only (up to 8 levels; an app restart starts fresh). The blue camp portal still returns you to the exact spot.
+- **Delete hero:** a 🗑 button on each hero card opens a red confirm box; Delete forever stays off until you type the hero's name. Only that hero's slot is removed (save, temp, 3 backups, damaged copy, IndexedDB copy); other heroes and the shared stash aren't touched, and slots are never renumbered, so Files backups and cloud rows keep their numbers. A deleted slot's cloud copy isn't pulled back (cloud row deleted via `delete_save`, plus a local "deleted at" marker). Deleting the hero you're playing keeps the hero screen open until you pick or make another. The last deleted hero is kept in one hidden safety copy (`ember-crypt-last-deleted-hero`).
+- **12 hero slots** (was 8). The hero list scrolls by touch; a counter shows used/12.
+- **Bosses chase:** bosses have a 0.5 body, which exactly filled a floor tile, so they couldn't steer through corridors or doorways and stayed stuck in their room. Monsters now collide with walls using at most 0.4 (`wallR`). In a 48-level simulation, every boss reached a hero standing 7–9 steps outside its room (before: 0 of 48). **Leash:** a boss gives up only when you're more than 28 steps (walking distance, `BOSS_LEASH`) from its room. It then walks home around walls, healing 25% of its life per second, and is at full life once back. Boss damage is unchanged.
+- **Patch notes** in Settings (📜 Patch notes), newest first, from `src/data/patchNotes.ts` (each release adds an entry at the top; the version label comes from it).
+- Fix: opening Change hero from Settings no longer lets the same tap pick the hero under your finger.
+
 ## v1.0: the Amazon, hero slots, bows, spears and javelin stab/throw
 
 - **Heroes.** The game opens on a hero select. Your existing Barbarian is hero #1 (his save keys are unchanged, so

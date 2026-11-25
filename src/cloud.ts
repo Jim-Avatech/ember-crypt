@@ -113,7 +113,7 @@ export class Cloud {
   }
   /** Forget what every slot last synced (sign-in on a new account / sign-out). */
   private resetAll() {
-    for (let n = 1; n <= 8; n++) {
+    for (let n = 1; n <= 12; n++) {
       this.store?.removeItem(sk(LKEY, n));
       this.store?.removeItem(sk(LLKEY, n));
     }
@@ -201,6 +201,12 @@ export class Cloud {
     const r = await this.f(`${this.cfg.url}/rest/v1/saves?select=slot,data,saved_at,level,device&user_id=eq.${this.session!.userId}`, { headers: this.headers() });
     if (!r.ok) throw new Error(await errText(r));
     return (await r.json()) as CloudRow[];
+  }
+  /** v1.0.1: delete a hero's cloud row (best effort; the slot's local tombstone keeps it from coming back anyway). */
+  async remove(n: number): Promise<boolean> {
+    if (!this.session || !(await this.fresh())) return false;
+    const r = await this.f(`${this.cfg.url}/rest/v1/rpc/delete_save`, { method: "POST", headers: this.headers(), body: JSON.stringify({ p_slot: n }) });
+    return r.ok;
   }
   /** Compare-and-swap write. Returns the cloud row that won if someone else wrote a newer copy first. */
   async push(d: SaveData, expected: number): Promise<CloudRow | null> {

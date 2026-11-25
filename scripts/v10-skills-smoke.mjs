@@ -16,6 +16,7 @@ const res = await page.evaluate(async () => {
     const g = __ec.game;
     const mk = __ec.items.makeItem;
     g.player.cls = "amazon";
+    g.goTown(true); g.floorCache.clear(); // v1.0.1: fresh level
     g.goDungeon(8);
     const p = g.player;
     p.level = 40;

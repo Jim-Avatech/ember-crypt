@@ -76,14 +76,14 @@ export const ITEM_BASES: ItemBase[] = [
   // v0.6: a fast, steady two-hander (not in D2; uses Pole Arm Mastery)
   { ...W("quarterstaff", "Quarterstaff", "staff", 1, 4, 0.42, [0.85, 1.15], 1.45, [12, 1.6], [10, 1.4], 2), price: 60, weight: 0.4 },
   // v0.6: throwing weapons (stacks; thrown with the attack button, refilled in camp)
-  { ...W("throwing_knife", "Throwing Knife", "knife", 1, 2, 0.4, [0.7, 1.3], 0.75, [0, 0.4], [12, 1.6]), thrown: { max: 160, range: 9 }, price: 35, weight: 0.35 },
-  { ...W("throwing_axe", "Throwing Axe", "axe", 1, 2, 0.48, [0.55, 1.45], 0.9, [10, 1.2], [10, 1.2]), thrown: { max: 120, range: 8 }, price: 35, weight: 0.35 },
-  { ...W("javelin", "Javelin", "spear", 1, 4, 0.54, [0.6, 1.4], 1.05, [8, 1], [14, 1.6]), thrown: { max: 100, range: 10 }, price: 40, weight: 0.35 },
+  { ...W("throwing_knife", "Throwing Knife", "knife", 1, 2, 0.4, [0.7, 1.3], 0.75, [0, 0.4], [12, 1.6]), thrown: { max: 320, range: 9 }, price: 35, weight: 0.35 },
+  { ...W("throwing_axe", "Throwing Axe", "axe", 1, 2, 0.48, [0.55, 1.45], 0.9, [10, 1.2], [10, 1.2]), thrown: { max: 240, range: 8 }, price: 35, weight: 0.35 },
+  { ...W("javelin", "Javelin", "spear", 1, 4, 0.54, [0.6, 1.4], 1.05, [8, 1], [14, 1.6]), thrown: { max: 200, range: 10 }, price: 40, weight: 0.35 },
   // v1.0: Amazon weapons (they drop for every class)
   { ...W("spear", "Spear", "spear", 2, 4, 0.56, [0.45, 1.55], 1.8, [14, 1.8], [12, 1.6], 2), reach: 0.55, price: 65, weight: 0.45 },
   { ...W("short_bow", "Short Bow", "bow", 2, 3, 0.42, [0.55, 1.45], 1.05, [0, 0.6], [14, 1.9], 2), range: 11, price: 55, weight: 0.45 },
   { ...W("long_bow", "Long Bow", "bow", 2, 4, 0.56, [0.5, 1.5], 1.55, [12, 1.2], [16, 2.1], 2), range: 12, price: 70, weight: 0.4 },
-  { id: "arrows", name: "Arrows", slot: "quiver", kind: "quiver", w: 1, h: 3, ammo: 600, price: 20, weight: 0.25 },
+  { id: "arrows", name: "Arrows", slot: "quiver", kind: "quiver", w: 1, h: 3, ammo: 1200, price: 20, weight: 0.25 },
   A("armor", "Armor", "armor", 2, 3, 1, [8, 1.6], 40, 1.1),
   A("helm", "Helm", "helm", 2, 2, 0.45, [0, 1.2], 30, 0.95),
   A("shield", "Shield", "shield", 2, 2, 0.6, [8, 1.5], 35, 0.95),

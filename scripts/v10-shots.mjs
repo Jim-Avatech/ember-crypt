@@ -77,7 +77,7 @@ await page.evaluate(() => __ec.ui.close?.());
 await page.click('[data-tab="settings"]');
 await page.waitForTimeout(250);
 await page.click('[data-act="heroes"]');
-await page.waitForTimeout(300);
+await page.waitForTimeout(500);
 await page.click('#heroes .hcard[data-slot="2"]');
 await page.waitForTimeout(600);
 check("and back to the Amazon", await page.evaluate(() => __ec.game.player.name === "Ilsa"));
@@ -117,6 +117,7 @@ async function arena(main, off, opts = {}) {
     const g = __ec.game, p = g.player, mk = __ec.items.makeItem;
     __ec.input.attack = false;
     if (g.__upd) g.update = g.__upd;
+    g.goTown(true); g.floorCache.clear(); // v1.0.1: a fresh level each time (levels are kept 5 min)
     g.goDungeon(opts.floor ?? 6);
     p.equip.main = mk(main, 20);
     p.equip.off = off ? mk(off, 20) : undefined;
@@ -180,7 +181,7 @@ await arena("javelin", "shield", { dist: 5, mainAtk: "basic_throw" });
 await page.evaluate(() => (__ec.input.attack = true));
 await page.waitForFunction(() => __ec.game.projectiles.some((q) => q.cls === "javelin" && q.dist > 1.2), null, { timeout: 8000 });
 await freeze();
-check("javelin set to Throw: a javelin flies", await page.evaluate(() => __ec.game.player.equip.main.qty < 160 || __ec.game.projectiles.length > 0));
+check("javelin set to Throw: a javelin flies", await page.evaluate(() => __ec.game.player.equip.main.qty < 200 || __ec.game.projectiles.length > 0));
 await shot("10-javelin-throw");
 await thaw();
 

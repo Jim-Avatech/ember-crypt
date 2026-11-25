@@ -1,3 +1,4 @@
+import { GAME_VERSION, PATCH_NOTES } from "./data/patchNotes";
 import { modText } from "./data/affixes";
 import {
   BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, QUALITY_LABEL, SLOT_LABEL, baseDamage, baseDefense, beltSlotsOf, ilvlOf,
@@ -672,6 +673,9 @@ export class Ui {
         this.hooks.settingsChanged();
         break;
       }
+      case "notes":
+        this.panel.querySelector("#patchnotes")?.scrollIntoView({ block: "start", behavior: "smooth" });
+        return;
       case "heroes":
         this.close();
         this.hooks.heroes();
@@ -1507,10 +1511,15 @@ export class Ui {
         ${t("shake", "Screen shake", "Shake on big hits")}
         ${t("labels", "Item labels", "Show item names on the ground")}
         <button class="gbtn hot" data-act="heroes">👥 Change hero / New hero</button>
+        <button class="gbtn dim" data-act="notes">📜 Patch notes · v${GAME_VERSION}</button>
         <button class="gbtn danger" data-act="reset">${this.confirmReset ? "Tap again to start this hero over (old hero goes to backups)" : "Start this hero over"}</button>
       </div>
       <div class="set-col help">
         ${saveBox}
+        <div class="notesbox" id="patchnotes">
+          <b>📜 Patch notes</b>
+          ${PATCH_NOTES.map((r) => `<div class="pnote"><div class="pnv">v${r.version} <span>${esc(r.title)}</span></div><ul>${r.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`).join("")}
+        </div>
         <b>How to play</b>
         <p>Left side: put your thumb down anywhere and drag to move. Lift to stop.</p>
         <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn: in Skills, pick a skill and tap 1–3 to put it on a button. ⌂ Town (top right) takes you back to camp.</p>
@@ -1519,7 +1528,7 @@ export class Ui {
         <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v1.0 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v${GAME_VERSION} · all art made in code for this game</p>
       </div>`;
   }
 

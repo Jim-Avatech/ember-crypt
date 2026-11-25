@@ -180,7 +180,7 @@ describe("v1.0 bows", () => {
   it("the main button shoots arrows with a bow: arrows fly, hit from range and use the quiver", () => {
     const { g, p, m } = setup("amazon", "short_bow", "arrows");
     const q0 = p.equip.off!.qty!;
-    expect(q0).toBe(600);
+    expect(q0).toBe(1200);
     expect(g.mainBasic()).toBe("basic_shoot");
     const hp0 = m.hp;
     let sawArrow = false;
@@ -201,7 +201,7 @@ describe("v1.0 bows", () => {
     run(g, 10, 5);
     expect(g.projectiles.length).toBe(0);
     g.goTown();
-    expect(p.equip.off!.qty).toBe(600);
+    expect(p.equip.off!.qty).toBe(1200);
   });
 
   it("a bow takes a quiver (or nothing) in the off-hand, never a shield", () => {

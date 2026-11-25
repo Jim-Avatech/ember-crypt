@@ -12,6 +12,7 @@ import {
   canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings, cleanSettings,
   keepDamaged, pauseSaving, requestPersist, saveGame, saveSettings, lastFileBackup, markFileBackup, backupFileName, takeBackupReminder,
   setSlot, lastSlot, currentSlot, listHeroes, readSlot, freeSlot, loadSharedStash, saveSharedStash, parseSave,
+  MAX_HEROES, deleteHero, deletedAt,
 } from "./save";
 import { Cloud, cloudConfig } from "./cloud";
 import { Ui } from "./ui";
@@ -223,6 +224,18 @@ const heroSelect = new HeroSelect(app, {
     if (n !== null) switchHero(n, { cls, name });
   },
   click: () => sfx.play("click"),
+  /** v1.0.1: delete a hero. Returns true when it was the hero being played (the select then stays open). */
+  remove: (n) => {
+    const cur = n === currentSlot();
+    if (cur) {
+      if (canSave()) doSave(); // publishes the shared stash first, so it keeps the latest items
+      pauseSaving(); // the paused game must not write the deleted hero back
+    }
+    if (!deleteHero(n)) return false;
+    if (cloud) void cloud.remove(n).catch(() => {});
+    ui.toast("Hero deleted. Your other heroes and the shared stash are untouched.", 4000);
+    return cur;
+  },
 });
 /** v1.0 Files backup: the current hero plus every other hero on this device and the shared stash. */
 function bundle() {
@@ -239,7 +252,7 @@ function restoreBundle(d: SaveData): number {
   let n = 0;
   const cur = currentSlot();
   for (const h of extra) {
-    if (!h || typeof h.slot !== "number" || h.slot === cur || h.slot < 1 || h.slot > 8) continue;
+    if (!h || typeof h.slot !== "number" || h.slot === cur || h.slot < 1 || h.slot > MAX_HEROES) continue;
     const hd = parseSave(JSON.stringify(h.data)).data;
     if (!hd) continue;
     const have = readSlot(h.slot);
@@ -294,7 +307,7 @@ async function pullOtherHeroes() {
     const rows = await cloud.pullAll();
     for (const row of rows) {
       const n = row.slot ?? 1;
-      if (n === currentSlot() || n < 1 || n > 8 || readSlot(n)) continue;
+      if (n === currentSlot() || n < 1 || n > MAX_HEROES || readSlot(n) || row.saved_at <= deletedAt(n)) continue;
       const d = parseSave(JSON.stringify({ ...row.data, savedAt: row.saved_at })).data;
       if (!d) continue;
       const cur = currentSlot();

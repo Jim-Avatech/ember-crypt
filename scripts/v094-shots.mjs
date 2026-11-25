@@ -30,6 +30,7 @@ async function setup(page, hpPct, monsterRight, floor = 5) {
     // the boss stands just right of the hero (where the life number would go) when monsterRight
     Object.assign(bo, monsterRight ? { x: p.x + 0.9, y: p.y - 0.9 } : { x: p.x + 1.6, y: p.y - 0.6 }, { state: "chase", dmgMin: 0, dmgMax: 0, atkT: 99 });
     bo.def = { ...bo.def, speed: 0 };
+    bo.homeX = bo.x; bo.homeY = bo.y; // v1.0.1: bosses leash to their room, so move its home too
     bo.hp = bo.maxHp * 0.7;
     for (const m of g.monsters) { m.dmgMin = 0; m.dmgMax = 0; }
     p.hp = g.derived().maxHp * hpPct; p.mana = g.derived().maxMana * 0.55;

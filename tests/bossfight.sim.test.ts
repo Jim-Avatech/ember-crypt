@@ -42,7 +42,7 @@ export function bossFight(floor: number, seconds = 60) {
   const d = g.derived();
   const b = g.boss as Monster;
   g.monsters = [b];
-  Object.assign(b, { x: p.x + 0.9, y: p.y, state: "chase", atkT: 0.5 });
+  Object.assign(b, { x: p.x + 0.9, y: p.y, homeX: p.x + 0.9, homeY: p.y, state: "chase", atkT: 0.5 }); // v1.0.1: home moved too (bosses leash to their room)
   let swings = 0, rolls = 0, hits = 0, dmg = 0, total = 0, slams = 0, slamDmg = 0;
   const orig = g.hurtPlayer.bind(g);
   g.hurtPlayer = (src, dd, roll) => {

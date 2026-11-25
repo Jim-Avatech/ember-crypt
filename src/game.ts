@@ -234,6 +234,9 @@ export interface Monster {
   mods: EliteMod[];
   /** v0.9.4: seconds left in a boss's ground-slam windup (it stands still) */
   slamT?: number;
+  /** v1.0.1: a boss walking back to its room after you got too far away (and its path home) */
+  leashed?: boolean;
+  homeFlow?: Uint16Array;
   /** v1.0 Amazon effects: slowed (Cold Arrow), frozen (Ice/Freezing Arrow, drawn blue), Inner Sight defense cut */
   chillT?: number;
   frozenT?: number;
@@ -743,6 +746,22 @@ interface DungeonSnap {
 }
 
 export const RECALL_TIME = 1.2;
+/**
+ * v1.0.1: a level you leave keeps its state (killed monsters, loot on the ground, dead boss, explored map) for this
+ * long; come back within it (waypoint, stairs or town) and it's as you left it, after that it's a fresh level.
+ */
+export const FLOOR_KEEP_MS = 5 * 60 * 1000;
+/** v1.0.1: at most this many kept levels (oldest dropped first). */
+export const FLOOR_KEEP_MAX = 8;
+/**
+ * v1.0.1: wall-collision radius for monsters. Bosses are drawn with a 0.5 body, which exactly filled a tile and left
+ * them unable to steer through 2-wide corridors and doorways (stuck in their room). Walls now use at most 0.4.
+ */
+/** v1.0.1: a boss gives up the chase when you are this many steps (walking distance) from its room's centre. */
+export const BOSS_LEASH = 28;
+/** v1.0.1: share of max life per second a leashed boss heals while walking home (full once it is back). */
+export const BOSS_RETURN_HEAL = 0.25;
+export const wallR = (m: { def: { radius: number } }) => Math.min(m.def.radius, 0.4);
 
 export class Game {
   level!: Level;
@@ -789,6 +808,10 @@ export class Game {
   private autoHpT = -99;
   /** Return to Town channel in progress (seconds done / total). Monster hits don't stop it; walking does. */
   recall: { t: number; dur: number } | null = null;
+  /** v1.0.1: levels you left recently, by floor (memory only; see FLOOR_KEEP_MS). */
+  floorCache = new Map<number, { snap: DungeonSnap; left: number }>();
+  /** wall clock for the level-keep timer (tests replace it) */
+  now = () => Date.now();
   /** Blue portal in camp that leads back to the exact spot you recalled from (kept in memory only). */
   portal: { x: number; y: number; floor: number; snap: DungeonSnap } | null = null;
   /** world-space joystick direction from last frame (used by Leap) */
@@ -857,7 +880,30 @@ export class Game {
 
   // ------------------------------------------------------------------ level setup
   /** Travel to the town hub. */
+  /** v1.0.1: remember the level you're leaving (see FLOOR_KEEP_MS). */
+  private keepFloor() {
+    if (this.inTown || !this.level || this.level.kind !== "dungeon") return;
+    const p = this.player;
+    const snap: DungeonSnap = { level: this.level, monsters: this.monsters, ground: this.ground, stairs: this.stairs, boss: this.boss, px: p.x, py: p.y };
+    this.floorCache.delete(this.floor);
+    this.floorCache.set(this.floor, { snap, left: this.now() });
+    while (this.floorCache.size > FLOOR_KEEP_MAX) this.floorCache.delete(this.floorCache.keys().next().value!);
+    // a camp portal to this level leads back to it as it is now
+    if (this.portal && this.portal.floor === this.floor) this.portal.snap = { ...snap, px: this.portal.snap.px, py: this.portal.snap.py };
+  }
+
+  /** v1.0.1: the kept state of a level if you left it less than FLOOR_KEEP_MS ago (and forget expired ones). */
+  private takeKeptFloor(floor: number): DungeonSnap | null {
+    const t = this.now();
+    for (const [f, e] of this.floorCache) if (t - e.left >= FLOOR_KEEP_MS) this.floorCache.delete(f);
+    const e = this.floorCache.get(floor);
+    if (!e) return null;
+    this.floorCache.delete(floor);
+    return e.snap;
+  }
+
   goTown(silent = false) {
+    this.keepFloor();
     this.inTown = true;
     this.level = generateTown();
     this.monsters = [];
@@ -943,10 +989,12 @@ export class Game {
 
   startFloor(floor: number) {
     floor = Math.max(1, Math.min(MAX_FLOOR, floor));
+    this.keepFloor();
+    const kept = this.takeKeptFloor(floor);
     this.inTown = false;
     this.floor = floor;
     this.maxFloor = Math.max(this.maxFloor, floor);
-    this.level = generateLevel(this.seed + floor * 7919);
+    this.level = kept ? kept.level : generateLevel(this.seed + floor * 7919);
     this.monsters = [];
     this.ground = [];
     this.floaters = [];
@@ -968,6 +1016,24 @@ export class Game {
     p.action = null;
     p.moveTarget = null;
     this.boss = null;
+    if (kept) {
+      // v1.0.1: the level as you left it. Living monsters forget you and are back to full life.
+      this.monsters = kept.monsters;
+      this.ground = kept.ground;
+      this.stairs = kept.stairs;
+      this.boss = kept.boss;
+      for (const m of this.monsters) {
+        if (m.state === "dead") continue;
+        m.state = "idle";
+        m.hp = m.maxHp;
+        m.leashed = false;
+        m.homeFlow = undefined;
+        m.x = m.homeX;
+        m.y = m.homeY;
+      }
+      this.exploreAround(true);
+      return;
+    }
     let pack = 0;
     const act = actDef(floor);
     const ml = mlvlOf(floor);
@@ -2760,7 +2826,7 @@ export class Game {
       if (m.state === "dead") {
         m.deadT += mdt;
         if (Math.abs(m.kx) + Math.abs(m.ky) > 0.05) {
-          this.moveEntity(m, m.kx * mdt, m.ky * mdt, m.def.radius * 0.6);
+          this.moveEntity(m, m.kx * mdt, m.ky * mdt, wallR(m) * 0.6);
           m.kx *= Math.exp(-8 * mdt);
           m.ky *= Math.exp(-8 * mdt);
         }
@@ -2768,7 +2834,7 @@ export class Game {
       }
       // knockback
       if (Math.abs(m.kx) + Math.abs(m.ky) > 0.05) {
-        this.moveEntity(m, m.kx * mdt, m.ky * mdt, m.def.radius);
+        this.moveEntity(m, m.kx * mdt, m.ky * mdt, wallR(m));
         m.kx *= Math.exp(-9 * mdt);
         m.ky *= Math.exp(-9 * mdt);
       }
@@ -2801,7 +2867,7 @@ export class Game {
         const fy = m.y - (m.flee ? m.flee.y : p.y);
         const fd = Math.hypot(fx, fy);
         if (fd > 0.01) {
-          this.moveEntity(m, (fx / fd) * m.def.speed * 1.1 * mdt, (fy / fd) * m.def.speed * 1.1 * mdt, m.def.radius);
+          this.moveEntity(m, (fx / fd) * m.def.speed * 1.1 * mdt, (fy / fd) * m.def.speed * 1.1 * mdt, wallR(m));
           m.fx = fx / fd;
           m.fy = fy / fd;
           m.walkPhase += mdt * m.def.speed * 4;
@@ -2822,7 +2888,7 @@ export class Game {
         m.fx = lx / ld;
         m.fy = ly / ld;
         if (ld > lreach) {
-          this.moveEntity(m, (lx / ld) * m.def.speed * mdt, (ly / ld) * m.def.speed * mdt, m.def.radius);
+          this.moveEntity(m, (lx / ld) * m.def.speed * mdt, (ly / ld) * m.def.speed * mdt, wallR(m));
           m.walkPhase += mdt * m.def.speed * 4;
         } else if (m.atkT <= 0) {
           m.atkT = m.def.atkInterval;
@@ -2832,9 +2898,24 @@ export class Game {
         continue;
       }
       if (m.state === "idle") {
-        if (!p.dead && dist < m.def.aggro && lineOfSight(this.level, m.x, m.y, p.x, p.y)) {
+        if (!p.dead && dist < m.def.aggro && !m.leashed && lineOfSight(this.level, m.x, m.y, p.x, p.y)) {
           this.aggroPack(m);
           if (m.def.rank !== "normal") this.events.sound("boss_aggro");
+        } else if (m.leashed && m.homeFlow) {
+          // v1.0.1: a leashed boss walks back to its room (around walls) and heals on the way
+          m.hp = Math.min(m.maxHp, m.hp + m.maxHp * BOSS_RETURN_HEAL * mdt);
+          const step = this.flowStep(m, m.homeFlow);
+          if (!step) {
+            m.leashed = false;
+            m.homeFlow = undefined;
+            m.hp = m.maxHp;
+          } else {
+            this.moveEntity(m, step.x * m.def.speed * mdt, step.y * m.def.speed * mdt, wallR(m));
+            m.fx = step.x;
+            m.fy = step.y;
+            m.walkPhase += mdt * m.def.speed * 4;
+          }
+          continue;
         } else {
           // wander near home
           m.wanderT -= mdt;
@@ -2852,7 +2933,7 @@ export class Game {
           const wd = Math.hypot(wdx, wdy);
           if (wd > 0.15) {
             const s = m.def.speed * 0.4;
-            this.moveEntity(m, (wdx / wd) * s * mdt, (wdy / wd) * s * mdt, m.def.radius);
+            this.moveEntity(m, (wdx / wd) * s * mdt, (wdy / wd) * s * mdt, wallR(m));
             m.fx = wdx / wd;
             m.fy = wdy / wd;
             m.walkPhase += mdt * s * 4;
@@ -2860,7 +2941,20 @@ export class Game {
           continue;
         }
       }
-      if (dist > 20) {
+      if (m.def.rank !== "normal") {
+        // v1.0.1: bosses chase you out of their room; they give up only when you are more than BOSS_LEASH steps
+        // (walking distance) from their room, then walk home and heal back to full on the way
+        const hd = this.flow[idx(Math.floor(m.homeX), Math.floor(m.homeY))];
+        if (hd > BOSS_LEASH) {
+          m.state = "idle";
+          m.wx = m.homeX;
+          m.wy = m.homeY;
+          if (!m.homeFlow) m.homeFlow = bfs(this.level, Math.floor(m.homeX), Math.floor(m.homeY));
+          m.leashed = true;
+          continue;
+        }
+        m.leashed = false;
+      } else if (dist > 20) {
         m.state = "idle";
         m.wx = m.homeX;
         m.wy = m.homeY;
@@ -2886,7 +2980,7 @@ export class Game {
         const sp = m.def.speed * (m.def.rank === "final" ? 4 : 3.2);
         const ox = m.x;
         const oy = m.y;
-        this.moveEntity(m, m.cdx * sp * mdt, m.cdy * sp * mdt, m.def.radius);
+        this.moveEntity(m, m.cdx * sp * mdt, m.cdy * sp * mdt, wallR(m));
         m.walkPhase += mdt * sp * 4;
         if (Math.random() < 0.6) this.spark(m.x, m.y, "#c8b080", 1.5);
         const hitR = m.def.reach + m.def.radius + p.r;
@@ -2939,7 +3033,7 @@ export class Game {
       // ranged: back off when you get close, shoot when in range and in sight
       if (ranged && dist < 3 && m.atkT > 0.3 && lineOfSight(this.level, m.x, m.y, p.x, p.y)) {
         const sp = m.def.speed * 0.85;
-        this.moveEntity(m, (-dx / dist) * sp * mdt, (-dy / dist) * sp * mdt, m.def.radius);
+        this.moveEntity(m, (-dx / dist) * sp * mdt, (-dy / dist) * sp * mdt, wallR(m));
         m.fx = dx / dist;
         m.fy = dy / dist;
         m.walkPhase += mdt * sp * 4;
@@ -3008,7 +3102,7 @@ export class Game {
       }
       const ml = Math.hypot(mx, my) || 1;
       const sp = m.def.speed;
-      this.moveEntity(m, (mx / ml) * sp * mdt, (my / ml) * sp * mdt, m.def.radius);
+      this.moveEntity(m, (mx / ml) * sp * mdt, (my / ml) * sp * mdt, wallR(m));
       m.fx = mx / ml;
       m.fy = my / ml;
       m.walkPhase += mdt * sp * 4;
@@ -3451,6 +3545,7 @@ export class Game {
     if (!q || !this.inTown) return false;
     const s = q.snap;
     this.portal = null;
+    this.floorCache.delete(q.floor);
     this.inTown = false;
     this.floor = q.floor;
     this.level = s.level;
@@ -3706,6 +3801,35 @@ export class Game {
     if (this.nearPortal()) return "portal";
     if (this.nearWaypoint()) return "waypoint";
     return null;
+  }
+
+  /** v1.0.1: unit step toward the next lower cell of a distance field (null when already at its bottom). */
+  private flowStep(m: { x: number; y: number }, field: Uint16Array): { x: number; y: number } | null {
+    const tx = Math.floor(m.x);
+    const ty = Math.floor(m.y);
+    let best = field[idx(tx, ty)];
+    if (best <= 1) return null;
+    let bx = 0;
+    let by = 0;
+    for (let oy = -1; oy <= 1; oy++)
+      for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = tx + ox;
+        const ny = ty + oy;
+        if (!isFloor(this.level, nx, ny)) continue;
+        if (ox && oy && (!isFloor(this.level, tx + ox, ty) || !isFloor(this.level, tx, ty + oy))) continue;
+        const v = field[idx(nx, ny)];
+        if (v < best) {
+          best = v;
+          bx = ox;
+          by = oy;
+        }
+      }
+    if (!bx && !by) return null;
+    const gx = tx + bx + 0.5 - m.x;
+    const gy = ty + by + 0.5 - m.y;
+    const gl = Math.hypot(gx, gy) || 1;
+    return { x: gx / gl, y: gy / gl };
   }
 
   // ------------------------------------------------------------------ physics helpers
