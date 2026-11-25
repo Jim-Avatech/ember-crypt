@@ -3,6 +3,27 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.9.1: half the item drops, two-handed grip
+
+- **Drops (measured over 40,000 simulated kills, Act II):**
+
+  | Source | Before | After |
+  |---|---|---|
+  | Normal monster, item | 17.1% of kills | 8.3% (target 8.5%) |
+  | Champion | 1 item every kill | 1 item on 50% of kills |
+  | Unique | 2 items | 1 item (still always magic or better) |
+
+  The normal/magic/rare mix is unchanged: about 36/51/13% of normal-monster items before and after. Every item still makes the same quality roll; there are simply fewer of them.
+  Gold (20% of normal kills) and potions (9%) are unchanged, because fights are tuned around potions. Bosses, act artifacts and Find Item are unchanged. Test: `tests/drops.sim.test.ts`.
+- **Two-handed weapons are held with both hands:**
+  - Applies to Great Sword (Two-Handed Sword, Claymore art), Quarterstaff, and the two-handed axe and maul art.
+  - The main hand holds the top of the grip and the other hand sits lower on the shaft, with both arms solved by IK. This covers every frame of idle, walk, attacks, Leap and warcries, in all 8 directions.
+  - Two-handers get their own swings: a normal attack is an overhead chop. Double Swing and Frenzy do a chop and then a horizontal sweep. Whirlwind spins with both hands on the hilt.
+  - One-handed and dual-wield art is unchanged.
+  - Check: `node scripts/twohand-sheet.mjs` renders all 1,736 two-handed frames and measures each hand's distance from the shaft (it must be 0); contact sheets go to `screenshots/twohand-sheet-*.png`.
+- **Kept:** Frenzy and Double Swing work with a two-handed weapon, swinging it twice (`tests/v091.test.ts`).
+- **No stamina bar, by design:** Increased Stamina gives life instead.
+
 ## v0.9: every Barbarian skill, four skill buttons
 
 All 30 Barbarian skills now work. There are four skill buttons next to ⚔. In Skills, pick a skill and tap 1–4 to assign it; a newly learned active skill fills the first empty button. A tap shorter than one frame now always counts. Hard points stay capped at 1 + (level − skill level), and old saves keep their skills (a 4th empty button is added).

@@ -13,7 +13,8 @@
     "test:compare-scroll": "node scripts/compare-scroll.mjs http://127.0.0.1:5174/ember-crypt/ \"\" 300 && node scripts/compare-scroll.mjs",
     "test:file-backup": "node scripts/file-backup.mjs",
     "test:cloud-ui": "node scripts/cloud-ui.mjs",
-    "test:skills": "node scripts/skills-shots.mjs"
+    "test:skills": "node scripts/skills-shots.mjs",
+    "test:twohand": "node scripts/twohand-sheet.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",

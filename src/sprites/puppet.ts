@@ -158,7 +158,7 @@ function barbPose(anim: Anim, f: number, look: Look): Pose {
   const offKind = look.off ? BASE_BY_ID[look.off].slot : null;
   const twoHanded = look.main ? BASE_BY_ID[look.main].hands === 2 : false;
   const restL = offKind === "shield" ? arm(0.55, 1.0, 0.15) : offKind === "weapon" ? arm(0.3, 0.55, 0.1, 1.25) : twoHanded ? arm(0.6, 0.9, 0.0, 1.2) : arm(0.12, 0.3, 0.12);
-  const restR = arm(0.3, 0.55, 0.1, 1.25);
+  const restR = twoHanded ? arm(0.45, 0.6, 0.1, 1.55) : arm(0.3, 0.55, 0.1, 1.25); // two-handers: blade raised in a guard
   const base = pose({ armL: restL, armR: restR });
   switch (anim) {
     case "idle": {
@@ -183,6 +183,20 @@ function barbPose(anim: Anim, f: number, look: Look): Pose {
     case "atk0":
     case "atk1": {
       const t = (f + 0.5) / 6;
+      if (twoHanded) {
+        // v0.9.1: both hands on the weapon (see gripTwoHanded). atk0 = overhead chop, atk1 = horizontal sweep.
+        const legs2 = (fr: Leg, bk: Leg) => ({ legL: fr, legR: bk });
+        if (anim === "atk0") {
+          const wind = pose({ armR: arm(3.3, 0.3, 0.1, 0.45), twist: 0.15, lean: -0.12, head: -0.2, ...legs2(leg(0.2, 0.2), leg(-0.25, 0.15)) });
+          const strike = pose({ armR: arm(1.25, 0.05, 0.05, 0.1), twist: -0.05, lean: 0.32, ...legs2(leg(0.5, 0.35), leg(-0.35, 0.1)) });
+          const follow = pose({ armR: arm(0.55, 0.15, 0.05, 0.15), twist: -0.1, lean: 0.3, ...legs2(leg(0.42, 0.3), leg(-0.3, 0.1)) });
+          return keyed([[0, base], [0.3, wind], [0.52, strike], [0.74, follow], [1, base]], t);
+        }
+        const wind = pose({ armR: arm(1.5, 0.1, 0.35, 0.05), twist: 1.05, lean: 0.0, ...legs2(leg(0.15, 0.2), leg(-0.3, 0.2)) });
+        const strike = pose({ armR: arm(1.45, 0.05, 0.1, 0.05), twist: -0.55, lean: 0.22, ...legs2(leg(0.45, 0.3), leg(-0.3, 0.1)) });
+        const follow = pose({ armR: arm(1.3, 0.15, 0.05, 0.1), twist: -1.0, lean: 0.18, ...legs2(leg(0.38, 0.25), leg(-0.25, 0.1)) });
+        return keyed([[0, base], [0.3, wind], [0.52, strike], [0.74, follow], [1, base]], t);
+      }
       const left = anim === "atk1";
       const sign = left ? -1 : 1;
       const swingArm = (a: Arm): Partial<Pose> => (left ? { armL: a, armR: restR } : { armR: a, armL: twoHanded ? arm(a.a - 0.1, a.el + 0.4, 0.0, a.wr) : restL });
@@ -357,6 +371,66 @@ function solve(d: Dims, p: Pose): Skel {
   return sk;
 }
 
+// ------------------------------------------------------------------ two-handed grip (v0.9.1)
+/** Distance between the two hands along the shaft. */
+const GRIP = 2.2;
+export const isTwoHanded = (id?: string) => !!id && BASE_BY_ID[id]?.hands === 2;
+const sub = (a: V, b: V): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a: V, b: V) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const len = (a: V) => Math.hypot(a[0], a[1], a[2]);
+/** Two-bone IK: shoulder S reaching for T. Returns elbow and hand (clamped to reach); `pole` says where the elbow points. */
+export function reach(S: V, T: V, up: number, fore: number, pole: V): [V, V] {
+  const D = sub(T, S);
+  const dist0 = len(D) || 1e-6;
+  const u = scl(D, 1 / dist0);
+  const dist = Math.min(up + fore - 0.05, Math.max(Math.abs(up - fore) + 0.05, dist0));
+  const x = (up * up - fore * fore + dist * dist) / (2 * dist);
+  const h = Math.sqrt(Math.max(0, up * up - x * x));
+  let n = sub(pole, scl(u, dot(pole, u)));
+  const nl = len(n);
+  n = nl > 1e-6 ? scl(n, 1 / nl) : [0, 0, -1];
+  return [add(S, add(scl(u, x), scl(n, h))), add(S, scl(u, dist))];
+}
+/**
+ * Put both hands on a two-handed weapon. The pose's right arm decides where the weapon is and where it points;
+ * the grip is pulled toward the middle of the chest, the main hand holds the top of the grip and the other hand
+ * sits GRIP lower on the shaft. Both arms are re-solved with IK, elbows out and down.
+ */
+function gripTwoHanded(sk: Skel, d: Dims) {
+  const w = sk.wdir[1];
+  const G0 = sk.hand[1];
+  const lat = dot(sub(G0, sk.C), sk.side);
+  let G = sub(G0, scl(sk.side, lat * 0.6)); // toward the midline
+  // keep the grip in front of the chest so the arms don't clip through the body
+  const fwd: V = [sk.side[1], -sk.side[0], 0];
+  const ahead = dot(sub(G, sk.C), fwd);
+  if (ahead < 3) G = add(G, scl(fwd, 3 - ahead));
+  // if either hand can't reach, slide the grip toward a point just in front of the chest until both can
+  const mid = add(scl(add(sk.sh[0], sk.sh[1]), 0.5), add(scl(fwd, 3), [0, 0, -1.5]));
+  const maxR = d.upper + d.fore - 0.25;
+  for (let k = 0; k < 24; k++) {
+    const t0 = add(G, scl(w, GRIP * 0.5));
+    const l0 = add(G, scl(w, -GRIP * 0.5));
+    if (len(sub(t0, sk.sh[1])) <= maxR && len(sub(l0, sk.sh[0])) <= maxR) break;
+    G = add(G, scl(sub(mid, G), 0.2));
+  }
+  const top = add(G, scl(w, GRIP * 0.5));
+  const low = add(G, scl(w, -GRIP * 0.5));
+  for (const i of [0, 1]) {
+    const s = i ? 1 : -1;
+    const [E, Hd] = reach(sk.sh[i], i ? top : low, d.upper, d.fore, add(scl(sk.side, s * 3), [0, 0, -2]));
+    sk.el[i] = E;
+    sk.hand[i] = Hd;
+  }
+  sk.wdir[0] = w;
+  // grip distance between the two hands actually reached (used by tests)
+  lastGrip = len(sub(sk.hand[1], sk.hand[0]));
+  lastGripErr = Math.max(len(sub(sk.hand[1], top)), len(sub(sk.hand[0], low)));
+}
+/** Debug/test: how far the hands ended up from the shaft in the last two-handed frame. */
+export let lastGrip = 0;
+export let lastGripErr = 0;
+
 // ------------------------------------------------------------------ rasterize
 interface Pt {
   x: number;
@@ -445,6 +519,7 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
   if (sp.pose === "float") p = { ...p, bob: p.bob + 3 + Math.sin((f / 4) * Math.PI) * 0.8, legL: leg(0.9, 1.6), legR: leg(0.7, 1.5) };
   const fam = sp.fam;
   const sk = solve(d, p);
+  if (sp.pose === "barb" && anim !== "death" && isTwoHanded(look.main)) gripTwoHanded(sk, d);
   const a = (dir * Math.PI) / 4;
   const ca = Math.cos(a);
   const sa = Math.sin(a);
@@ -678,12 +753,12 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     const two = b.hands === 2;
     if (b.kind === "sword") {
       const L = small ? 5 : two ? 16 : 10 + Math.min(4, b.qlvl / 5) + (b.w === 2 ? 1.5 : 0);
-      cap(add(hnd, scl(w, -1.6)), hnd, 0.7, C.wood, bias);
+      cap(add(hnd, scl(w, two ? -(GRIP + 1.4) : -1.6)), hnd, 0.7, C.wood, bias);
       cap(add(hnd, scl(sk.side, -1.8)), add(hnd, scl(sk.side, 1.8)), 0.6, C.gold, bias + 0.05);
       cap(add(hnd, scl(w, 1)), add(hnd, scl(w, L)), two || b.w === 2 ? 0.95 : 0.7, small ? hex("#b0b0a8") : C.steel, bias + 0.1);
     } else if (b.kind === "axe") {
       const L = two ? 13 : b.w === 2 ? 10 : 8.5;
-      cap(add(hnd, scl(w, -2)), add(hnd, scl(w, L)), 0.65, C.wood, bias);
+      cap(add(hnd, scl(w, two ? -(GRIP + 1.6) : -2)), add(hnd, scl(w, L)), 0.65, C.wood, bias);
       const tip = add(hnd, scl(w, L - 1.4));
       const big = b.qlvl >= 12 || two;
       cap(add(tip, scl(w, -1.6)), add(tip, scl(w, 1.0)), big ? 1.7 : 1.3, C.steel, bias + 0.1);
@@ -703,7 +778,7 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     } else if (b.kind === "mace") {
       const L = two ? 12 : 8;
       const club = id === "club" || id === "spiked_club";
-      cap(add(hnd, scl(w, -1.6)), add(hnd, scl(w, L - 2)), club ? 0.9 : 0.6, C.wood, bias);
+      cap(add(hnd, scl(w, two ? -(GRIP + 1.4) : -1.6)), add(hnd, scl(w, L - 2)), club ? 0.9 : 0.6, C.wood, bias);
       const tip = add(hnd, scl(w, L));
       if (club) cap(add(hnd, scl(w, L - 4)), tip, 1.6, hex("#8a5a30"), bias + 0.1);
       else if (id === "maul") cap(add(tip, scl(perp, -2.6)), add(tip, scl(perp, 2.6)), 2, C.steelDark, bias + 0.1);

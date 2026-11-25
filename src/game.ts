@@ -21,6 +21,10 @@ import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, siz
 import { type Level, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
 import { Rng, chance, rand, randInt } from "./rng";
 
+/** v0.9.1 drop rates: a normal monster drops an item 8.5% of the time (was 17%); a champion has a 50% chance of one item (was always 1). */
+export const ITEM_DROP = 0.085;
+export const ELITE_ITEM_CHANCE = 0.5;
+
 export interface Stats {
   str: number;
   dex: number;
@@ -1934,14 +1938,16 @@ export class Game {
     } else if (m.elite) {
       // champions and uniques: better loot (uniques always drop magic or better)
       const u = m.elite === 2;
-      for (let i = 0; i < (u ? 2 : 1); i++) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (u ? 100 : 50), u) });
+      // v0.9.1: half as many items (uniques 2 -> 1, champions 1 -> a 50% chance); each item's quality roll is unchanged
+      if (u || chance(ELITE_ITEM_CHANCE)) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (u ? 100 : 50), u) });
       this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(8, 20) * m.mlvl * (u ? 2 : 1)) });
       if (u) this.events.sound("boss");
     } else if (!m.minion || chance(0.3)) {
       const r = Math.random();
-      if (r < 0.17) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf, false) });
-      else if (r < 0.37) this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(3, 12) * m.mlvl) });
-      else if (r < 0.46) this.dropAt(m.x, m.y, { item: makeItem(chance(0.7) ? "hp_potion" : "mp_potion") }); // v0.8: 9% (was 13%)
+      // v0.9.1: items 8.5% (was 17%); gold 20% and potions 9% unchanged
+      if (r < ITEM_DROP) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf, false) });
+      else if (r < ITEM_DROP + 0.2) this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(3, 12) * m.mlvl) });
+      else if (r < ITEM_DROP + 0.29) this.dropAt(m.x, m.y, { item: makeItem(chance(0.7) ? "hp_potion" : "mp_potion") }); // v0.8: 9% (was 13%)
     }
     // Fire Enchanted monsters burst into flame when they die
     if (m.mods?.includes("fire"))

@@ -1473,7 +1473,7 @@ export class Ui {
         <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.9 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.9.1 · all art made in code for this game</p>
       </div>`;
   }
 
