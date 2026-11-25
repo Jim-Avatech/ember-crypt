@@ -124,6 +124,11 @@ export interface Rolled {
   suffixes: string[];
 }
 
+/** How many affixes a rare gets (picked uniformly from this list). */
+export const RARE_COUNTS = [3, 3, 4, 4, 4, 5, 5, 6];
+/** Magic: chance of prefix only / suffix only (the rest get both). */
+export const MAGIC_SPLIT = { prefixOnly: 0.25, suffixOnly: 0.25 };
+
 /** Roll a set of affixes. Magic: 1 prefix and/or 1 suffix. Rare: 3–6, at most 3 of each side. */
 export function rollAffixes(cat: Cat, ilvl: number, q: Quality, r: Rng = Math.random): Rolled {
   const res: Rolled = { mods: [], aff: [], prefixes: [], suffixes: [] };
@@ -148,12 +153,12 @@ export function rollAffixes(cat: Cat, ilvl: number, q: Quality, r: Rng = Math.ra
   };
   if (q === "magic") {
     const x = r();
-    const sides: ("p" | "s")[] = x < 0.25 ? ["p"] : x < 0.5 ? ["s"] : ["p", "s"];
+    const sides: ("p" | "s")[] = x < MAGIC_SPLIT.prefixOnly ? ["p"] : x < MAGIC_SPLIT.prefixOnly + MAGIC_SPLIT.suffixOnly ? ["s"] : ["p", "s"];
     for (const s of sides) take(s);
     if (!res.aff.length) take(sides[0] === "p" ? "s" : "p");
     return res;
   }
-  const n = [3, 3, 4, 4, 4, 5, 5, 6][Math.floor(r() * 8)];
+  const n = RARE_COUNTS[Math.floor(r() * RARE_COUNTS.length)];
   let np = 0;
   let ns = 0;
   for (let i = 0; i < n; i++) {
@@ -205,10 +210,16 @@ export function enchant(it: Item, q: Quality, r: Rng = Math.random): Item {
 }
 
 /** Drop quality. Magic find raises the odds (rare odds with D2-style diminishing returns). */
-export function rollQuality(mlvl: number, mf: number, boss: boolean, r: Rng = Math.random): Quality {
+/** Chance that a dropped item is rare / magic (before rings and amulets are bumped to magic). */
+export function qualityOdds(mlvl: number, mf: number, boss: boolean): { rare: number; magic: number } {
   const rareMf = (mf * 600) / (mf + 600);
-  const rare = (boss ? 0.3 : 0.035 + 0.004 * mlvl) * (1 + rareMf / 100);
-  const magic = (boss ? 1 : Math.min(0.42, 0.2 + 0.012 * mlvl)) * (1 + mf / 100);
+  const rare = Math.min(1, (boss ? 0.3 : 0.035 + 0.004 * mlvl) * (1 + rareMf / 100));
+  const magic = Math.min(1 - rare, (boss ? 1 : Math.min(0.42, 0.2 + 0.012 * mlvl)) * (1 + mf / 100));
+  return { rare, magic };
+}
+
+export function rollQuality(mlvl: number, mf: number, boss: boolean, r: Rng = Math.random): Quality {
+  const { rare, magic } = qualityOdds(mlvl, mf, boss);
   const x = r();
   if (x < rare) return "rare";
   if (x < rare + magic) return "magic";

@@ -680,6 +680,74 @@ await ev(() => __ec.ui.close());
   check("Items never need identifying", await ev(() => { const it = __ec.items.rollDrop(10, 0, true); return !("identified" in it) && it.mods?.length > 0; }));
 }
 
+// ---------------------------------------------------------------- 14d. Item Guide (compendium)
+{
+  await tap('.mbtn[data-tab="settings"]');
+  await wait(200);
+  await tap('[data-act="tab"][data-tab="guide"].gbtn');
+  await wait(200);
+  const g0 = await ev(() => ({ tab: __ec.ui.openTab, cards: document.querySelectorAll(".gcard").length, bases: __ec.data.ITEM_BASES.length, names: [...document.querySelectorAll(".gcard b")].map((b) => b.textContent) }));
+  check("Settings opens the Item Guide, listing every item class from the game data", g0.tab === "guide" && g0.cards === g0.bases && ["Sword", "Axe", "Mace", "Great Sword", "Armor", "Helm", "Shield", "Gloves", "Boots", "Belt", "Ring", "Amulet"].every((n) => g0.names.includes(n)), JSON.stringify(g0));
+  await page.screenshot({ path: `${outDir}/guide.png` });
+  // scroll the list with a finger
+  const gb = await page.locator(".gbody").boundingBox();
+  await touch("touchStart", [{ x: gb.x + gb.width / 2, y: gb.y + gb.height - 20, id: 4 }]);
+  for (let i = 1; i <= 8; i++) { await touch("touchMove", [{ x: gb.x + gb.width / 2, y: gb.y + gb.height - 20 - i * 25, id: 4 }]); await wait(16); }
+  await touch("touchEnd", []);
+  await wait(300);
+  const scrolled = await ev(() => document.querySelector(".gbody").scrollTop);
+  check("Guide scrolls with a finger", scrolled > 40, `(scrollTop ${scrolled})`);
+  const secs = {};
+  for (const sec of ["levels", "affixes", "rarity", "monsters", "skills"]) {
+    await tap(`[data-act="gsec"][data-sec="${sec}"]`);
+    await wait(120);
+    secs[sec] = await ev(() => ({ on: document.querySelector(".gbody")?.dataset.sec, rows: document.querySelectorAll(".gbody tr").length }));
+    if (sec === "affixes") await page.screenshot({ path: `${outDir}/guide-affixes.png` });
+  }
+  const tiers = await ev(() => __ec.data.AFFIXES.reduce((a, x) => a + x.tiers.length, 0) + __ec.data.AFFIXES.length);
+  const navBig = await ev(() => [...document.querySelectorAll(".gsec")].every((b) => b.getBoundingClientRect().height >= 44));
+  check("Guide sections: levels, affixes (every tier), rarity, monsters, skills", Object.entries(secs).every(([k, v]) => v.on === k && v.rows > 3) && secs.affixes.rows === tiers && navBig, JSON.stringify({ secs, tiers, navBig }));
+  await ev(() => __ec.ui.close());
+}
+
+// ---------------------------------------------------------------- 14e. saves: last-saved time, export → import, auto potions
+{
+  await ev(() => { __ec.game.player.gold = 4242; __ec.game.events.changed(); });
+  await wait(700);
+  await tap('.mbtn[data-tab="settings"]');
+  await wait(200);
+  const ls = await ev(() => document.getElementById("lastsaved")?.textContent ?? "");
+  check("Settings shows the last-saved time", /\d:\d\d/.test(ls), `("${ls}")`);
+  await page.screenshot({ path: `${outDir}/settings-save.png` });
+  const code = await ev(() => __ec.ui["hooks"].save.exportCode());
+  await ev(() => { __ec.game.player.gold = 1; });
+  await tap('[data-act="imp-open"]');
+  await wait(150);
+  await page.locator("#impcode").fill(code);
+  await tap('[data-act="imp-go"]');
+  await wait(150);
+  const ask = await ev(() => document.querySelector(".savemsg")?.textContent ?? "");
+  await tap('[data-act="imp-yes"]');
+  await wait(300);
+  const imp = await ev(() => ({ gold: __ec.game.player.gold, baks: __ec.ui["hooks"].save.backups().length }));
+  check("Export a save code, then import it (current hero goes to backups)", /Replace your level/.test(ask) && imp.gold === 4242 && imp.baks >= 1, JSON.stringify({ ask: ask.slice(0, 60), imp }));
+  // auto health potion
+  await ev(() => __ec.ui.close());
+  await ev(() => __ec.game.goDungeon(1));
+  await wait(300);
+  const ah = await ev(async () => {
+    const g = __ec.game;
+    for (const m of g.monsters) { m.x += 60; m.y += 60; }
+    g.player.hpPots = 2;
+    g.player.healLeft = 0;
+    g.player.hp = g.derived().maxHp * 0.08;
+    await new Promise((r) => setTimeout(r, 400));
+    return { pots: g.player.hpPots, on: __ec.settings.autoHp };
+  });
+  check("Auto health potion (on by default) drinks one at 10% life", ah.on && ah.pots === 1, JSON.stringify(ah));
+  await ev(() => __ec.game.goTown());
+}
+
 // ---------------------------------------------------------------- 15. portrait + perf
 await page.setViewportSize({ width: 393, height: 852 });
 await wait(400);
@@ -725,6 +793,72 @@ await page.close();
   check("No page errors after migration", errs2.length === 0, errs2.join(" | "));
   await p2.close();
   await ctx2.close();
+}
+
+// ---------------------------------------------------------------- 16b. damaged save → backup
+{
+  const ctx3 = await browser.newContext(ctxOpts);
+  await ctx3.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    const good = { v: 3, seed: 77, floor: 2, maxFloor: 4, savedAt: Date.now() - 600000,
+      player: { level: 14, xp: 30000, base: { str: 60, dex: 30, vit: 50, ene: 10 }, statPoints: 0, skillPoints: 0, skills: { bash: 3 }, slots: ["bash", null, null],
+        bag: [], equip: { main: { uid: 1, baseId: "axe", ilvl: 10 } }, gold: 999, hpPots: 1, mpPots: 1, kills: 300 } };
+    localStorage.setItem("ember-crypt-save-v1", '{"v":3,"seed":77,"player":{"lev');
+    localStorage.setItem("ember-crypt-save-bak1", JSON.stringify(good));
+  });
+  const p4 = await ctx3.newPage();
+  const errs4 = [];
+  p4.on("pageerror", (e) => errs4.push(e.message));
+  await p4.goto(`${base}?debug`);
+  await p4.waitForTimeout(1500);
+  const rec = await p4.evaluate(() => ({ lvl: __ec.game.player.level, gold: __ec.game.player.gold, toast: document.getElementById("toast").textContent, damaged: !!localStorage.getItem("ember-crypt-save-damaged") }));
+  check("A damaged save falls back to the backup (and keeps the damaged copy)", rec.lvl === 14 && rec.gold === 999 && /damaged/.test(rec.toast) && rec.damaged && errs4.length === 0, JSON.stringify({ rec, errs4 }));
+  await p4.close();
+  await ctx3.close();
+}
+
+// ---------------------------------------------------------------- 16c. move a v0.3 save from Safari to the Home Screen app
+{
+  const v03 = { v: 3, seed: 5, floor: 5, maxFloor: 6,
+    player: { level: 18, xp: 60000, base: { str: 80, dex: 40, vit: 60, ene: 15 }, statPoints: 0, skillPoints: 3, skills: { bash: 5, double_swing: 4, frenzy: 3 },
+      slots: ["bash", "double_swing", "frenzy"], gold: 4321, hpPots: 4, mpPots: 4, kills: 900,
+      equip: { main: { uid: 1, baseId: "axe", ilvl: 14, q: "rare", name: "Doom Bite", mods: [{ s: "edmg", v: 40 }, { s: "ll", v: 5 }, { s: "str", v: 8 }], aff: ["p:edmg", "s:ll", "s:str"] } },
+      bag: [{ item: { uid: 3, baseId: "sword", ilvl: 9 }, x: 0, y: 0 }] } };
+  // "Safari": has the v0.3 save
+  const cA = await browser.newContext(ctxOpts);
+  await cA.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(base).origin });
+  await cA.addInitScript((d) => { if (!sessionStorage.getItem("s")) { sessionStorage.setItem("s", "1"); localStorage.setItem("ember-crypt-save-v1", JSON.stringify(d)); localStorage.setItem("ember-crypt-settings-v1", '{"tutorialSeen":true}'); } }, v03);
+  const pA = await cA.newPage();
+  await pA.goto(`${base}?debug`);
+  await pA.waitForTimeout(1200);
+  const bx = async (pg, sel) => { const b = await pg.locator(sel).first().boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  await pA.locator('.mbtn[data-tab="settings"]').tap();
+  await pA.waitForTimeout(200);
+  await pA.locator('[data-act="exp-copy"]').tap();
+  await pA.waitForTimeout(300);
+  const code = await pA.evaluate(async () => { try { return await navigator.clipboard.readText(); } catch { return document.getElementById("expcode")?.value ?? ""; } });
+  const msgA = await pA.evaluate(() => document.querySelector(".savemsg")?.textContent ?? "");
+  await pA.close(); await cA.close();
+  // "Home Screen app": separate, empty storage
+  const cB = await browser.newContext(ctxOpts);
+  await cB.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(base).origin });
+  const pB = await cB.newPage();
+  await pB.goto(`${base}?debug`);
+  await pB.waitForTimeout(1200);
+  await pB.evaluate((c) => navigator.clipboard.writeText(c), code);
+  await pB.locator('.mbtn[data-tab="settings"]').tap();
+  await pB.waitForTimeout(200);
+  await pB.locator('[data-act="imp-open"]').tap();
+  await pB.waitForTimeout(150);
+  await pB.locator('[data-act="imp-paste"]').tap();
+  await pB.waitForTimeout(300);
+  await pB.screenshot({ path: `${outDir}/import-save.png` });
+  await pB.locator('[data-act="imp-yes"]').tap();
+  await pB.waitForTimeout(400);
+  const got = await pB.evaluate(() => ({ lvl: __ec.game.player.level, gold: __ec.game.player.gold, main: __ec.game.player.equip.main?.name, saved: JSON.parse(localStorage.getItem("ember-crypt-save-v1")).player.level }));
+  await pB.close(); await cB.close();
+  check("A v0.3 save exports as a code (Copy) and imports in a separate app (Paste → Replace)", code.startsWith("EMBERCRYPT1:") && /copied/.test(msgA) && got.lvl === 18 && got.gold === 4321 && got.main === "Doom Bite" && got.saved === 18, JSON.stringify({ len: code.length, msgA, got }));
 }
 
 // ---------------------------------------------------------------- 17. test hooks are hidden without ?debug (production builds)

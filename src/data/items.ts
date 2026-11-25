@@ -71,6 +71,24 @@ export const ITEM_BASES: ItemBase[] = [
   { id: "hp_potion", name: "Healing Potion", slot: "potion", kind: "potion", w: 1, h: 1, potion: "hp", price: 25, weight: 0 },
   { id: "mp_potion", name: "Mana Potion", slot: "potion", kind: "potion", w: 1, h: 1, potion: "mp", price: 30, weight: 0 },
 ];
+/** What each class is for (shown in the Item Guide). */
+export const CLASS_USE: Record<string, string> = {
+  sword: "Fast and balanced. Good all-rounder; the only one-hander with a Dexterity requirement.",
+  axe: "Big swings: the widest damage spread and highest one-hand average. Normal speed.",
+  mace: "Steady: tight damage spread, so every hit lands close to the average.",
+  great_sword: "Two-handed. Slow, very high damage; takes both hands (no shield or second weapon).",
+  armor: "Most defense of any slot.",
+  helm: "Defense. Can roll +skills, mana and magic find.",
+  shield: "Off-hand defense for one-handed fighters. Can roll all resistances.",
+  gloves: "Light defense. Attack rating, attack speed and leech rolls.",
+  boots: "Light defense. The place for Faster Run/Walk.",
+  belt: "Holds more potions of each kind as its level rises (+1 per 6 levels, max +4).",
+  ring: "No defense; always magic or rare. Two ring slots.",
+  amulet: "No defense; always magic or rare. Can roll +skills.",
+  hp_potion: "Restores 45% life over a few seconds. Fills belt slots automatically.",
+  mp_potion: "Restores 60% mana over a few seconds.",
+};
+
 export const BASE_BY_ID: Record<string, ItemBase> = Object.fromEntries(ITEM_BASES.map((b) => [b.id, b]));
 
 export interface Item {

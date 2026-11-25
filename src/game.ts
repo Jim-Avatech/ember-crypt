@@ -217,8 +217,15 @@ export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
 /** Total XP needed to reach level L+1 from level L. */
 export const xpForLevel = (L: number) => (L <= 1 ? 0 : Math.round(100 * Math.pow(L - 1, 1.9)));
 
+/** Current save schema. Bump it (and add a migration step) whenever the save shape changes. */
+export const SAVE_VERSION = 3;
+
 export interface SaveData {
   v: 3;
+  /** ms since epoch, set by saveGame */
+  savedAt?: number;
+  /** copy of the player's settings, so exports carry them */
+  settings?: Record<string, unknown>;
   seed: number;
   floor: number;
   maxFloor: number;
@@ -231,11 +238,23 @@ export interface SaveData {
 const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy"]);
 const TWO_HIT = new Set(["double_swing", "frenzy"]);
 
+/** Drop anything that would crash the game (unknown item classes, broken bag entries). */
+function sanitizeV3(d: SaveData): SaveData {
+  const p = d.player;
+  if (!p || typeof p !== "object") return d;
+  if (Array.isArray(p.bag)) p.bag = p.bag.filter((e) => e && e.item && BASE_BY_ID[e.item.baseId] && Number.isFinite(e.x) && Number.isFinite(e.y));
+  if (p.equip && typeof p.equip === "object") for (const k of Object.keys(p.equip) as EquipSlot[]) if (!p.equip[k] || !BASE_BY_ID[p.equip[k]!.baseId]) delete p.equip[k];
+  if (!p.skills || typeof p.skills !== "object") p.skills = {};
+  if (!Array.isArray(p.slots)) p.slots = [null, null, null];
+  for (const k of ["hpPots", "mpPots", "kills", "statPoints", "skillPoints"] as const) if (!Number.isFinite(p[k])) p[k] = 0;
+  return d;
+}
+
 /** Bring any older save up to v3: v1 (20-slot list, 6 slots) → v2 (grid bag, D2 slots) → v3 (item classes). */
 export function migrateSave(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== "object") return null;
   const d = raw as Record<string, unknown> & { v: number };
-  if (d.v === 3) return d as unknown as SaveData;
+  if (d.v === 3) return sanitizeV3(d as unknown as SaveData);
   if (d.v !== 1 && d.v !== 2) return null;
   const op = d.player as Record<string, unknown>;
   const equip: Partial<Record<EquipSlot, Item>> = {};
@@ -319,6 +338,13 @@ export class Game {
   private exploreT = 0;
   private skillCd = 0;
   events: GameEvents;
+  /** Auto-potion settings (copied from Settings by main.ts). */
+  auto = { hp: true, hpAt: 10, mp: true };
+  private pressSeq = [0, 0, 0];
+  private prevSkills = [false, false, false];
+  private castSlot = -1;
+  private noMana = { key: "", t: -99 };
+  private autoHpT = -99;
   /** Return to Town channel in progress (seconds done / total). Monster hits don't stop it; walking does. */
   recall: { t: number; dur: number } | null = null;
   /** Blue portal in camp that leads back to the exact spot you recalled from (kept in memory only). */
@@ -655,12 +681,29 @@ export class Game {
       }
     }
 
+    // auto health potion at low life (short cooldown so it never double-drinks)
+    if (this.auto.hp && p.hp > 0 && p.hp <= (d.maxHp * this.auto.hpAt) / 100 && p.healLeft <= 0 && this.time - this.autoHpT > 2.5) {
+      if (p.hpPots > 0 || p.bag.some((q) => BASE_BY_ID[q.item.baseId].potion === "hp")) {
+        this.autoHpT = this.time;
+        this.usePotion("hp");
+        this.floatAt(p.x, p.y, "Auto potion", "#ff8a7a", 12);
+      }
+    }
+
     // start actions
+    for (let i = 0; i < input.skills.length; i++) {
+      if (input.skills[i] && !this.prevSkills[i]) {
+        this.pressSeq[i]++;
+        this.skillCd = 0; // a fresh press always gets a try (the 0.5 s retry delay is for holding)
+      }
+      this.prevSkills[i] = input.skills[i];
+    }
     this.skillCd = Math.max(0, this.skillCd - dt);
     if (!p.action && this.skillCd <= 0) {
       for (let i = 0; i < input.skills.length; i++) {
         const id = p.slots[i];
         if (input.skills[i] && id) {
+          this.castSlot = i;
           if (this.castSkill(id, d)) break;
           this.skillCd = 0.5;
         }
@@ -831,6 +874,18 @@ export class Game {
     if (p.mana < cost) {
       this.floatAt(p.x, p.y, "Not enough mana", "#6aa6ff", 13);
       this.events.sound("nomana");
+      // auto mana: a second, separate press within 1.5 s while still short drinks a mana potion
+      if (this.castSlot >= 0) {
+        const key = `${this.castSlot}:${this.pressSeq[this.castSlot]}`;
+        if (key !== this.noMana.key) {
+          const again = this.time - this.noMana.t < 1.5;
+          this.noMana = { key, t: this.time };
+          if (again && this.auto.mp && p.manaLeft <= 0 && (p.mpPots > 0 || p.bag.some((q) => BASE_BY_ID[q.item.baseId].potion === "mp"))) {
+            this.usePotion("mp");
+            this.floatAt(p.x, p.y - 0.4, "Auto mana potion", "#8ab8ff", 12);
+          }
+        }
+      }
       // fall back to a normal attack for melee skills so holding the button still swings
       if (MELEE_SKILLS.has(id)) {
         this.startSwing(null, d);

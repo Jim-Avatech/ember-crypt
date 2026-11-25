@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.5 — Item Guide, safer saves, auto-potions
+
+- **Guide tab** (also a button in Settings): item classes with icon, size, speed, damage spread, requirements and what each is for; damage/defense by item level; every affix tier with its value range and minimum item level; rarity rules and drop odds; monsters by level; the skill list. All generated from the game data, so it can't go out of date.
+- **Saves:** written to a temp key, checked, then swapped in; up to 3 rotating backups; mirrored to IndexedDB; a damaged save falls back to the newest good copy (the damaged one is kept); a save from a newer version is never overwritten. Saves after every change (debounced), right away on level-up and arriving in camp, every 8 s, and when the app is hidden. The game asks the browser for persistent storage. Settings shows the last-saved time and has **Copy save code / Download file / Import** plus one-tap restore of backups. Starting a new character keeps the old one in the backups.
+  - **Rule for future versions:** never wipe saves. Any change to the save shape bumps the save version and adds a migration step with a fixture test (`tests/save.test.ts` covers v0.1, v0.2 and v0.3 saves).
+  - **What can still lose a save:** clearing Safari's website data; Safari deleting storage for a site you haven't opened in 7 days (only when played in a Safari tab, not from the Home Screen); losing or resetting the phone. An exported code or file survives all of these.
+- **Auto-potions** (Settings): auto health drinks a healing potion at or below 10% life (adjustable 5–50%, on by default, 2.5 s cooldown). Auto mana (on by default): if a skill fails for lack of mana and you press it again within 1.5 s, a mana potion is drunk.
+
 ## v0.4 — easier taps, Return to Town
 
 - **Tap targets:** every tab, close button and menu button is at least 44×44 pt. Panel buttons now act on finger-up with some slack (a tap that drifts a little or lands just above a tab still counts). Tapping the dim area around a panel only closes it when you're clearly away from any button. The game ignores touches while a panel is open.

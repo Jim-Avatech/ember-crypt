@@ -1,11 +1,14 @@
 import "./styles.css";
-import { enchant, rollDrop } from "./data/affixes";
-import { makeItem, migrateItem } from "./data/items";
+import { AFFIXES, enchant, rollDrop } from "./data/affixes";
+import { ITEM_BASES, makeItem, migrateItem } from "./data/items";
 import { Sfx } from "./audio";
-import { Game, type GameEvents } from "./game";
+import { Game, type GameEvents, type SaveData } from "./game";
 import { Input } from "./input";
 import { Renderer } from "./render";
-import { clearGame, loadGame, loadSettings, saveGame, saveSettings } from "./save";
+import {
+  canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings,
+  requestPersist, saveGame, saveSettings,
+} from "./save";
 import { Ui } from "./ui";
 
 const app = document.getElementById("app")!;
@@ -26,13 +29,17 @@ const events: GameEvents = {
   toast: (t) => ui.toast(t),
   changed: () => {
     dirty = true;
+    scheduleSave();
     ui.refresh();
   },
   died: () => {
     input.reset();
     setTimeout(() => ui.showDeath(), 900);
   },
-  levelUp: (lvl) => ui.toast(`Level ${lvl}! +1 skill point, +5 stat points`),
+  levelUp: (lvl) => {
+    ui.toast(`Level ${lvl}! +1 skill point, +5 stat points`);
+    setTimeout(() => doSave(true), 0);
+  },
   shake: (a) => (renderer.shake = Math.max(renderer.shake, a)),
 };
 
@@ -41,7 +48,8 @@ const params = new URLSearchParams(location.search);
 const DEBUG = import.meta.env.DEV || params.has("debug");
 const fresh = DEBUG && params.has("new");
 if (fresh) clearGame();
-const saved = fresh ? null : loadGame();
+const loaded = fresh ? null : loadGame();
+const saved = loaded?.data ?? null;
 let game = new Game(events, saved, DEBUG && params.has("seed") ? Number(params.get("seed")) : undefined);
 
 const ui = new Ui(app, () => game, input, settings, {
@@ -49,17 +57,82 @@ const ui = new Ui(app, () => game, input, settings, {
     saveSettings(settings);
     sfx.enabled = settings.sound;
     renderer.shakeOn = settings.shake;
+    applyAuto();
+    scheduleSave();
     ui.updateJoystick();
   },
   newGame: () => {
     clearGame();
     game = new Game(events, null);
+    applyAuto();
+    doSave();
     ui.refresh();
-    ui.toast("A new Barbarian enters the Ember Crypt");
+    ui.toast("A new Barbarian enters the Ember Crypt (your old hero is in the backups)");
+  },
+  save: {
+    lastSaved: () => lastSavedAt(),
+    canSave: () => canSave(),
+    exportCode: () => exportCode(withSettings()),
+    exportJson: () => JSON.stringify(withSettings(), null, 1),
+    importCode: (text: string) => importCode(text),
+    backups: () => listBackups(),
+    loadBackup: (key: string) => loadBackup(key),
+    replace: (d: SaveData) => replaceGame(d),
   },
   click: () => sfx.play("click"),
 });
 renderer.setMinimap(ui.minimap);
+function applyAuto() {
+  game.auto = { hp: settings.autoHp, hpAt: settings.autoHpAt, mp: settings.autoMp };
+}
+applyAuto();
+
+// ---- saving: debounced after any change, right away on level-up / town, every 8 s, and when the app is hidden
+function withSettings(): SaveData {
+  const { tutorialSeen: _t, ...rest } = settings;
+  return { ...game.toSave(), settings: rest };
+}
+function doSave(backup = false) {
+  dirty = false;
+  saveT = 0;
+  if (saveGame(withSettings(), { backup })) ui.savedChanged();
+}
+let saveTimer = 0;
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = window.setTimeout(() => {
+    saveTimer = 0;
+    doSave();
+  }, 400);
+}
+/** Swap in another hero (import or backup); the current one is kept as a backup first. */
+function replaceGame(d: SaveData) {
+  doSave(true);
+  game = new Game(events, d);
+  if (d.settings) {
+    Object.assign(settings, d.settings);
+    saveSettings(settings);
+  }
+  applyAuto();
+  ui.close();
+  doSave(true);
+  ui.refresh();
+}
+if (loaded?.recovered) {
+  setTimeout(() => ui.toast(`Your last save was damaged. Restored the backup from ${new Date(lastSavedAt()).toLocaleString()}.`), 700);
+} else if (loaded?.newer) {
+  setTimeout(() => ui.toast("This device has a save from a newer version. Reload to update; saving is paused so it isn't overwritten."), 700);
+} else if (!saved && !fresh) {
+  // nothing in localStorage: Safari may have cleared it, so try the IndexedDB mirror
+  void loadFromIdb().then((d) => {
+    if (d && game.player.level === 1 && game.player.kills === 0 && game.player.xp === 0) {
+      game = new Game(events, d);
+      applyAuto();
+      ui.refresh();
+      ui.toast(`Restored your level ${d.player.level} hero from backup storage`);
+    }
+  });
+}
 input.onJoyChange = () => ui.updateJoystick();
 
 let tutorial = !settings.tutorialSeen;
@@ -70,7 +143,10 @@ if (saved?.migratedSold !== undefined) {
   const what = saved.migratedFrom === 1 ? "Your bag now uses a grid, like Diablo II." : "Your gear was converted to the new item classes.";
   setTimeout(() => ui.toast(n ? `${what} ${n} item${n === 1 ? "" : "s"} didn't fit and were sold.` : what), 600);
 }
-input.onFirstTouch = () => sfx.unlock();
+input.onFirstTouch = () => {
+  sfx.unlock();
+  void requestPersist();
+};
 document.addEventListener("pointerdown", () => sfx.unlock(), { capture: true });
 
 // ---- iOS hardening: no zoom, no scroll, no callouts
@@ -102,6 +178,7 @@ resize();
 // ---- loop
 let last = performance.now();
 let saveT = 0;
+let lastTown = game.inTown;
 let fpsAcc = 0;
 let fpsN = 0;
 let fps = 60;
@@ -148,16 +225,17 @@ function frame(now: number) {
   ui.updateHud();
   ui.tick(dt);
   saveT += dt;
-  if ((dirty && saveT > 1) || saveT > 8) {
-    saveT = 0;
-    dirty = false;
-    saveGame(game.toSave());
-  }
+  if (game.inTown !== lastTown) {
+    // arriving in camp (or leaving it) is a good checkpoint: save now and keep a backup
+    lastTown = game.inTown;
+    doSave(game.inTown);
+  } else if ((dirty && saveT > 1) || saveT > 8) doSave();
 }
 requestAnimationFrame(frame);
-window.addEventListener("pagehide", () => saveGame(game.toSave()));
+window.addEventListener("pagehide", () => doSave());
+document.addEventListener("freeze", () => doSave());
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) saveGame(game.toSave());
+  if (document.hidden) doSave();
   last = performance.now();
 });
 
@@ -171,6 +249,7 @@ if (DEBUG) (window as unknown as { __ec: unknown }).__ec = {
   ui,
   settings,
   items: { makeItem, enchant, rollDrop, migrateItem },
+  data: { ITEM_BASES, AFFIXES },
   get fps() {
     return fps;
   },

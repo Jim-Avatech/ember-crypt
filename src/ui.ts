@@ -3,15 +3,16 @@ import {
   BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, QUALITY_LABEL, SLOT_LABEL, baseDamage, baseDefense, beltSlotsOf, ilvlOf,
   isTwoHanded, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
 } from "./data/items";
-import type { Derived } from "./game";
+import type { Derived, SaveData } from "./game";
 import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, type Tab, TAB_NAMES } from "./data/skills";
 import { type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, overlapping, sizeOf } from "./inventory";
 import type { Settings } from "./save";
+import { type GuideSec, guideHtml } from "./guide";
 import { itemIconUrl } from "./sprites/items";
 
-export type PanelTab = "char" | "inv" | "skills" | "settings" | "shop" | "wp";
+export type PanelTab = "char" | "inv" | "skills" | "guide" | "settings" | "shop" | "wp";
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -60,10 +61,22 @@ interface Press {
   target?: Target;
 }
 
+export interface SaveTools {
+  lastSaved(): number;
+  canSave(): boolean;
+  exportCode(): string;
+  exportJson(): string;
+  importCode(text: string): SaveData | null;
+  backups(): { key: string; level: number; savedAt: number }[];
+  loadBackup(key: string): SaveData | null;
+  replace(d: SaveData): void;
+}
+
 export interface UiHooks {
   settingsChanged(): void;
   newGame(): void;
   click(): void;
+  save: SaveTools;
 }
 
 export class Ui {
@@ -77,6 +90,12 @@ export class Ui {
   private toastT = 0;
   private confirmReset = false;
   private openedAt = 0;
+  private guideSec: GuideSec = "classes";
+  private saveMsg = "";
+  private exportShown = "";
+  private importOpen = false;
+  private importText = "";
+  private importPending: SaveData | null = null;
   private btnTap: { id: number; x: number; y: number } | null = null;
   private lastPanelDown = 0;
   private press: Press | null = null;
@@ -191,7 +210,18 @@ export class Ui {
       this.cancelDrag();
     });
     // synthesized clicks are ignored: every panel action runs from pointerup above
-    this.panel.addEventListener("click", (e) => e.preventDefault());
+    // (except form controls: the file picker needs its real click)
+    this.panel.addEventListener("click", (e) => {
+      if (!(e.target as HTMLElement).closest("label, input, textarea")) e.preventDefault();
+    });
+    this.panel.addEventListener("input", (e) => {
+      const t = e.target as HTMLTextAreaElement;
+      if (t.id === "impcode") this.importText = t.value;
+    });
+    this.panel.addEventListener("change", (e) => {
+      const t = e.target as HTMLInputElement;
+      if (t.id === "impfile" && t.files?.[0]) void this.importFile(t.files[0]);
+    });
   }
 
   /** Town button: start (or cancel) Return to Town. */
@@ -358,6 +388,7 @@ export class Ui {
       ["char", "Character"],
       ["inv", "Inventory"],
       ["skills", "Skills"],
+      ["guide", "Guide"],
       ["settings", "Settings"],
     ];
     if (tab === "shop") tabs.unshift(["shop", "Trade"]);
@@ -368,6 +399,7 @@ export class Ui {
     else if (tab === "skills") body = this.skillsHtml();
     else if (tab === "shop") body = this.shopHtml();
     else if (tab === "wp") body = this.wpHtml();
+    else if (tab === "guide") body = guideHtml(this.guideSec);
     else body = this.settingsHtml();
     this.panel.innerHTML = `
       <div class="pbox">
@@ -417,6 +449,25 @@ export class Ui {
       case "close":
         this.close();
         return;
+      case "exp-copy":
+      case "exp-file":
+      case "imp-open":
+      case "imp-go":
+      case "imp-paste":
+      case "imp-yes":
+      case "imp-no":
+      case "bak":
+        void this.saveAction(act, el);
+        return;
+      case "hpat": {
+        const v = Math.max(5, Math.min(50, this.settings.autoHpAt + Number(el.dataset.d)));
+        this.settings.autoHpAt = v;
+        this.hooks.settingsChanged();
+        break;
+      }
+      case "gsec":
+        this.guideSec = el.dataset.sec as GuideSec;
+        break;
       case "recall":
         this.close();
         this.recallTap();
@@ -1134,16 +1185,48 @@ export class Ui {
       <button class="toggle ${this.settings[key] ? "on" : ""}" data-act="toggle" data-key="${key}" role="switch" aria-checked="${this.settings[key]}">
         <span class="tl">${label}<small>${note}</small></span><span class="sw"><i></i></span>
       </button>`;
+    const sv = this.hooks.save;
+    const last = sv.lastSaved();
+    const baks = sv.backups();
+    let saveBox = `
+      <div class="savebox">
+        <b>Your save</b>
+        <div class="saved-at">${sv.canSave() ? `Last saved <span id="lastsaved">${last ? new Date(last).toLocaleTimeString() : "not yet"}</span>` : `<span class="bad">Saving paused: this device has a save from a newer version. Reload to update.</span>`}</div>
+        <div class="srow2">
+          <button class="gbtn" data-act="exp-copy">Copy save code</button>
+          <button class="gbtn" data-act="exp-file">Download file</button>
+          <button class="gbtn" data-act="imp-open">Import…</button>
+        </div>`;
+    if (this.saveMsg) saveBox += `<div class="savemsg">${esc(this.saveMsg)}</div>`;
+    if (this.exportShown) saveBox += `<textarea id="expcode" class="codebox" readonly rows="3">${esc(this.exportShown)}</textarea>`;
+    if (this.importOpen) {
+      const pend = this.importPending;
+      saveBox += pend
+        ? `<div class="savemsg">Replace your level ${this.game().player.level} hero with this level ${pend.player.level} hero (${pend.player.gold} gold, deepest level ${pend.maxFloor})? Your current hero goes into the backups.</div>
+           <div class="srow2"><button class="gbtn" data-act="imp-yes">Replace</button><button class="gbtn dim" data-act="imp-no">Cancel</button></div>`
+        : `<textarea id="impcode" class="codebox" rows="3" placeholder="Paste a save code here">${esc(this.importText)}</textarea>
+           <div class="srow2"><button class="gbtn" data-act="imp-paste">Paste</button><button class="gbtn" data-act="imp-go">Load this code</button><label class="gbtn filebtn">Choose file…<input type="file" id="impfile" accept=".json,.txt,application/json,text/plain"/></label></div>`;
+    }
+    if (baks.length)
+      saveBox += `<div class="baks">Backups: ${baks
+        .map((b) => `<button class="gbtn dim bak" data-act="bak" data-key="${b.key}">Lv ${b.level} · ${b.savedAt ? new Date(b.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "?"}</button>`)
+        .join("")}</div>`;
+    saveBox += `<small class="savenote">Saves on this device after every change and when you leave the app. On iPhone, add the game to your Home Screen so Safari doesn't clear it; export a code now and then as an extra backup.</small></div>`;
     return `
       <div class="set-col">
         ${this.game().inTown ? "" : `<button class="gbtn town" data-act="recall">⌂ Return to Town</button>`}
+        <button class="gbtn guide" data-act="tab" data-tab="guide">📖 Item Guide &amp; Compendium</button>
+        ${t("autoHp", "Auto health potion", `Drinks one when life is at or below ${this.settings.autoHpAt}%`)}
+        ${this.settings.autoHp ? `<div class="stepper"><span>Auto health at</span><button class="gbtn" data-act="hpat" data-d="-5" aria-label="Lower">−</button><b>${this.settings.autoHpAt}%</b><button class="gbtn" data-act="hpat" data-d="5" aria-label="Higher">+</button></div>` : ""}
+        ${t("autoMp", "Auto mana potion", "Press a skill again within 1.5 s while out of mana to drink one")}
         ${t("showJoystick", "Show joystick", "Debug: draw the movement stick where your thumb lands")}
         ${t("sound", "Sound", "Sound effects")}
         ${t("shake", "Screen shake", "Shake on big hits")}
         ${t("labels", "Item labels", "Show item names on the ground")}
-        <button class="gbtn danger" data-act="reset">${this.confirmReset ? "Tap again to erase your hero" : "Start a new character"}</button>
+        <button class="gbtn danger" data-act="reset">${this.confirmReset ? "Tap again to start over (old hero goes to backups)" : "Start a new character"}</button>
       </div>
       <div class="set-col help">
+        ${saveBox}
         <b>How to play</b>
         <p>Left side: put your thumb down anywhere and drag to move. Lift to stop.</p>
         <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn.</p>
@@ -1151,7 +1234,95 @@ export class Ui {
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.4 · progress saves on this device · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.5 · all art made in code for this game</p>
       </div>`;
   }
+
+  /** Update the "Last saved" time without redrawing the panel. */
+  savedChanged() {
+    const el = this.panel.querySelector("#lastsaved");
+    const t = this.hooks.save.lastSaved();
+    if (el && t) el.textContent = new Date(t).toLocaleTimeString();
+  }
+
+  private async saveAction(act: string, el: HTMLElement) {
+    const sv = this.hooks.save;
+    this.saveMsg = "";
+    if (act === "exp-copy") {
+      const code = sv.exportCode();
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(code);
+        ok = true;
+      } catch {
+        /* no clipboard permission: show the code to copy by hand */
+      }
+      this.exportShown = ok ? "" : code;
+      this.saveMsg = ok ? `Save code copied (${Math.round(code.length / 1024)} KB). Paste it somewhere safe, like Notes.` : "Copy the code below (tap it, Select All, Copy).";
+    } else if (act === "exp-file") {
+      const blob = new Blob([sv.exportJson()], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      const p = this.game().player;
+      a.download = `ember-crypt-lv${p.level}-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      this.saveMsg = "Save file downloaded.";
+    } else if (act === "imp-open") {
+      this.importOpen = !this.importOpen;
+      this.importPending = null;
+    } else if (act === "imp-paste") {
+      try {
+        this.importText = (await navigator.clipboard.readText()).trim();
+      } catch {
+        this.saveMsg = "Couldn't read the clipboard. Tap the box, then Paste.";
+      }
+      if (this.importText) {
+        const d = sv.importCode(this.importText);
+        if (d) this.importPending = d;
+        else this.saveMsg = "The clipboard doesn't hold an Ember Crypt save code.";
+      }
+    } else if (act === "imp-go") {
+      const d = sv.importCode(this.importText);
+      if (d) this.importPending = d;
+      else this.saveMsg = "That code isn't a valid Ember Crypt save.";
+    } else if (act === "imp-yes" && this.importPending) {
+      const d = this.importPending;
+      this.importPending = null;
+      this.importOpen = false;
+      this.importText = "";
+      sv.replace(d);
+      this.toast(`Loaded your level ${d.player.level} hero`);
+      return;
+    } else if (act === "imp-no") {
+      this.importPending = null;
+      this.importOpen = false;
+    } else if (act === "bak") {
+      const d = sv.loadBackup(el.dataset.key!);
+      if (d) {
+        this.importOpen = true;
+        this.importPending = d;
+      }
+    }
+    if (this.openTab) this.renderPanel();
+    const box = this.panel.querySelector<HTMLTextAreaElement>("#expcode");
+    if (box) {
+      box.focus();
+      box.select();
+      box.setSelectionRange(0, box.value.length);
+    }
+  }
+
+  /** File chosen in the import box. */
+  private async importFile(f: File) {
+    const text = await f.text();
+    const d = this.hooks.save.importCode(text);
+    this.importOpen = true;
+    if (d) this.importPending = d;
+    else this.saveMsg = "That file isn't a valid Ember Crypt save.";
+    if (this.openTab) this.renderPanel();
+  }
+
 }
