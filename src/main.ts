@@ -5,7 +5,7 @@ import { ITEM_BASES, makeItem, migrateItem } from "./data/items";
 import { Sfx } from "./audio";
 import { Game, type GameEvents, type SaveData } from "./game";
 import { Input } from "./input";
-import { Renderer } from "./render";
+import { LOW_LIFE, Renderer } from "./render";
 import {
   canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings, cleanSettings,
   keepDamaged, pauseSaving, requestPersist, saveGame, saveSettings, lastFileBackup, markFileBackup, backupFileName, takeBackupReminder,
@@ -13,11 +13,6 @@ import {
 import { Cloud, cloudConfig } from "./cloud";
 import { Ui } from "./ui";
 
-// HUD layout mockups (dev only, not shipped): ?hud=a top-corner orbs, ?hud=b top-centre vitals strip, ?hud=c hero ring
-{
-  const h = new URLSearchParams(location.search).get("hud");
-  if (h === "a" || h === "b" || h === "c") document.documentElement.dataset.hud = h;
-}
 
 const app = document.getElementById("app")!;
 app.innerHTML = `<canvas id="view"></canvas><canvas id="fx"></canvas>`;
@@ -136,7 +131,7 @@ function placeToast() {
   if (toastEl && top !== toastTop) toastEl.style.top = toastTop = top;
 }
 {
-  const els = ["#hud .hud-tr", "#buffs", "#minimap", "#vitals", "#xpbar", ".globe.life", ".globe.mana"].map((s) => document.querySelector<HTMLElement>(s));
+  const els = ["#hud .hud-tr", "#buffs", "#minimap", "#xpbar"].map((s) => document.querySelector<HTMLElement>(s));
   renderer.hudAvoid = () => {
     const c = canvas.getBoundingClientRect();
     return els.filter((e): e is HTMLElement => !!e).map((e) => {
@@ -312,6 +307,16 @@ window.addEventListener("resize", resize);
 window.addEventListener("orientationchange", () => setTimeout(resize, 200));
 resize();
 
+// v0.9.4: below 35% life a soft heartbeat plays once per beat, in step with the red edge pulse (renderer.lowLifeBeat)
+let beatPh = 1;
+function heartbeat(paused: boolean) {
+  const p = game.player;
+  const low = !paused && !p.dead && p.hp / game.derived().maxHp < LOW_LIFE;
+  const ph = game.time % 1;
+  if (low && ph < beatPh) sfx.play("heartbeat");
+  beatPh = low ? ph : 1;
+}
+
 // ---- loop
 let last = performance.now();
 let saveT = 0;
@@ -385,6 +390,7 @@ function step(now: number) {
     }
   } else input.taps.length = 0;
   renderer.render(game, paused ? 0 : dt, settings.labels);
+  heartbeat(paused);
   placeToast();
   ui.updateHud();
   ui.tick(dt);

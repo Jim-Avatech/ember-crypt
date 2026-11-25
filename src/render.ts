@@ -13,6 +13,9 @@ import { groundSprite, goldSprite } from "./sprites/items";
 import { type Anim, FRAMES, type Look, dirOf, getFrame, lookKey, spriteTop } from "./sprites/puppet";
 import * as T from "./sprites/tiles";
 
+/** v0.9.4: below this share of life the screen edge pulses red and a heartbeat plays. */
+export const LOW_LIFE = 0.35;
+
 const HW = 16; // half tile width in art px
 const HH = 8;
 /** frame index that is safe for any time value */
@@ -463,22 +466,20 @@ export class Renderer {
       f.fillText(b.def.name, this.W / 2, y + 14);
     }
     const maxHp = game.derived().maxHp;
-    const hudMode = document.documentElement.dataset.hud;
-    if (hudMode === "c" && !p.dead) this.drawVitalRing(game, p.hp / maxHp, p.mana / game.derived().maxMana);
-    if (hudMode && !p.dead && p.hp / maxHp < 0.35) {
+    if (!p.dead) this.drawVitalRing(game, p.hp / maxHp, p.mana / game.derived().maxMana);
+    if (!p.dead && p.hp / maxHp < LOW_LIFE) {
       // mockup low-life warning: a heartbeat (double thump) red edge, stronger the lower you are
       const ph = (game.time % 1.0) / 1.0;
       const beat = Math.max(0, 1 - Math.abs(ph - 0.08) / 0.08) + 0.8 * Math.max(0, 1 - Math.abs(ph - 0.3) / 0.08);
-      const depth = 1 - p.hp / maxHp / 0.35;
+      const depth = 1 - p.hp / maxHp / LOW_LIFE;
       const a = Math.max(p.flash * 0.45, 0.22 + 0.25 * depth + 0.25 * beat);
       const grd = f.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.32, this.W / 2, this.H / 2, this.W * 0.62);
       grd.addColorStop(0, "rgba(150,0,0,0)");
       grd.addColorStop(1, `rgba(185,0,0,${Math.min(0.8, a).toFixed(2)})`);
       f.fillStyle = grd;
       f.fillRect(0, 0, this.W, this.H);
-    } else if (p.flash > 0 || (p.hp / maxHp < 0.3 && !p.dead)) {
-      const low = p.hp / maxHp < 0.3 ? 0.25 + Math.sin(game.time * 5) * 0.08 : 0;
-      const a = Math.max(p.flash * 0.45, low);
+    } else if (p.flash > 0) {
+      const a = p.flash * 0.45;
       const grd = f.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.3, this.W / 2, this.H / 2, this.W * 0.7);
       grd.addColorStop(0, "rgba(120,0,0,0)");
       grd.addColorStop(1, `rgba(140,0,0,${a.toFixed(2)})`);
@@ -559,14 +560,20 @@ export class Renderer {
     ctx.globalCompositeOperation = "source-over";
   }
 
-  /** Mockup C: life (red) and mana (blue) arcs curving under the hero's feet, with the life number. */
+  /**
+   * v0.9.4 HUD: life (red) and mana (blue) arcs curving under the hero's feet, with the life number beside them.
+   * The number goes right, left or below, whichever side no monster stands on; the ring is kept on screen.
+   */
+  lastRing: { x: number; y: number; rx: number; ry: number; num: { l: number; t: number; r: number; b: number } } | null = null;
   private drawVitalRing(game: Game, hp: number, mp: number) {
     const f = this.fctx;
     const p = game.player;
-    const x = this.cx(p.x, p.y), y = this.cy(p.x, p.y) + 2 * this.ascale;
-    const rx = 17 * this.ascale, ry = 7.5 * this.ascale;
+    const as = this.ascale;
+    const rx = 17 * as, ry = 7.5 * as;
+    const x = Math.min(this.W - rx * 1.3 - 48, Math.max(rx * 1.3 + 48, this.cx(p.x, p.y)));
+    const y = Math.min(this.H - ry * 1.3 - 22, Math.max(24, this.cy(p.x, p.y) + 2 * as));
     const arc = (k: number, r: number, w: number, col: string) => {
-      // bottom half, left → right (PI → 0 going through PI/2 at the front)
+      // bottom half, left → right (PI → 0 through PI/2 at the front)
       f.beginPath();
       f.ellipse(x, y, rx * r, ry * r, 0, Math.PI, Math.PI - Math.PI * Math.max(0, Math.min(1, k)), true);
       f.lineWidth = w;
@@ -576,18 +583,37 @@ export class Renderer {
     f.save();
     f.lineCap = "round";
     arc(1, 1, 8, "rgba(0,0,0,.7)");
-    arc(hp, 1, 5.5, hp < 0.35 ? "#ff3020" : "#e0281c");
+    arc(hp, 1, 5.5, hp < LOW_LIFE ? "#ff3020" : "#e0281c");
     arc(1, 1.25, 5.5, "rgba(0,0,0,.65)");
     arc(mp, 1.25, 3.5, "#3a78ff");
-    f.font = "bold 12px system-ui, sans-serif";
-    f.textAlign = "left";
-    f.lineWidth = 3;
-    f.strokeStyle = "rgba(0,0,0,.9)";
+    // the life number: bold, black outline + shadow, on the side away from monsters
     const t = `${Math.ceil(p.hp)}`;
-    f.strokeText(t, x + rx * 1.25 + 6, y + 4);
-    f.fillStyle = hp < 0.35 ? "#ff6a50" : "#ffb0a0";
-    f.fillText(t, x + rx * 1.25 + 6, y + 4);
+    f.font = "800 14px system-ui, sans-serif";
+    const tw = f.measureText(t).width, th = 14;
+    const R = rx * 1.25;
+    const spots = [
+      { l: x + R + 6, t: y - 6 },
+      { l: x - R - 6 - tw, t: y - 6 },
+      { l: x - tw / 2, t: y + ry * 1.25 + 5 },
+    ].map((s) => ({ l: s.l, t: s.t, r: s.l + tw, b: s.t + th }));
+    const bodies = game.monsters
+      .filter((m) => m.state !== "dead" && Math.abs(m.x - p.x) + Math.abs(m.y - p.y) < 5)
+      .map((m) => { const mx = this.cx(m.x, m.y), my = this.cy(m.x, m.y); return { l: mx - 12 * as, r: mx + 12 * as, t: my - 38 * as, b: my + 4 * as }; });
+    const hits = (q: { l: number; t: number; r: number; b: number }) => bodies.filter((m) => q.l - 3 < m.r && q.r + 3 > m.l && q.t - 3 < m.b && q.b + 3 > m.t).length;
+    const num = spots.reduce((best, s) => (hits(s) < hits(best) ? s : best), spots[0]);
+    f.textAlign = "left";
+    f.textBaseline = "top";
+    f.shadowColor = "rgba(0,0,0,.9)";
+    f.shadowBlur = 4;
+    f.lineJoin = "round";
+    f.lineWidth = 4;
+    f.strokeStyle = "rgba(0,0,0,.95)";
+    f.strokeText(t, num.l, num.t);
+    f.shadowBlur = 0;
+    f.fillStyle = hp < LOW_LIFE ? "#ff6a50" : "#ffd0c4";
+    f.fillText(t, num.l, num.t);
     f.restore();
+    this.lastRing = { x, y, rx, ry, num };
   }
 
   // -------------------------------------------------------------- actors

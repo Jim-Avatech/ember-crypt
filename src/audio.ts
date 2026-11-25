@@ -223,6 +223,11 @@ export class Sfx {
       case "artifact":
         [392, 523, 659, 784, 1046, 1318].forEach((f, i) => this.tone(f, 0.5, "triangle", 0.16, 1, i * 0.09));
         break;
+      case "heartbeat":
+        // v0.9.4: low-life heartbeat, a soft lub-dub that sits under the fight
+        this.tone(62, 0.16, "sine", 0.42, 0.7);
+        this.tone(55, 0.16, "sine", 0.3, 0.7, 0.22);
+        break;
       case "poison":
         this.tone(300, 0.2, "sine", 0.1, 0.6);
         break;

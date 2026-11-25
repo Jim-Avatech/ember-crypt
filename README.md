@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.9.4: life ring under the hero (HUD option C)
+
+- **Life and mana where your eyes already are:** a red life arc and a blue mana arc curve under the hero's feet, with the life number beside them. The bottom-corner orbs are gone (the left thumb used to cover the life orb, and the right thumb the mana orb). They stay only for screen readers.
+- **Readable number:** bold, with a black outline and shadow. It sits right, left or below the ring, whichever side no monster is standing on. The ring and number are kept on screen.
+- **Low life (under 35%):** the screen edge pulses red like a heartbeat, stronger the lower you go, and a soft heartbeat sound plays in time with it (only when Sound is on).
+- **Everything else:** the XP bar moved right, out from under the left thumb. Minimap, buffs, the menu row with Town, and the potions were already clear of both thumbs, so they stay put. **Attack and the three skill buttons haven't moved by a pixel.**
+- The A/B mockups (`screenshots/hud-options/`) are kept for reference; their code was removed.
+
 ## v0.9.3: harder monsters, skill page matches the three buttons
 
 - **Monsters, on top of v0.9.2:** +30% life and +50% damage for every monster. Totals vs v0.9.1 are life ×1.69 and damage ×1.875; champions and uniques build on these.
