@@ -1309,3 +1309,8 @@ body.portrait #rotate {
 
 /* v0.8: potion cooldown */
 #btn-hp.cool, #btn-mp.cool { filter: grayscale(.7) brightness(.6); }
+
+/* v0.8.3: back up to Files */
+.gbtn.hot { border-color: #c7a050; color: #ffe2a0; }
+.filebak .gbtn { flex: 1; }
+#filebak-at { margin-top: 2px; }

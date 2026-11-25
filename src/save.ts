@@ -121,7 +121,7 @@ export function loadGame(): LoadResult {
 }
 
 /** Write: temp key first, verify it reads back, rotate backups, then swap into the main key. */
-export function saveGame(d: SaveData, opts: { backup?: boolean } = {}): boolean {
+export function saveGame(d: SaveData, opts: { backup?: boolean; force?: boolean } = {}): boolean {
   const s = ls();
   if (!s || !writable) return false;
   try {
@@ -135,7 +135,7 @@ export function saveGame(d: SaveData, opts: { backup?: boolean } = {}): boolean 
     if (prev && prevOk) {
       const b1 = parseSave(s.getItem(BAK[0])).data;
       const age = now - (b1?.savedAt ?? 0);
-      if (!b1 || age > BAK_EVERY || (opts.backup && age > 30 * 1000)) {
+      if (!b1 || age > BAK_EVERY || (opts.backup && age > 30 * 1000) || opts.force) {
         for (let i = BAK.length - 1; i > 0; i--) {
           const v = s.getItem(BAK[i - 1]);
           if (v) s.setItem(BAK[i], v);
@@ -334,4 +334,48 @@ export async function requestPersist(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ------------------------------------------------------------------ v0.8.3: backups to Files / iCloud Drive
+const FILE_AT = "ember-crypt-file-backup-at";
+const REMIND_AT = "ember-crypt-backup-reminded-at";
+export const FILE_EXT = ".embercrypt";
+export const BACKUP_EVERY = 24 * 60 * 60 * 1000;
+
+/** When the hero was last backed up to a file (0 = never). */
+export function lastFileBackup(): number {
+  return Number(ls()?.getItem(FILE_AT) ?? 0) || 0;
+}
+export function markFileBackup(at = Date.now()) {
+  try {
+    ls()?.setItem(FILE_AT, String(at));
+  } catch {
+    /* full */
+  }
+}
+/** File name for a backup, e.g. ember-crypt-lv24-2026-11-25.embercrypt */
+export function backupFileName(level: number, now = new Date()): string {
+  const d = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return `ember-crypt-lv${level}-${d}${FILE_EXT}`;
+}
+/**
+ * Should we nudge the player to back up? Only for a hero worth keeping (level 3+), when the last file
+ * backup is over a day old (or never), and at most once every 12 hours.
+ */
+export function backupDue(level: number, lastBackup: number, lastReminder: number, now = Date.now()): boolean {
+  if (level < 3) return false;
+  if (lastBackup && now - lastBackup < BACKUP_EVERY) return false;
+  return !lastReminder || now - lastReminder > BACKUP_EVERY / 2;
+}
+/** Check and record a reminder. */
+export function takeBackupReminder(level: number, now = Date.now()): boolean {
+  const s = ls();
+  const last = Number(s?.getItem(REMIND_AT) ?? 0) || 0;
+  if (!backupDue(level, lastFileBackup(), last, now)) return false;
+  try {
+    s?.setItem(REMIND_AT, String(now));
+  } catch {
+    /* full */
+  }
+  return true;
 }

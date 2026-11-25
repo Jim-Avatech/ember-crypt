@@ -86,6 +86,9 @@ export interface SaveTools {
   exportJson(): string;
   importCode(text: string): SaveData | null;
   backups(): { key: string; level: number; savedAt: number }[];
+  lastFileBackup(): number;
+  markFileBackup(): void;
+  fileName(): string;
   loadBackup(key: string): SaveData | null;
   replace(d: SaveData): void;
 }
@@ -520,6 +523,7 @@ export class Ui {
         return;
       case "exp-copy":
       case "exp-file":
+      case "exp-share":
       case "imp-open":
       case "imp-go":
       case "imp-paste":
@@ -1374,14 +1378,19 @@ export class Ui {
     const sv = this.hooks.save;
     const last = sv.lastSaved();
     const baks = sv.backups();
+    const fileAt = sv.lastFileBackup();
     let saveBox = `
       <div class="savebox">
         <b>Your save</b>
         <div class="saved-at">${sv.canSave() ? `Last saved <span id="lastsaved">${last ? new Date(last).toLocaleTimeString() : "not yet"}</span>` : `<span class="bad">Saving paused: this device has a save from a newer version. Reload to update.</span>`}</div>
+        <div class="srow2 filebak">
+          <button class="gbtn hot" data-act="exp-share">📁 Back up to Files</button>
+          <label class="gbtn filebtn">Restore from file<input type="file" id="impfile"/></label>
+        </div>
+        <div class="saved-at" id="filebak-at">Last file backup: ${fileAt ? new Date(fileAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "never"}${fileAt && Date.now() - fileAt > 864e5 ? ` <span class="bad">· over a day ago</span>` : ""}</div>
         <div class="srow2">
-          <button class="gbtn" data-act="exp-copy">Copy save code</button>
-          <button class="gbtn" data-act="exp-file">Download file</button>
-          <button class="gbtn" data-act="imp-open">Import…</button>
+          <button class="gbtn dim" data-act="exp-copy">Copy save code</button>
+          <button class="gbtn dim" data-act="imp-open">Paste a code…</button>
         </div>`;
     if (this.saveMsg) saveBox += `<div class="savemsg">${esc(this.saveMsg)}</div>`;
     if (this.exportShown) saveBox += `<textarea id="expcode" class="codebox" readonly rows="3">${esc(this.exportShown)}</textarea>`;
@@ -1391,13 +1400,13 @@ export class Ui {
         ? `<div class="savemsg">Replace your level ${this.game().player.level} hero with this level ${pend.player.level} hero (${pend.player.gold} gold, deepest level ${pend.maxFloor})? Your current hero goes into the backups.</div>
            <div class="srow2"><button class="gbtn" data-act="imp-yes">Replace</button><button class="gbtn dim" data-act="imp-no">Cancel</button></div>`
         : `<textarea id="impcode" class="codebox" rows="3" placeholder="Paste a save code here">${esc(this.importText)}</textarea>
-           <div class="srow2"><button class="gbtn" data-act="imp-paste">Paste</button><button class="gbtn" data-act="imp-go">Load this code</button><label class="gbtn filebtn">Choose file…<input type="file" id="impfile" accept=".json,.txt,application/json,text/plain"/></label></div>`;
+           <div class="srow2"><button class="gbtn" data-act="imp-paste">Paste</button><button class="gbtn" data-act="imp-go">Load this code</button></div>`;
     }
     if (baks.length)
       saveBox += `<div class="baks">Backups: ${baks
         .map((b) => `<button class="gbtn dim bak" data-act="bak" data-key="${b.key}">Lv ${b.level} · ${b.savedAt ? new Date(b.savedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "?"}</button>`)
         .join("")}</div>`;
-    saveBox += `<small class="savenote">Saves on this device after every change and when you leave the app. On iPhone, add the game to your Home Screen so Safari doesn't clear it; export a code now and then as an extra backup.</small></div>`;
+    saveBox += `<small class="savenote">Saves on this device after every change and when you leave the app. On iPhone, add the game to your Home Screen so Safari doesn&rsquo;t clear it, and tap 📁 Back up to Files now and then (Save to Files → iCloud Drive) so your hero survives a lost or reset phone.</small></div>`;
     return `
       <div class="set-col">
         ${this.game().inTown ? "" : `<button class="gbtn town" data-act="recall">⌂ Return to Town</button>`}
@@ -1422,7 +1431,7 @@ export class Ui {
         <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.8.2 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.8.3 · all art made in code for this game</p>
       </div>`;
   }
 
@@ -1447,17 +1456,31 @@ export class Ui {
       }
       this.exportShown = ok ? "" : code;
       this.saveMsg = ok ? `Save code copied (${Math.round(code.length / 1024)} KB). Paste it somewhere safe, like Notes.` : "Copy the code below (tap it, Select All, Copy).";
-    } else if (act === "exp-file") {
-      const blob = new Blob([sv.exportJson()], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      const p = this.game().player;
-      a.download = `ember-crypt-lv${p.level}-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-      this.saveMsg = "Save file downloaded.";
+    } else if (act === "exp-share" || act === "exp-file") {
+      // v0.8.3: a real .embercrypt file through the share sheet (Save to Files / iCloud Drive), else a download
+      const name = sv.fileName();
+      const json = sv.exportJson();
+      const file = new File([json], name, { type: "application/json" });
+      const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+      if (act === "exp-share" && nav.share && nav.canShare?.({ files: [file] })) {
+        try {
+          await nav.share({ files: [file], title: "Ember Crypt save" });
+          sv.markFileBackup();
+          this.saveMsg = `Backed up as ${name}. Restore from file brings it back on any device.`;
+        } catch (e) {
+          this.saveMsg = (e as Error)?.name === "AbortError" ? "Backup cancelled." : `Couldn't open the share sheet (${(e as Error)?.message ?? e}). Try again, or use Copy save code.`;
+        }
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(file);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        sv.markFileBackup();
+        this.saveMsg = `Saved ${name} to your downloads. Keep it somewhere safe (Files, iCloud Drive).`;
+      }
     } else if (act === "imp-open") {
       this.importOpen = !this.importOpen;
       this.importPending = null;
@@ -1482,7 +1505,7 @@ export class Ui {
       this.importOpen = false;
       this.importText = "";
       sv.replace(d);
-      this.toast(`Loaded your level ${d.player.level} hero`);
+      this.toast(`Loaded your level ${d.player.level} hero. Your previous hero is in Backups.`);
       return;
     } else if (act === "imp-no") {
       this.importPending = null;
@@ -1509,7 +1532,10 @@ export class Ui {
     const d = this.hooks.save.importCode(text);
     this.importOpen = true;
     if (d) this.importPending = d;
-    else this.saveMsg = "That file isn't a valid Ember Crypt save.";
+    else {
+      this.importOpen = false;
+      this.saveMsg = "That file isn't a valid Ember Crypt save.";
+    }
     if (this.openTab) this.renderPanel();
   }
 

@@ -8,7 +8,7 @@ import { Input } from "./input";
 import { Renderer } from "./render";
 import {
   canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings, cleanSettings,
-  keepDamaged, pauseSaving, requestPersist, saveGame, saveSettings,
+  keepDamaged, pauseSaving, requestPersist, saveGame, saveSettings, lastFileBackup, markFileBackup, backupFileName, takeBackupReminder,
 } from "./save";
 import { Ui } from "./ui";
 
@@ -40,7 +40,9 @@ const events: GameEvents = {
   levelUp: (lvl) => {
     ui.toast(`Level ${lvl}! +1 skill point, +5 stat points`);
     setTimeout(() => doSave(true), 0);
+    remindBackup(3500);
   },
+  bossKilled: () => remindBackup(4500),
   shake: (a) => (renderer.shake = Math.max(renderer.shake, a)),
 };
 
@@ -106,6 +108,9 @@ const ui = new Ui(app, () => game, input, settings, {
     backups: () => listBackups(),
     loadBackup: (key: string) => loadBackup(key),
     replace: (d: SaveData) => replaceGame(d),
+    lastFileBackup: () => lastFileBackup(),
+    markFileBackup: () => markFileBackup(),
+    fileName: () => backupFileName(game.player.level),
   },
   click: () => sfx.play("click"),
   testSound: () => sfx.test(),
@@ -116,6 +121,12 @@ function applyAuto() {
   game.auto = { hp: settings.autoHp, hpAt: settings.autoHpAt, mp: settings.autoMp };
 }
 applyAuto();
+
+/** v0.8.3: a gentle nudge to back up to Files when the last file backup is over a day old. */
+function remindBackup(delay: number) {
+  if (!takeBackupReminder(game.player.level)) return;
+  setTimeout(() => ui.toast("Your hero hasn't been backed up to Files in a while: Settings → 📁 Back up to Files.", 7000), delay);
+}
 
 // ---- saving: debounced after any change, right away on level-up / town, every 8 s, and when the app is hidden
 function withSettings(): SaveData {
@@ -137,7 +148,8 @@ function scheduleSave() {
 }
 /** Swap in another hero (import or backup); the current one is kept as a backup first. */
 function replaceGame(d: SaveData) {
-  doSave(true);
+  // v0.8.3: the current hero always goes into the backups first
+  saveGame(withSettings(), { force: true });
   game = new Game(events, d);
   if (d.settings) {
     Object.assign(settings, cleanSettings(d.settings, settings));

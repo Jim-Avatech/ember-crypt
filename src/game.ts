@@ -250,6 +250,8 @@ export interface GameEvents {
   died(): void;
   levelUp(level: number): void;
   shake(amount: number): void;
+  /** a level boss or act boss died (v0.8.3: backup reminder) */
+  bossKilled?(): void;
 }
 
 export interface Hand {
@@ -1721,6 +1723,7 @@ export class Game {
       this.dropAt(m.x, m.y, { item: makeItem("hp_potion") });
       this.dropAt(m.x, m.y, { item: makeItem("mp_potion") });
       this.events.sound("boss");
+      this.events.bossKilled?.();
       if (final) {
         const art = act.artifact;
         if (!this.player.artifacts.some((a) => a.id === art.id)) this.dropArtifact(m.x, m.y, art.id);

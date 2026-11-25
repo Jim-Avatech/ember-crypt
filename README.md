@@ -3,6 +3,13 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.8.3: back up to Files / iCloud Drive
+
+- **Settings → 📁 Back up to Files** writes a real save file (`ember-crypt-lv24-2026-11-25.embercrypt`, plain JSON). On iPhone it opens the share sheet, so pick **Save to Files** and then iCloud Drive. Where sharing files isn't supported, it downloads the file instead.
+- **Restore from file** accepts that file (or an older `.json` export). It checks and upgrades the file, shows which hero it holds, and asks first. Your current hero always goes into Backups before it is replaced.
+- Settings shows **Last file backup**. After a level-up or a boss kill, if your hero (level 3+) hasn't been backed up for over 24 hours, a gentle reminder appears, at most every 12 hours.
+- Tests: `tests/filebackup.test.ts` and `npm run test:file-backup` (share sheet, download fallback, restore, a bad file refused, reminder; Chromium and WebKit).
+
 ## v0.8.2 — compare cards scroll
 
 - Each card in the compare sheet now scrolls on its own by touch. Before, the game's touch handler blocked scrolling outside the panel body, so long items were cut off. A "▾ more" fade shows while a card has more below it, and spacing is tighter so most items fit without scrolling at 852×393.
