@@ -1,0 +1,11 @@
+import pw from "@playwright/test";
+const [url, save, bak] = process.argv.slice(2);
+const b = await pw.webkit.launch();
+const ctx = await b.newContext({ viewport: { width: 852, height: 393 }, hasTouch: true });
+await ctx.addInitScript(([s, k]) => { if (!location.href.startsWith("http") || sessionStorage.getItem("seeded")) return; sessionStorage.setItem("seeded", "1"); if (s) localStorage.setItem("ember-crypt-save-v1", s); if (k) localStorage.setItem("ember-crypt-save-bak1", k); localStorage.setItem("ember-crypt-settings-v1", '{"tutorialSeen":true}'); }, [save ?? null, bak ?? null]);
+const page = await ctx.newPage();
+await page.goto(url);
+await page.waitForTimeout(2500);
+console.log(JSON.stringify(await page.evaluate(() => ({ boot: document.getElementById("boot")?.innerText, hud: document.querySelector("#floor-label")?.textContent ?? null, main: (localStorage.getItem("ember-crypt-save-v1") || "").length, damaged: (localStorage.getItem("ember-crypt-save-damaged") || "").length }))));
+await page.screenshot({ path: process.env.SHOT || "/tmp/fail.png" });
+await b.close();

@@ -153,6 +153,23 @@ export function saveGame(d: SaveData, opts: { backup?: boolean } = {}): boolean 
   }
 }
 
+/** Keep a copy of the main save that this version couldn't open (never deleted). */
+export function keepDamaged() {
+  const s = ls();
+  if (!s) return;
+  try {
+    const cur = s.getItem(KEY);
+    if (cur) s.setItem(BAD, cur);
+  } catch {
+    /* full */
+  }
+}
+
+/** Stop writing saves (used when the save couldn't be opened, so it is never overwritten). */
+export function pauseSaving() {
+  writable = false;
+}
+
 /** Start over: the current hero goes into the backups first, so it can be restored. */
 export function clearGame() {
   const s = ls();
@@ -193,7 +210,11 @@ const PREFIX = "EMBERCRYPT1:";
 /** A copyable text code for the whole save. */
 export function exportCode(d: SaveData): string {
   const json = JSON.stringify(d);
-  const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
+  // chunked: spreading a large save into fromCharCode can exceed Safari's argument limit
+  const bytes = new TextEncoder().encode(json);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 8192)));
+  const b64 = btoa(bin);
   return PREFIX + b64;
 }
 

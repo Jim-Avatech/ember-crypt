@@ -8,7 +8,7 @@ import { Input } from "./input";
 import { Renderer } from "./render";
 import {
   canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings, cleanSettings,
-  requestPersist, saveGame, saveSettings,
+  keepDamaged, pauseSaving, requestPersist, saveGame, saveSettings,
 } from "./save";
 import { Ui } from "./ui";
 
@@ -49,9 +49,36 @@ const params = new URLSearchParams(location.search);
 const DEBUG = import.meta.env.DEV || params.has("debug");
 const fresh = DEBUG && params.has("new");
 if (fresh) clearGame();
+type BootShell = { ok(): void; show(title: string, detail?: string): void; done: boolean; after?: boolean };
+const boot = (window as unknown as { __ecBoot?: BootShell }).__ecBoot;
 const loaded = fresh ? null : loadGame();
-const saved = loaded?.data ?? null;
-let game = new Game(events, saved, DEBUG && params.has("seed") ? Number(params.get("seed")) : undefined);
+let saved = loaded?.data ?? null;
+/** v0.8.1: if a save can't be turned into a game, keep it (as the damaged copy) and try the backups instead of crashing. */
+function startGame(): Game {
+  const seed = DEBUG && params.has("seed") ? Number(params.get("seed")) : undefined;
+  try {
+    return new Game(events, saved, seed);
+  } catch (err) {
+    console.error("Ember Crypt: save failed to load", err);
+    keepDamaged();
+    for (const b of listBackups()) {
+      const d = loadBackup(b.key);
+      if (!d) continue;
+      try {
+        const g = new Game(events, d, seed);
+        saved = d;
+        setTimeout(() => ui.toast(`Your save couldn't be opened, so your level ${d.player.level} backup was loaded. The original is kept.`, 8000), 800);
+        return g;
+      } catch {
+        /* try the next one */
+      }
+    }
+    boot?.show("Your save couldn't be opened by this version. It is kept on this phone; use Export save to keep a copy.", String((err as Error)?.message ?? err));
+    pauseSaving();
+    throw err;
+  }
+}
+let game = startGame();
 
 const ui = new Ui(app, () => game, input, settings, {
   settingsChanged: () => {
@@ -156,12 +183,12 @@ if (saved?.actsFrom !== undefined) {
 }
 if (saved?.cappedPoints) {
   const n = saved.cappedPoints;
-  setTimeout(() => ui.toast(`Skills now follow Diablo II's level cap (1 point per character level after a skill unlocks). ${n} point${n === 1 ? "" : "s"} refunded from ${saved.cappedSkills!.join(", ")}.`, 7000), 2600);
+  setTimeout(() => ui.toast(`Skills now follow Diablo II's level cap (1 point per character level after a skill unlocks). ${n} point${n === 1 ? "" : "s"} refunded from ${saved?.cappedSkills?.join(", ")}.`, 7000), 2600);
 }
 if (saved?.refundedPoints) {
   const n = saved.refundedPoints;
   setTimeout(
-    () => ui.toast(`The skill tree now matches Diablo II. ${n} skill point${n === 1 ? "" : "s"} refunded (${saved.refundedSkills!.join(", ")}): spend them again in Skills.`, 7000),
+    () => ui.toast(`The skill tree now matches Diablo II. ${n} skill point${n === 1 ? "" : "s"} refunded (${saved?.refundedSkills?.join(", ")}): spend them again in Skills.`, 7000),
     1400,
   );
 }
@@ -207,8 +234,28 @@ let lastTown = game.inTown;
 let fpsAcc = 0;
 let fpsN = 0;
 let fps = 60;
+let frameErrs = 0;
+let booted = false;
 function frame(now: number) {
   requestAnimationFrame(frame);
+  try {
+    step(now);
+    frameErrs = 0;
+    if (!booted) {
+      booted = true;
+      boot?.ok();
+    }
+  } catch (err) {
+    // v0.8.1: a bad frame is logged; a game that keeps failing shows the error instead of a black screen
+    frameErrs++;
+    if (frameErrs === 1) console.error("Ember Crypt frame error", err);
+    if (frameErrs === 90 && boot) {
+      boot.after = true;
+      boot.show("The game stopped because of an error. Your progress up to now is saved.", String((err as Error)?.stack ?? err).slice(0, 400));
+    }
+  }
+}
+function step(now: number) {
   let dt = (now - last) / 1000;
   last = now;
   if (dt > 0.1) dt = 0.1;
@@ -287,6 +334,14 @@ if (DEBUG) (window as unknown as { __ec: unknown }).__ec = {
 // ---- PWA
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});
+    // v0.8.1: always fetch a fresh sw.js (never from the HTTP cache) and check for updates when the app comes back
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { updateViaCache: "none" })
+      .then((reg) => {
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") reg.update().catch(() => {});
+        });
+      })
+      .catch(() => {});
   });
 }

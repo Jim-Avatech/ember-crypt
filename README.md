@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.8.1 — no more black screen after an update
+
+- **Fix:** the v0.8 service worker deleted the old cache, and that cache held the new game files fetched on the first open after the update. Opening the app again on a weak or no connection then found the page but not the game files, and showed a black screen. The new worker caches a version's files before it takes over. It keeps hashed files across updates, and loads the page from the network first with a 6 s timeout.
+- **Boot screen:** a loading indicator shows until the first frame. If a file fails to load, or the game errors while starting or keeps failing every frame, the error appears on screen with Reload, Repair & reload (clears the app cache, never the save), Export save and Load last backup. Load last backup keeps the current save under another key.
+- **Saves:** if a save can't be opened, it's kept as the damaged copy and the newest working backup loads instead. If none works, saving pauses so nothing is overwritten.
+- **Build:** the target is now Safari 14 / ES2020 for older iPhones. Export no longer passes the whole save as function arguments, which a large save could overflow on Safari.
+- Test scripts: `scripts/boot-check.mjs`, `scripts/sw-upgrade.mjs`, `scripts/save-fuzz.mjs`, `scripts/boot-fail.mjs`, `scripts/boot-time.mjs`, `scripts/canvas-mem.mjs`.
+
 ## v0.8 — four acts, new monsters, bosses and artifacts
 
 - **Four acts of 20 levels each**, all reached from Ember Camp, which stays the same: **I Ember Crypt**, **II Sunken Tombs** (sandstone), **III Drowned Jungle** (moss and water), **IV Burning Hells** (basalt and lava). Levels are generated from the act's theme, with their own floor, wall, torch and decal art. The HUD shows *Act N · Area · Level M/20*.
