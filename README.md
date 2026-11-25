@@ -3,6 +3,28 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.9: every Barbarian skill, four skill buttons
+
+All 30 Barbarian skills now work. There are four skill buttons next to ⚔. In Skills, pick a skill and tap 1–4 to assign it; a newly learned active skill fills the first empty button. A tap shorter than one frame now always counts. Hard points stay capped at 1 + (level − skill level), and old saves keep their skills (a 4th empty button is added).
+
+| Skill | What it does here | Simplified vs D2 |
+|---|---|---|
+| Concentrate | An uninterruptible blow; +defense while swinging | No Berserk/BO synergy |
+| Whirlwind | ~1 s spin (holding repeats it), steer with the stick, hits all around with alternating weapons | Fixed 1 s spins, not a click-to-point path |
+| Berserk | Magic hit that ignores defense; your defense drops to 0 briefly | No Howl synergy |
+| Increased Stamina | +life and life regen | No stamina bar, so it converts to life |
+| Natural Resistance | +all resistances, diminishing returns | Same curve shape as D2 |
+| Taunt | The nearest monster comes at you, and hits weaker and less often | Ranged monsters are weakened and aggroed, not forced into melee |
+| Battle Cry | Lowers defense and damage of monsters nearby | — |
+| Find Item | Searches a corpse for an item (each corpse once) | One shared "searched" flag with Find Potion/Grim Ward |
+| Grim Ward | A corpse becomes a bone totem; normal monsters flee from it | Bosses and elites ignore it |
+| War Cry | Damages and stuns all nearby; +6% damage per hard point in Howl, Taunt, Battle Cry, Battle Orders | Synergy set close to D2 |
+| Battle Command | +1 (or more) to all skills you've learned, for a while | Self only (no party) |
+
+Shout and Battle Orders lengthen each other (+5 s per hard point; Battle Command adds too). Visuals: spinning blade arcs for Whirlwind, rings for warcries, stun stars, a red mark on taunted monsters, a violet haze from Battle Cry, and the Grim Ward totem. HUD chips show Battle Command, Concentrate and Berserk.
+
+Tests: `tests/v09.test.ts` and `scripts/skills-shots.mjs` (screenshots plus checks).
+
 ## v0.8.3: back up to Files / iCloud Drive
 
 - **Settings → 📁 Back up to Files** writes a real save file (`ember-crypt-lv24-2026-11-25.embercrypt`, plain JSON). On iPhone it opens the share sheet, so pick **Save to Files** and then iCloud Drive. Where sharing files isn't supported, it downloads the file instead.

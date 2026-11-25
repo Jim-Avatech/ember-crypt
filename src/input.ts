@@ -12,7 +12,10 @@ export class Input {
   jy = 0;
   readonly radius = 56;
   attack = false;
-  skills = [false, false, false];
+  skills = [false, false, false, false];
+  /** presses since the last game step, so a tap shorter than one frame still counts */
+  pressedSkills = [false, false, false, false];
+  pressedAttack = false;
   taps: Tap[] = [];
   private starts = new Map<number, { x: number; y: number; t: number; moved: boolean }>();
   onFirstTouch: (() => void) | null = null;
@@ -86,7 +89,9 @@ export class Input {
   reset() {
     this.joyId = null;
     this.attack = false;
-    this.skills = [false, false, false];
+    this.skills = [false, false, false, false];
+    this.pressedSkills = [false, false, false, false];
+    this.pressedAttack = false;
     this.starts.clear();
     this.taps = [];
     this.onJoyChange?.();

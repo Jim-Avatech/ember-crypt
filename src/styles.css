@@ -269,6 +269,11 @@ button {
   right: calc(var(--sar) + 108px);
   bottom: calc(var(--sab) + 136px);
 }
+/* v0.9: 4th skill button, left of the first two */
+#btn-s3 {
+  right: calc(var(--sar) + 256px);
+  bottom: calc(var(--sab) + 56px);
+}
 .sbtn .g {
   font-size: 24px;
   color: #f0dca0;
@@ -1316,3 +1321,5 @@ body.portrait #rotate {
 #filebak-at { margin-top: 2px; }
 .cloudbox { margin-top: 8px; padding-top: 6px; border-top: 1px solid #3a2c1c; }
 .cloudbox .codebox { flex: 1; min-width: 0; height: 34px; }
+.buff.conc { color: #9cc0ff; }
+.buff.bers { color: #ff7ab0; }

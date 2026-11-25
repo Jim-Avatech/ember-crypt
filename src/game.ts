@@ -14,6 +14,8 @@ import {
   findPotionChance, frenzyAR, frenzyDmg, frenzyIas, frenzyMove, howlDur,
   incSpeed, ironSkinDef, leapAttackDmg, leapRange, masteryAR, masteryCrit, masteryDmg, shoutDef, shoutDur,
   stunAR, stunDur, skillCap,
+  BC_DMG, BERSERK_DEF_T, SKILL_SLOTS, WW_DUR, WW_TICK, bcDef, bcDur, bcmdBonus, bcmdDur, berserkAR, berserkDmg, concAR, concDef, concDmg,
+  findItemChance, grimDur, grimRadius, natRes, stamLife, stamRegen, tauntDmg, tauntDur, warCryDmg, warCryStun, wwAR, wwDmg,
 } from "./data/skills";
 import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
 import { type Level, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
@@ -30,6 +32,7 @@ export type Action =
   | { type: "swing"; skill: string | null; t: number; dur: number; hitAt: number[]; hands: number[]; hitsDone: number; target: Monster | null }
   | { type: "leap"; skill: string; t: number; dur: number; fx: number; fy: number; tx: number; ty: number; target: Monster | null }
   | { type: "cry"; t: number; dur: number }
+  | { type: "whirl"; t: number; dur: number; dx: number; dy: number; tick: number; hand: number; spin: number }
   | { type: "throw"; skill: string | null; t: number; dur: number; releaseAt: number[]; hands: number[]; done: number; target: Monster | null };
 
 /** A thrown weapon in flight. */
@@ -75,7 +78,8 @@ export interface Player {
   action: Action | null;
   walkPhase: number;
   moving: boolean;
-  buffs: { shout: number; bo: number };
+  /** seconds left: shout, battle orders, concentrate (defense while swinging), berserk (defense 0), battle command */
+  buffs: { shout: number; bo: number; conc: number; bers: number; bcmd: number };
   flash: number;
   z: number;
   moveTarget: GroundItem | null;
@@ -136,8 +140,14 @@ export interface Monster {
   fuse: number;
   /** summoned by a boss */
   minion: boolean;
+  /** corpse used up by Grim Ward (not drawn) */
+  hidden?: boolean;
   /** 0 normal, 1 champion (blue), 2 unique (gold) */
   elite: 0 | 1 | 2;
+  /** v0.9 warcry effects: where fear runs from (Grim Ward; null = from the hero), Taunt and Battle Cry debuffs */
+  flee: { x: number; y: number } | null;
+  taunt: { t: number; pct: number };
+  bcry: { t: number; def: number; dmg: number };
   mods: EliteMod[];
 }
 
@@ -183,6 +193,15 @@ export interface MonsterShot {
 }
 
 /** A telegraphed area attack (boss nova, exploder burst). */
+/** Grim Ward totem: frightens monsters away. */
+export interface Ward {
+  x: number;
+  y: number;
+  t: number;
+  life: number;
+  radius: number;
+}
+
 export interface Nova {
   x: number;
   y: number;
@@ -436,7 +455,7 @@ const MASTERY_OF: Partial<Record<Kind | "fist", string>> = {
   sword: "sword_mastery", axe: "axe_mastery", mace: "mace_mastery", spear: "spear_mastery", staff: "polearm_mastery",
 };
 
-const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy"]);
+const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy", "concentrate", "berserk"]);
 const TWO_HIT = new Set(["double_swing", "frenzy"]);
 
 /** Drop anything that would crash the game (unknown item classes, broken bag entries). */
@@ -606,6 +625,7 @@ export class Game {
   /** set when Malakar falls */
   victory = false;
   potCd = { hp: 0, mp: 0 };
+  wards: Ward[] = [];
   private flow = new Uint16Array(60 * 60);
   private flowFrom = -1;
   private nextId = 1;
@@ -614,8 +634,8 @@ export class Game {
   events: GameEvents;
   /** Auto-potion settings (copied from Settings by main.ts). */
   auto = { hp: true, hpAt: 10, mp: true };
-  private pressSeq = [0, 0, 0];
-  private prevSkills = [false, false, false];
+  private pressSeq = Array(SKILL_SLOTS).fill(0) as number[];
+  private prevSkills = Array(SKILL_SLOTS).fill(false) as boolean[];
   private castSlot = -1;
   private noMana = { key: "", t: -99 };
   private autoHpT = -99;
@@ -631,9 +651,9 @@ export class Game {
     this.seed = save?.seed ?? seed ?? (Math.random() * 1e9) | 0;
     this.player = {
       x: 0, y: 0, r: 0.28, fx: 1, fy: 1, hp: 1, mana: 1, level: 1, xp: 0,
-      base: { ...BASE_STATS }, statPoints: 0, skillPoints: 1, skills: {}, slots: [null, null, null],
+      base: { ...BASE_STATS }, statPoints: 0, skillPoints: 1, skills: {}, slots: Array(SKILL_SLOTS).fill(null),
       bag: [], stash: [], equip: {}, nextHand: 0, frenzy: { stacks: 0, t: 0, decay: 0 }, gold: 0, hpPots: 3, mpPots: 1,
-      action: null, walkPhase: 0, moving: false, buffs: { shout: 0, bo: 0 }, flash: 0, z: 0,
+      action: null, walkPhase: 0, moving: false, buffs: { shout: 0, bo: 0, conc: 0, bers: 0, bcmd: 0 }, flash: 0, z: 0,
       moveTarget: null, dead: false, healLeft: 0, manaLeft: 0, kills: 0, artifacts: [], chillT: 0, poison: { t: 0, dps: 0 },
     };
     if (save) {
@@ -641,6 +661,9 @@ export class Game {
       this.player.bag = this.player.bag ?? [];
       this.player.stash = this.player.stash ?? [];
       this.player.artifacts = this.player.artifacts ?? [];
+      // v0.9: 4 skill buttons (older saves have 3)
+      this.player.slots = Array.isArray(this.player.slots) ? this.player.slots.slice(0, SKILL_SLOTS) : [];
+      while (this.player.slots.length < SKILL_SLOTS) this.player.slots.push(null);
       this.player.chillT = 0;
       this.player.poison = { t: 0, dps: 0 };
       this.floor = save.floor;
@@ -690,7 +713,7 @@ export class Game {
     p.action = null;
     p.moveTarget = null;
     p.dead = false;
-    p.buffs = { shout: 0, bo: 0 };
+    p.buffs = { shout: 0, bo: 0, conc: 0, bers: 0, bcmd: 0 };
     p.frenzy = { stacks: 0, t: 0, decay: 0 };
     p.chillT = 0;
     p.poison = { t: 0, dps: 0 };
@@ -700,6 +723,7 @@ export class Game {
     this.projectiles = [];
     this.shots = [];
     this.novas = [];
+    this.wards = [];
     this.restock();
     // throwing weapons refill for free in camp
     let refilled = 0;
@@ -762,6 +786,7 @@ export class Game {
     this.projectiles = [];
     this.shots = [];
     this.novas = [];
+    this.wards = [];
     this.stairs = null;
     this.flowFrom = -1;
     const rng = new Rng(this.seed + floor * 104729);
@@ -875,6 +900,7 @@ export class Game {
       state: "idle", atkT: 0, windT: 0, stunT: 0, fearT: 0, kx: 0, ky: 0, flash: 0, fx: 0, fy: 1,
       walkPhase: Math.random() * 6, pack, homeX: x, homeY: y, wanderT: Math.random() * 3, wx: x, wy: y,
       deadT: 0, searched: false, lastHurt: -99, cd: rand(0.5, 2), charging: 0, cdx: 0, cdy: 0, spIdx: 0, fuse: -1, minion: false, elite: 0, mods: [],
+      flee: null, taunt: { t: 0, pct: 0 }, bcry: { t: 0, def: 0, dmg: 0 },
     };
     this.monsters.push(m);
     return m;
@@ -934,8 +960,10 @@ export class Game {
     const isl = this.skillLevel("iron_skin");
     if (isl) defPct += ironSkinDef(isl);
     if (p.buffs.shout > 0) defPct += shoutDef(this.skillLevel("shout") || 1);
+    if (p.buffs.conc > 0) defPct += concDef(this.skillLevel("concentrate") || 1);
+    const stam = stamLife(this.skillLevel("increased_stamina"));
     const boMul = p.buffs.bo > 0 ? 1 + boPct(this.skillLevel("battle_orders") || 1) / 100 : 1;
-    const maxHp = Math.round((55 + (s.vit - 25) * 4 + (p.level - 1) * 2 + g("life")) * boMul);
+    const maxHp = Math.round((55 + (s.vit - 25) * 4 + (p.level - 1) * 2 + g("life")) * boMul * (1 + stam / 100));
     const maxMana = Math.round((10 + (s.ene - 10) * 1.5 + (p.level - 1) * 1.5 + g("mana")) * boMul);
     const fl = this.skillLevel("frenzy");
     const gearIas = Math.min(60, g("ias"));
@@ -943,11 +971,11 @@ export class Game {
     const move = fl ? (p.frenzy.stacks * frenzyMove(fl)) / 100 : 0;
     const frw = g("frw");
     const m = hands[0];
-    const all = g("ares");
+    const all = g("ares") + natRes(this.skillLevel("natural_resistance"));
     const cap = (v: number) => Math.min(75, v);
     return {
       maxHp, maxMana, hands, dual: hands.length === 2,
-      def: Math.round((armor + s.dex / 4) * (1 + defPct / 100)),
+      def: p.buffs.bers > 0 ? 0 : Math.round((armor + s.dex / 4) * (1 + defPct / 100)),
       speed: BASE_RUN * (1 + incSpeed(this.skillLevel("increased_speed")) / 100 + move + frw / 100) * (p.chillT > 0 ? 0.65 : 1),
       ias,
       dmgMin: m.min, dmgMax: m.max, dmgPct: m.dmgPct, ar: m.ar, crit: m.crit, swing: m.speed / (1 + ias), weaponKind: m.kind,
@@ -1069,6 +1097,8 @@ export class Game {
     this.updateProjectiles(dt);
     this.updateShots(dt, d);
     this.updateNovas(dt, d);
+    for (const w of this.wards) w.t += dt;
+    if (this.wards.length) this.wards = this.wards.filter((w) => w.t < w.life);
     if (!p.dead) {
       // artifacts are collected just by walking over them
       for (const g of this.ground) if (g.artifact && Math.hypot(g.x - p.x, g.y - p.y) < 0.75) {
@@ -1088,7 +1118,7 @@ export class Game {
     // regen + potions
     // v0.8: slower natural regen (was full mana in 22 s, full life in 160 s)
     p.mana = Math.min(d.maxMana, p.mana + (d.maxMana / 45) * dt);
-    p.hp = Math.min(d.maxHp, p.hp + (d.maxHp / 300) * dt);
+    p.hp = Math.min(d.maxHp, p.hp + (d.maxHp / 300) * (1 + stamRegen(this.skillLevel("increased_stamina")) / 100) * dt);
     if (p.healLeft > 0) {
       // potions heal over 1.5 s instead of half a second
       const amt = Math.min(p.healLeft, d.maxHp * 0.3 * dt);
@@ -1101,6 +1131,12 @@ export class Game {
       p.mana = Math.min(d.maxMana, p.mana + amt);
     }
     if (p.buffs.shout > 0) p.buffs.shout = Math.max(0, p.buffs.shout - dt);
+    p.buffs.conc = Math.max(0, p.buffs.conc - dt);
+    p.buffs.bers = Math.max(0, p.buffs.bers - dt);
+    if (p.buffs.bcmd > 0) {
+      p.buffs.bcmd = Math.max(0, p.buffs.bcmd - dt);
+      if (p.buffs.bcmd === 0) this.events.changed();
+    }
     if (p.buffs.bo > 0) {
       p.buffs.bo = Math.max(0, p.buffs.bo - dt);
       if (p.buffs.bo === 0) {
@@ -1209,6 +1245,16 @@ export class Game {
     if (!hard) return 0;
     let bonus = 0;
     for (const it of Object.values(this.player.equip)) for (const m of it?.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
+    if (this.player.buffs.bcmd > 0) bonus += bcmdBonus(this.gearLevel("battle_command"));
+    return hard + bonus;
+  }
+
+  /** Hard points + gear (no Battle Command), so Battle Command doesn't feed itself. */
+  private gearLevel(id: string) {
+    const hard = this.player.skills[id] ?? 0;
+    if (!hard) return 0;
+    let bonus = 0;
+    for (const it of Object.values(this.player.equip)) for (const m of it?.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
     return hard + bonus;
   }
 
@@ -1256,6 +1302,32 @@ export class Game {
     }
     p.slots[slot] = id;
     this.events.changed();
+  }
+
+  /** The closest unsearched corpse within reach (Find Potion, Find Item, Grim Ward). */
+  private nearCorpse(): Monster | null {
+    const p = this.player;
+    let best: Monster | null = null;
+    let bd = 2.6;
+    for (const m of this.monsters) {
+      if (m.state !== "dead" || m.searched || m.hidden) continue;
+      const dd = Math.hypot(m.x - p.x, m.y - p.y);
+      if (dd < bd) {
+        bd = dd;
+        best = m;
+      }
+    }
+    return best;
+  }
+
+  /** Non-weapon damage (War Cry): always hits, no leech. */
+  private directHit(m: Monster, dmg: number, color: string) {
+    m.hp -= dmg;
+    m.flash = 1;
+    m.lastHurt = this.time;
+    this.floatAt(m.x, m.y, `${dmg}`, color, 15);
+    for (let i = 0; i < 5; i++) this.spark(m.x, m.y, m.def.blood, 3);
+    if (m.hp <= 0) this.kill(m);
   }
 
   private nearestMonster(maxDist: number, requireLos = true): Monster | null {
@@ -1446,6 +1518,9 @@ export class Game {
     if (MELEE_SKILLS.has(id)) {
       p.mana -= cost;
       this.startSwing(id, d);
+      const sw = p.action;
+      if (id === "concentrate" && sw) p.buffs.conc = sw.dur + 0.3;
+      if (id === "berserk") p.buffs.bers = BERSERK_DEF_T;
       return true;
     }
     switch (id) {
@@ -1496,6 +1571,7 @@ export class Game {
           if (m.state === "dead") continue;
           if (Math.hypot(m.x - p.x, m.y - p.y) < 7) {
             m.fearT = m.def.rank !== "normal" ? howlDur(lvl) / (m.def.rank === "final" ? 4 : 2) : howlDur(lvl);
+            m.flee = null;
             m.state = "chase";
             n++;
           }
@@ -1508,7 +1584,7 @@ export class Game {
       }
       case "shout": {
         p.mana -= cost;
-        p.buffs.shout = shoutDur(lvl);
+        p.buffs.shout = shoutDur(lvl, this.hardLevel("battle_orders") + this.hardLevel("battle_command"));
         this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.6, radius: 4, color: "rgba(150,190,255," });
         p.action = { type: "cry", t: 0, dur: 0.4 };
         this.floatAt(p.x, p.y, `Defense +${shoutDef(lvl)}%`, "#9cc0ff", 14);
@@ -1519,7 +1595,7 @@ export class Game {
       case "battle_orders": {
         p.mana -= cost;
         const before = this.derived();
-        p.buffs.bo = boDur(lvl);
+        p.buffs.bo = boDur(lvl, this.hardLevel("shout") + this.hardLevel("battle_command"));
         const after = this.derived();
         p.hp *= after.maxHp / before.maxHp;
         p.mana *= after.maxMana / before.maxMana;
@@ -1529,17 +1605,97 @@ export class Game {
         this.events.changed();
         return true;
       }
-      case "find_potion": {
-        let best: Monster | null = null;
-        let bd = 2.6;
-        for (const m of this.monsters) {
-          if (m.state !== "dead" || m.searched) continue;
-          const dd = Math.hypot(m.x - p.x, m.y - p.y);
-          if (dd < bd) {
-            bd = dd;
-            best = m;
-          }
+      case "whirlwind": {
+        const dir = this.moveDir.active ? this.moveDir : { x: p.fx, y: p.fy };
+        p.mana -= cost;
+        p.action = { type: "whirl", t: 0, dur: WW_DUR, dx: dir.x, dy: dir.y, tick: 0, hand: 0, spin: Math.atan2(p.fy, p.fx) };
+        p.moveTarget = null;
+        this.events.sound("swing");
+        return true;
+      }
+      case "taunt": {
+        const m = this.nearestMonster(9);
+        if (!m) {
+          this.floatAt(p.x, p.y, "No target", "#ccc", 13);
+          return false;
         }
+        p.mana -= cost;
+        m.taunt = { t: tauntDur(lvl), pct: tauntDmg(lvl) };
+        m.fearT = 0;
+        if (m.state === "idle") this.aggroPack(m);
+        m.state = "chase";
+        this.floatAt(m.x, m.y, "Taunted!", "#ff9a6a", 13);
+        this.rings.push({ x: m.x, y: m.y, t: 0, life: 0.5, radius: 1.2, color: "rgba(255,120,80," });
+        p.action = { type: "cry", t: 0, dur: 0.35 };
+        this.events.sound("howl");
+        return true;
+      }
+      case "battle_cry": {
+        p.mana -= cost;
+        let n = 0;
+        for (const m of this.monsters) {
+          if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > 6) continue;
+          m.bcry = { t: bcDur(lvl), def: bcDef(lvl), dmg: BC_DMG };
+          if (m.state === "idle") this.aggroPack(m);
+          n++;
+        }
+        this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.6, radius: 6, color: "rgba(200,90,255," });
+        p.action = { type: "cry", t: 0, dur: 0.4 };
+        this.floatAt(p.x, p.y, n ? `Battle Cry ×${n}` : "Battle Cry", "#d8a0ff", 13);
+        this.events.sound("howl");
+        return true;
+      }
+      case "war_cry": {
+        p.mana -= cost;
+        const syn = this.hardLevel("howl") + this.hardLevel("taunt") + this.hardLevel("battle_cry") + this.hardLevel("battle_orders");
+        const [lo, hi] = warCryDmg(lvl, syn);
+        for (const m of [...this.monsters]) {
+          if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > 4) continue;
+          if (m.state === "idle") this.aggroPack(m);
+          this.directHit(m, randInt(lo, hi), "#ffd070");
+          if (m.hp > 0) m.stunT = Math.max(m.stunT, m.def.rank === "final" ? warCryStun(lvl) / 3 : m.def.rank === "boss" ? warCryStun(lvl) / 2 : warCryStun(lvl));
+        }
+        this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.5, radius: 4, color: "rgba(255,210,110," });
+        for (let i = 0; i < 18; i++) this.spark(p.x, p.y, "#ffd070", 4);
+        p.action = { type: "cry", t: 0, dur: 0.45 };
+        this.events.shake(5);
+        this.events.sound("shout");
+        return true;
+      }
+      case "battle_command": {
+        p.mana -= cost;
+        p.buffs.bcmd = bcmdDur(lvl);
+        this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.6, radius: 4, color: "rgba(255,240,170," });
+        p.action = { type: "cry", t: 0, dur: 0.4 };
+        this.floatAt(p.x, p.y, `+${bcmdBonus(lvl)} to all skills`, "#ffe9a0", 14);
+        this.events.sound("shout");
+        this.events.changed();
+        return true;
+      }
+      case "find_item":
+      case "grim_ward": {
+        const best = this.nearCorpse();
+        if (!best) {
+          this.floatAt(p.x, p.y, "No corpse nearby", "#ccc", 13);
+          return false;
+        }
+        p.mana -= cost;
+        best.searched = true;
+        p.action = { type: "cry", t: 0, dur: 0.35 };
+        if (id === "grim_ward") {
+          this.wards.push({ x: best.x, y: best.y, t: 0, life: grimDur(lvl), radius: grimRadius(lvl) });
+          best.hidden = true; // the corpse becomes the totem
+          this.rings.push({ x: best.x, y: best.y, t: 0, life: 0.6, radius: grimRadius(lvl), color: "rgba(160,255,160," });
+          this.events.sound("howl");
+        } else if (chance(findItemChance(lvl) / 100)) {
+          const mf = this.derived().mf + (actDef(this.floor).n - 1) * 20;
+          this.dropAt(best.x, best.y, { item: rollDrop(best.mlvl, mf, false) });
+          this.events.sound("drop");
+        } else this.floatAt(best.x, best.y, "Nothing", "#aaa", 13);
+        return true;
+      }
+      case "find_potion": {
+        const best = this.nearCorpse();
         if (!best) {
           this.floatAt(p.x, p.y, "No corpse nearby", "#ccc", 13);
           return false;
@@ -1601,6 +1757,37 @@ export class Game {
       }
     } else if (a.type === "cry") {
       if (a.t >= a.dur) p.action = null;
+    } else if (a.type === "whirl") {
+      // steer with the joystick while spinning
+      if (this.moveDir.active) {
+        a.dx = this.moveDir.x;
+        a.dy = this.moveDir.y;
+      }
+      const spd = d.speed * 1.1 * dt;
+      this.moveEntity(p, a.dx * spd, a.dy * spd, p.r);
+      a.spin += dt * 14;
+      p.fx = Math.cos(a.spin);
+      p.fy = Math.sin(a.spin);
+      p.moving = true;
+      a.tick -= dt;
+      if (a.tick <= 0) {
+        a.tick += WW_TICK;
+        const lvl = this.skillLevel("whirlwind");
+        const h = d.hands[a.hand % d.hands.length] ?? d.hands[0];
+        a.hand++;
+        let any = false;
+        for (const m of [...this.monsters]) {
+          if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > 1.25 + m.def.radius) continue;
+          this.playerHit(m, h, { dmgPct: wwDmg(lvl), arPct: wwAR(lvl), knock: 1.2 });
+          any = true;
+        }
+        if (!any) this.events.sound("swing");
+      }
+      if (a.t >= a.dur) {
+        p.action = null;
+        p.fx = a.dx;
+        p.fy = a.dy;
+      }
     } else if (a.type === "throw") {
       while (a.done < a.releaseAt.length && a.t >= a.releaseAt[a.done] * a.dur) {
         const h = a.hands[a.done] ?? 0;
@@ -1644,6 +1831,8 @@ export class Game {
     if (skill === "bash") this.playerHit(target, h, { dmgPct: bashDmg(lvl), arPct: bashAR(lvl), knock: 6 });
     else if (skill === "stun") this.playerHit(target, h, { arPct: stunAR(lvl), stun: stunDur(lvl), knock: 1.5 });
     else if (skill === "double_swing") this.playerHit(target, h, { arPct: doubleSwingAR(lvl), knock: 1.5 });
+    else if (skill === "concentrate") this.playerHit(target, h, { dmgPct: concDmg(lvl), arPct: concAR(lvl), knock: 2 });
+    else if (skill === "berserk") this.playerHit(target, h, { dmgPct: berserkDmg(lvl), arPct: berserkAR(lvl), knock: 3, magic: true });
     else if (skill === "frenzy") {
       if (this.playerHit(target, h, { dmgPct: frenzyDmg(lvl), arPct: frenzyAR(lvl), knock: 1 })) {
         const p = this.player;
@@ -1654,10 +1843,12 @@ export class Game {
     } else this.playerHit(target, h, { knock: 1.8 });
   }
 
-  private playerHit(m: Monster, d: Hand, o: { dmgPct?: number; arPct?: number; knock?: number; stun?: number }): boolean {
+  private playerHit(m: Monster, d: Hand, o: { dmgPct?: number; arPct?: number; knock?: number; stun?: number; magic?: boolean }): boolean {
     const p = this.player;
     const ar = d.ar * (1 + (o.arPct ?? 0) / 100);
-    const hitChance = Math.max(0.05, Math.min(0.95, 2 * (ar / (ar + m.defense)) * (p.level / (p.level + m.mlvl))));
+    // Battle Cry lowers defense; Berserk (magic) ignores it
+    const def = o.magic ? 0 : m.defense * (m.bcry.t > 0 ? 1 - m.bcry.def / 100 : 1);
+    const hitChance = Math.max(0.05, Math.min(0.95, 2 * (ar / (ar + def)) * (p.level / (p.level + m.mlvl))));
     if (m.state === "idle") this.aggroPack(m);
     if (!chance(hitChance)) {
       this.floatAt(m.x, m.y, "Miss", "#b8b8b8", 13);
@@ -1686,7 +1877,7 @@ export class Game {
       m.state = "chase";
       m.atkT = Math.max(m.atkT, 0.4);
     }
-    this.floatAt(m.x, m.y, crit ? `${dmg}!` : `${dmg}`, crit ? "#ffd84a" : "#fff", crit ? 20 : 15);
+    this.floatAt(m.x, m.y, crit ? `${dmg}!` : `${dmg}`, crit ? "#ffd84a" : o.magic ? "#c89aff" : "#fff", crit ? 20 : 15);
     for (let i = 0; i < (crit ? 12 : 7); i++) this.spark(m.x, m.y, m.def.blood, 3);
     this.events.sound(crit ? "crit" : "hit");
     if (crit || o.stun) this.events.shake(crit ? 4 : 2);
@@ -1830,15 +2021,30 @@ export class Game {
       if (p.dead) {
         if (m.state !== "idle") m.state = "idle";
       }
+      if (m.taunt.t > 0) m.taunt.t -= dt;
+      if (m.bcry.t > 0) m.bcry.t -= dt;
+      // Grim Ward: monsters near a totem are frightened away from it (bosses ignore it)
+      if (this.wards.length && m.def.rank === "normal") {
+        for (const w of this.wards) {
+          if (Math.hypot(m.x - w.x, m.y - w.y) < w.radius) {
+            m.fearT = Math.max(m.fearT, 0.4);
+            m.flee = { x: w.x, y: w.y };
+          }
+        }
+      }
       if (m.fearT > 0) {
         m.fearT -= dt;
-        if (dist > 0.01) {
-          this.moveEntity(m, (-dx / dist) * m.def.speed * 1.1 * dt, (-dy / dist) * m.def.speed * 1.1 * dt, m.def.radius);
-          m.fx = -dx / dist;
-          m.fy = -dy / dist;
+        const fx = m.x - (m.flee ? m.flee.x : p.x);
+        const fy = m.y - (m.flee ? m.flee.y : p.y);
+        const fd = Math.hypot(fx, fy);
+        if (fd > 0.01) {
+          this.moveEntity(m, (fx / fd) * m.def.speed * 1.1 * dt, (fy / fd) * m.def.speed * 1.1 * dt, m.def.radius);
+          m.fx = fx / fd;
+          m.fy = fy / fd;
           m.walkPhase += dt * m.def.speed * 4;
         }
         if (m.state === "attack") m.state = "chase";
+        if (m.fearT <= 0) m.flee = null;
         continue;
       }
       if (m.state === "idle") {
@@ -2016,7 +2222,17 @@ export class Game {
   }
 
   private monsterHit(m: Monster, d: Derived, mult = 1) {
-    this.hurtPlayer({ ar: m.ar, mlvl: m.mlvl, dmgMin: m.dmgMin * mult, dmgMax: m.dmgMax * mult, elem: m.def.elem, big: m.def.rank !== "normal" }, d, true);
+    const k = mult * this.weaken(m);
+    const ar = m.ar * (m.taunt.t > 0 ? 1 - m.taunt.pct / 100 : 1);
+    this.hurtPlayer({ ar, mlvl: m.mlvl, dmgMin: m.dmgMin * k, dmgMax: m.dmgMax * k, elem: m.def.elem, big: m.def.rank !== "normal" }, d, true);
+  }
+
+  /** Damage multiplier from Taunt and Battle Cry on a monster. */
+  weaken(m: Monster): number {
+    let k = 1;
+    if (m.taunt.t > 0) k *= 1 - m.taunt.pct / 100;
+    if (m.bcry.t > 0) k *= 1 - m.bcry.dmg / 100;
+    return k;
   }
 
   /** Elemental damage left after resistance (resists cap at 75%). */
@@ -2080,7 +2296,7 @@ export class Game {
     const final = m.def.rank === "final";
     this.shots.push({
       x: m.x + Math.cos(a) * m.def.radius, y: m.y + Math.sin(a) * m.def.radius, vx: Math.cos(a) * s.speed, vy: Math.sin(a) * s.speed,
-      dist: 0, range: s.range, dmgMin: m.dmgMin * (final ? 0.7 : 1), dmgMax: m.dmgMax * (final ? 0.7 : 1), ar: m.ar, mlvl: m.mlvl,
+      dist: 0, range: s.range, dmgMin: m.dmgMin * (final ? 0.7 : 1) * this.weaken(m), dmgMax: m.dmgMax * (final ? 0.7 : 1) * this.weaken(m), ar: m.ar, mlvl: m.mlvl,
       elem: m.def.elem, look: s.look, color: s.color, t: 0, big: final,
     });
     this.events.sound(s.look === "arrow" ? "shoot" : "bolt");

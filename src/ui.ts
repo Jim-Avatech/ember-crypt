@@ -4,7 +4,7 @@ import {
   isTwoHanded, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
 } from "./data/items";
 import type { SaveData } from "./game";
-import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, type Tab, TAB_NAMES } from "./data/skills";
+import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES } from "./data/skills";
 import { type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
@@ -175,6 +175,7 @@ export class Ui {
         <button id="btn-s0" class="sbtn" data-slot="0"></button>
         <button id="btn-s1" class="sbtn" data-slot="1"></button>
         <button id="btn-s2" class="sbtn" data-slot="2"></button>
+        <button id="btn-s3" class="sbtn" data-slot="3"></button>
         <button id="btn-hp" class="pbtn hp" aria-label="Healing potion"><b></b></button>
         <button id="btn-mp" class="pbtn mp" aria-label="Mana potion"><b></b></button>
         <button id="btn-ctx" hidden></button>
@@ -197,12 +198,18 @@ export class Ui {
     this.joy = $(root, "#joy");
     this.minimap = $(root, "#minimap");
 
-    Input.holdButton($(root, "#btn-attack"), (v) => (input.attack = v));
-    for (let i = 0; i < 3; i++) {
+    Input.holdButton($(root, "#btn-attack"), (v) => {
+      input.attack = v;
+      if (v) input.pressedAttack = true;
+    });
+    for (let i = 0; i < SKILL_SLOTS; i++) {
       const el = $(root, `#btn-s${i}`);
       Input.holdButton(
         el,
-        (v) => (input.skills[i] = v && !!this.game().player.slots[i]),
+        (v) => {
+          input.skills[i] = v && !!this.game().player.slots[i];
+          if (input.skills[i]) input.pressedSkills[i] = true;
+        },
         () => {
           if (!this.game().player.slots[i]) {
             this.selSkill = null;
@@ -302,7 +309,7 @@ export class Ui {
     const key = [
       Math.round(hpPct * 200), Math.round(mpPct * 200), Math.round(xpPct * 300), Math.ceil(p.hp), Math.ceil(p.mana),
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
-      Math.ceil(p.buffs.shout), Math.ceil(p.buffs.bo), p.frenzy.stacks, Math.ceil(p.frenzy.t), g.maxFloor,
+      Math.ceil(p.buffs.shout), Math.ceil(p.buffs.bo), Math.ceil(p.buffs.bcmd), p.buffs.conc > 0, p.buffs.bers > 0, p.frenzy.stacks, Math.ceil(p.frenzy.t), g.maxFloor,
       g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
       p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
     ].join("|");
@@ -330,7 +337,7 @@ export class Ui {
     $(r, "#objective").textContent = g.inTown ? (g.maxFloor <= 1 && p.kills === 0 ? "Walk to the glowing waypoint ✦ to enter the crypt" : g.portal ? `The blue portal ◎ leads back to ${floorLabel(g.portal.floor)}` : "Trade with Hilde, then take the waypoint ✦") : g.recall ? "Returning to town… (walk to cancel)" : g.victory && g.floor === MAX_FLOOR ? "The Burning Hells are conquered" : "";
     $(r, "#dot-char").textContent = p.statPoints ? `${p.statPoints}` : "";
     $(r, "#dot-skills").textContent = p.skillPoints ? `${p.skillPoints}` : "";
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < SKILL_SLOTS; i++) {
       const el = $(r, `#btn-s${i}`);
       const id = p.slots[i];
       if (!id) {
@@ -363,6 +370,9 @@ export class Ui {
     }
     if (p.buffs.shout > 0) buffs.push(`<span class="buff shout">◈ ${Math.ceil(p.buffs.shout)}s</span>`);
     if (p.buffs.bo > 0) buffs.push(`<span class="buff bo">⚑ ${Math.ceil(p.buffs.bo)}s</span>`);
+    if (p.buffs.bcmd > 0) buffs.push(`<span class="buff bo">✪ Command ${Math.ceil(p.buffs.bcmd)}s</span>`);
+    if (p.buffs.conc > 0) buffs.push(`<span class="buff conc">◎ Focus</span>`);
+    if (p.buffs.bers > 0) buffs.push(`<span class="buff bers">✖ Berserk: no defense</span>`);
     $(r, "#buffs").innerHTML = buffs.join("");
   }
 
@@ -1355,7 +1365,7 @@ export class Ui {
       const pre = s.prereq.length ? `Requires: ${s.prereq.map((q) => SKILL_BY_ID[q].name).join(", ")}` : "";
       const slotBtns =
         s.kind === "active" && s.implemented && lvl
-          ? `<div class="assign"><span>Skill button:</span>${[0, 1, 2]
+          ? `<div class="assign"><span>Skill button:</span>${[0, 1, 2, 3]
               .map((i) =>
                 p.slots[i] === s.id
                   ? `<button class="slotb on" data-act="unassign" data-slot="${i}">${i + 1} ✓</button>`
@@ -1457,13 +1467,13 @@ export class Ui {
         ${saveBox}
         <b>How to play</b>
         <p>Left side: put your thumb down anywhere and drag to move. Lift to stop.</p>
-        <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn.</p>
+        <p>Right side: tap or hold ⚔ to attack. The four small buttons use skills you learn: in Skills, pick a skill and tap 1–4 to put it on a button.</p>
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.8.3 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.9 · all art made in code for this game</p>
       </div>`;
   }
 

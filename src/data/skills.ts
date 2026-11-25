@@ -26,6 +26,8 @@ export const TAB_NAMES: Record<Tab, string> = {
 };
 
 export const MAX_SKILL_LVL = 20;
+/** Skill buttons next to the attack button (v0.9: 4, was 3). */
+export const SKILL_SLOTS = 4;
 
 // ---- numbers used by both the game and the descriptions ----
 export const bashDmg = (l: number) => 50 + (l - 1) * 10; // % damage
@@ -51,9 +53,41 @@ export const incSpeed = (l: number) => (l <= 0 ? 0 : Math.round(13 + (37 * (l - 
 export const howlDur = (l: number) => 3 + l;
 export const findPotionChance = (l: number) => Math.min(70, 15 + (l - 1) * 3);
 export const shoutDef = (l: number) => 100 + (l - 1) * 10;
-export const shoutDur = (l: number) => 10 + l * 2;
+/** Shout lasts longer for each hard point in Battle Orders and Battle Command (D2 synergy). */
+export const shoutDur = (l: number, syn = 0) => 10 + l * 2 + syn * 5;
 export const boPct = (l: number) => 35 + (l - 1) * 3;
-export const boDur = (l: number) => 30 + l * 5;
+/** Battle Orders lasts longer for each hard point in Shout and Battle Command (D2 synergy). */
+export const boDur = (l: number, syn = 0) => 30 + l * 5 + syn * 5;
+// ---- v0.9: the rest of the tree ----
+export const concDmg = (l: number) => 70 + (l - 1) * 15;
+export const concAR = (l: number) => 40 + (l - 1) * 5;
+export const concDef = (l: number) => 100 + (l - 1) * 5;
+export const berserkDmg = (l: number) => 75 + (l - 1) * 15;
+export const berserkAR = (l: number) => 100 + (l - 1) * 10;
+export const BERSERK_DEF_T = 1.5;
+export const wwDmg = (l: number) => (l - 1) * 8;
+export const wwAR = (l: number) => (l - 1) * 5;
+export const WW_TICK = 0.22;
+export const WW_DUR = 1.0;
+export const stamLife = (l: number) => (l <= 0 ? 0 : Math.round(4 + (l - 1) * 1.5));
+export const stamRegen = (l: number) => (l <= 0 ? 0 : 10 + (l - 1) * 5);
+export const natRes = (l: number) => (l <= 0 ? 0 : Math.round(12 + (68 * (l - 1)) / (l + 5)));
+export const tauntDmg = (l: number) => Math.min(60, 10 + (l - 1) * 3);
+export const tauntDur = (l: number) => 8 + l;
+export const findItemChance = (l: number) => Math.min(60, 14 + Math.round((l - 1) * 2.5));
+export const bcDef = (l: number) => Math.min(80, 50 + (l - 1) * 2);
+export const BC_DMG = 25;
+export const bcDur = (l: number) => 8 + l * 2;
+export const grimRadius = (l: number) => Math.min(6, 2.6 + l * 0.2);
+export const grimDur = (l: number) => 20 + l * 2;
+/** War Cry damage; +6% per hard point in Howl, Taunt, Battle Cry and Battle Orders (D2 synergy). */
+export const warCryDmg = (l: number, syn = 0): [number, number] => {
+  const k = 1 + (6 * syn) / 100;
+  return [Math.round((16 + (l - 1) * 9) * k), Math.round((22 + (l - 1) * 11) * k)];
+};
+export const warCryStun = (l: number) => Math.min(3, 0.8 + l * 0.12);
+export const bcmdBonus = (l: number) => (l <= 0 ? 0 : 1 + Math.floor((l - 1) / 9));
+export const bcmdDur = (l: number) => 20 + l * 5;
 
 const S = (d: Partial<SkillDef> & Pick<SkillDef, "id" | "name" | "tab" | "reqLvl" | "row" | "col" | "glyph" | "blurb">): SkillDef => ({
   prereq: [],
@@ -100,15 +134,30 @@ export const SKILLS: SkillDef[] = [
     mana: () => 9,
     effect: (l) => `+${leapAttackDmg(l)}% damage`,
   }),
-  S({ id: "concentrate", name: "Concentrate", tab: "combat", reqLvl: 18, row: 3, col: 0, glyph: "◎", prereq: ["stun"], blurb: "An uninterruptible attack that boosts defense." }),
+  S({
+    id: "concentrate", name: "Concentrate", tab: "combat", reqLvl: 18, row: 3, col: 0, glyph: "◎", prereq: ["stun"], implemented: true,
+    blurb: "A focused blow that can't be knocked aside: it lands even if you're hit, and raises your defense while you swing.",
+    mana: () => 2,
+    effect: (l) => `+${concDmg(l)}% damage, +${concAR(l)}% attack rating, +${concDef(l)}% defense while attacking`,
+  }),
   S({
     id: "frenzy", name: "Frenzy", tab: "combat", reqLvl: 24, row: 4, col: 2, glyph: "≋", prereq: ["double_throw"], implemented: true,
     blurb: "Two quick hits. Each hit stacks extra attack and move speed (up to 5). Stacks fade after a few seconds without hitting.",
     mana: () => 3,
     effect: (l) => `+${frenzyDmg(l)}% damage, +${frenzyAR(l)}% attack, +${frenzyIas(l)}% attack speed and +${frenzyMove(l)}% move speed per stack`,
   }),
-  S({ id: "whirlwind", name: "Whirlwind", tab: "combat", reqLvl: 30, row: 5, col: 1, glyph: "↻", prereq: ["leap_attack", "concentrate"], blurb: "Spin through enemies, striking everything nearby." }),
-  S({ id: "berserk", name: "Berserk", tab: "combat", reqLvl: 30, row: 5, col: 0, glyph: "☠", prereq: ["concentrate"], blurb: "A reckless magic-damage attack." }),
+  S({
+    id: "whirlwind", name: "Whirlwind", tab: "combat", reqLvl: 30, row: 5, col: 1, glyph: "↻", prereq: ["leap_attack", "concentrate"], implemented: true,
+    blurb: "Spin through enemies for a second, striking everything around you with both weapons. Steer with the joystick; hold the button to keep spinning.",
+    mana: () => 8,
+    effect: (l) => `+${wwDmg(l)}% damage, +${wwAR(l)}% attack rating, a hit on every nearby enemy every ${WW_TICK}s`,
+  }),
+  S({
+    id: "berserk", name: "Berserk", tab: "combat", reqLvl: 30, row: 5, col: 0, glyph: "☠", prereq: ["concentrate"], implemented: true,
+    blurb: "A reckless magic blow that ignores the monster's defense, but drops your own defense to zero for a moment.",
+    mana: () => 4,
+    effect: (l) => `+${berserkDmg(l)}% magic damage, +${berserkAR(l)}% attack rating, your defense is 0 for ${BERSERK_DEF_T}s`,
+  }),
 
   // ---------------- Combat Masteries ----------------
   S({
@@ -141,7 +190,11 @@ export const SKILLS: SkillDef[] = [
     blurb: "Passive: better with spears. In Ember Crypt that means a javelin used in melee.",
     effect: (l) => `+${masteryDmg(l)}% damage, +${masteryAR(l)}% attack, ${masteryCrit(l)}% critical strike`,
   }),
-  S({ id: "increased_stamina", name: "Increased Stamina", tab: "masteries", reqLvl: 12, row: 2, col: 0, glyph: "♥", kind: "passive", blurb: "Passive: more stamina." }),
+  S({
+    id: "increased_stamina", name: "Increased Stamina", tab: "masteries", reqLvl: 12, row: 2, col: 0, glyph: "♥", kind: "passive", implemented: true,
+    blurb: "Passive: endurance. Ember Crypt has no stamina bar, so it adds life and faster life regeneration instead.",
+    effect: (l) => `+${stamLife(l)}% maximum life, +${stamRegen(l)}% life regeneration`,
+  }),
   S({
     id: "iron_skin", name: "Iron Skin", tab: "masteries", reqLvl: 18, row: 3, col: 2, glyph: "⛨", kind: "passive", implemented: true,
     blurb: "Passive: tougher skin.",
@@ -152,7 +205,11 @@ export const SKILLS: SkillDef[] = [
     blurb: "Passive: move faster.",
     effect: (l) => `+${incSpeed(l)}% movement speed`,
   }),
-  S({ id: "natural_resistance", name: "Natural Resistance", tab: "masteries", reqLvl: 30, row: 5, col: 2, glyph: "❂", kind: "passive", prereq: ["iron_skin"], blurb: "Passive: elemental resistances." }),
+  S({
+    id: "natural_resistance", name: "Natural Resistance", tab: "masteries", reqLvl: 30, row: 5, col: 2, glyph: "❂", kind: "passive", prereq: ["iron_skin"], implemented: true,
+    blurb: "Passive: resist fire, cold, lightning and poison (diminishing returns, like D2).",
+    effect: (l) => `+${natRes(l)}% to all resistances`,
+  }),
 
   // ---------------- Warcries ----------------
   S({
@@ -167,24 +224,54 @@ export const SKILLS: SkillDef[] = [
     mana: () => 0,
     effect: (l) => `${findPotionChance(l)}% chance to find a potion`,
   }),
-  S({ id: "taunt", name: "Taunt", tab: "warcries", reqLvl: 6, row: 1, col: 0, glyph: "☄", prereq: ["howl"], blurb: "Enrage a monster into attacking you." }),
+  S({
+    id: "taunt", name: "Taunt", tab: "warcries", reqLvl: 6, row: 1, col: 0, glyph: "☄", prereq: ["howl"], implemented: true,
+    blurb: "Enrage the nearest monster: it comes straight for you, but hits weaker and less often.",
+    mana: () => 3,
+    effect: (l) => `Target deals ${tauntDmg(l)}% less damage and has ${tauntDmg(l)}% less attack rating for ${tauntDur(l)}s`,
+  }),
   S({
     id: "shout", name: "Shout", tab: "warcries", reqLvl: 6, row: 1, col: 1, glyph: "◈", prereq: ["howl"], implemented: true,
-    blurb: "Raise your defense.",
+    blurb: "Raise your defense. Lasts 5s longer per point in Battle Orders and Battle Command.",
     mana: () => 6,
     effect: (l) => `+${shoutDef(l)}% defense for ${shoutDur(l)}s`,
   }),
-  S({ id: "find_item", name: "Find Item", tab: "warcries", reqLvl: 12, row: 2, col: 2, glyph: "✦", prereq: ["find_potion"], blurb: "Search a corpse for an item." }),
-  S({ id: "battle_cry", name: "Battle Cry", tab: "warcries", reqLvl: 18, row: 3, col: 0, glyph: "✕", prereq: ["taunt"], blurb: "Weaken nearby monsters." }),
+  S({
+    id: "find_item", name: "Find Item", tab: "warcries", reqLvl: 12, row: 2, col: 2, glyph: "✦", prereq: ["find_potion"], implemented: true,
+    blurb: "Search a nearby corpse for an item (each corpse can be searched once, by Find Item, Find Potion or Grim Ward).",
+    mana: () => 7,
+    effect: (l) => `${findItemChance(l)}% chance to find an item`,
+  }),
+  S({
+    id: "battle_cry", name: "Battle Cry", tab: "warcries", reqLvl: 18, row: 3, col: 0, glyph: "✕", prereq: ["taunt"], implemented: true,
+    blurb: "Weaken every monster nearby: lower defense and damage.",
+    mana: () => 5,
+    effect: (l) => `-${bcDef(l)}% defense and -${BC_DMG}% damage for ${bcDur(l)}s`,
+  }),
   S({
     id: "battle_orders", name: "Battle Orders", tab: "warcries", reqLvl: 24, row: 4, col: 1, glyph: "⚑", prereq: ["shout"], implemented: true,
-    blurb: "Raise your maximum life and mana.",
+    blurb: "Raise your maximum life and mana. Lasts 5s longer per point in Shout and Battle Command.",
     mana: () => 7,
     effect: (l) => `+${boPct(l)}% max life and mana for ${boDur(l)}s`,
   }),
-  S({ id: "grim_ward", name: "Grim Ward", tab: "warcries", reqLvl: 24, row: 4, col: 2, glyph: "☗", prereq: ["find_item"], blurb: "Turn a corpse into a frightening totem." }),
-  S({ id: "war_cry", name: "War Cry", tab: "warcries", reqLvl: 30, row: 5, col: 0, glyph: "✺", prereq: ["battle_cry", "battle_orders"], blurb: "Damage and stun nearby monsters." }),
-  S({ id: "battle_command", name: "Battle Command", tab: "warcries", reqLvl: 30, row: 5, col: 1, glyph: "⚜", prereq: ["battle_orders"], blurb: "+1 to all skills for a while." }),
+  S({
+    id: "grim_ward", name: "Grim Ward", tab: "warcries", reqLvl: 24, row: 4, col: 2, glyph: "☗", prereq: ["find_item"], implemented: true,
+    blurb: "Turn a nearby corpse into a totem that frightens monsters away from it (bosses ignore it).",
+    mana: () => 4,
+    effect: (l) => `Frightens monsters within ${grimRadius(l).toFixed(1)} yards for ${grimDur(l)}s`,
+  }),
+  S({
+    id: "war_cry", name: "War Cry", tab: "warcries", reqLvl: 30, row: 5, col: 0, glyph: "✺", prereq: ["battle_cry", "battle_orders"], implemented: true,
+    blurb: "A shout that damages and stuns every monster close to you. +6% damage per point in Howl, Taunt, Battle Cry and Battle Orders.",
+    mana: () => 12,
+    effect: (l) => `${warCryDmg(l)[0]}-${warCryDmg(l)[1]} damage (before synergies), stun ${warCryStun(l).toFixed(1)}s, radius 4`,
+  }),
+  S({
+    id: "battle_command", name: "Battle Command", tab: "warcries", reqLvl: 30, row: 5, col: 1, glyph: "⚜", prereq: ["battle_orders"], implemented: true,
+    blurb: "Raise all your skills for a while (only skills you've put a point in). Also lengthens Shout and Battle Orders.",
+    mana: () => 11,
+    effect: (l) => `+${bcmdBonus(l)} to all skills for ${bcmdDur(l)}s`,
+  }),
 ];
 
 export const SKILL_BY_ID: Record<string, SkillDef> = Object.fromEntries(SKILLS.map((s) => [s.id, s]));

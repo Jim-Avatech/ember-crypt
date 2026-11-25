@@ -368,7 +368,12 @@ export class Renderer {
         },
       });
     }
+    for (const w of game.wards) {
+      if (Math.abs(w.x - p.x) > R || Math.abs(w.y - p.y) > R) continue;
+      list.push({ d: w.x + w.y, f: () => this.drawWard(w, game.time) });
+    }
     for (const m of game.monsters) {
+      if (m.hidden) continue; // a corpse used up by Find Item / Grim Ward
       if (Math.abs(m.x - p.x) > R || Math.abs(m.y - p.y) > R) continue;
       // corpses lie flat, under everything standing
       list.push({ d: m.state === "dead" && m.deadT > 0.6 ? -1e6 + m.x + m.y : m.x + m.y, f: () => this.drawMonster(m) });
@@ -648,6 +653,7 @@ export class Renderer {
       }
       return { anim: hand === 1 ? "thr1" : "thr0", f: Math.min(5, Math.floor(prog * 6)) };
     }
+    if (a?.type === "whirl") return { anim: a.hand % 2 ? "atk1" : "atk0", f: 3 }; // blade held out while spinning
     if (a?.type === "leap") return { anim: "leap", f: Math.min(2, Math.floor((a.t / a.dur) * 3)) };
     if (game.recall) return { anim: "cry", f: Math.min(3, Math.floor((game.recall.t / game.recall.dur) * 6)) };
     if (a?.type === "cry") return { anim: "cry", f: Math.min(3, Math.floor((a.t / a.dur) * 4)) };
@@ -678,6 +684,54 @@ export class Renderer {
         const h = ((game.time * 18 + i * 7) % 30);
         this.ctx.fillStyle = `rgba(140,200,255,${(0.9 - h / 34).toFixed(2)})`;
         this.ctx.fillRect(Math.round(sx + Math.cos(a) * 9), Math.round(sy0 - h + Math.sin(a) * 3), 1, 2);
+      }
+    }
+    const ctx = this.ctx;
+    // Whirlwind: blade arcs around the hero
+    const a = p.action;
+    if (a?.type === "whirl" && !p.dead) {
+      for (let i = 0; i < 4; i++) {
+        const ang = a.spin - i * 0.45;
+        ctx.strokeStyle = `rgba(240,240,255,${(0.95 - i * 0.22).toFixed(2)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(sx, sy0 - 12, 24, 11, 0, ang, ang + 1.4);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(sx, sy0 - 12, 24, 11, 0, ang + Math.PI, ang + Math.PI + 1.4);
+        ctx.stroke();
+      }
+      // dust kicked up
+      for (let i = 0; i < 6; i++) {
+        const t = a.spin * 1.3 + i;
+        ctx.fillStyle = "rgba(200,170,120,0.6)";
+        ctx.fillRect(Math.round(sx + Math.cos(t) * 18), Math.round(sy0 + Math.sin(t) * 6), 1, 1);
+      }
+      ctx.strokeStyle = "rgba(255,200,120,0.25)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy0, 22, 11, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // buff auras: Concentrate (blue), Berserk (red-violet), shouts (gold motes)
+    if (!p.dead) {
+      if (p.buffs.conc > 0) {
+        ctx.strokeStyle = "rgba(120,170,255,0.55)";
+        ctx.beginPath();
+        ctx.ellipse(sx, sy0, 10, 5, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (p.buffs.bers > 0) {
+        ctx.fillStyle = "rgba(200,40,120,0.22)";
+        ctx.beginPath();
+        ctx.ellipse(sx, sy - 14, 9, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const shouts = (p.buffs.shout > 0 ? 1 : 0) + (p.buffs.bo > 0 ? 1 : 0) + (p.buffs.bcmd > 0 ? 1 : 0);
+      for (let i = 0; i < shouts * 2; i++) {
+        const t = game.time * 1.6 + i * (Math.PI / shouts);
+        ctx.fillStyle = i % 2 ? "rgba(255,220,130,0.8)" : "rgba(255,180,80,0.7)";
+        ctx.fillRect(Math.round(sx + Math.cos(t) * 11), Math.round(sy0 - 4 - ((game.time * 14 + i * 9) % 26)), 1, 1);
       }
     }
     // frenzy glow under the feet
@@ -727,6 +781,61 @@ export class Renderer {
     const ctx = this.ctx;
     if (m.state === "dead" && m.searched) ctx.globalAlpha = 0.75;
     ctx.drawImage(fr.c, sx - fr.ax, sy - fr.ay);
+    ctx.globalAlpha = 1;
+    if (m.state === "dead") return;
+    const top = sy - fr.ay;
+    // Taunt: a red mark over the head; Battle Cry: violet haze; stun: circling stars; Grim Ward fear: green wisps
+    if (m.taunt.t > 0) {
+      ctx.fillStyle = "#ff4a3a";
+      ctx.fillRect(sx - 1, top - 7, 2, 4);
+      ctx.fillRect(sx - 1, top - 2, 2, 1);
+    }
+    if (m.bcry.t > 0) {
+      ctx.fillStyle = "rgba(170,80,255,0.18)";
+      ctx.beginPath();
+      ctx.ellipse(sx, sy - (fr.ay >> 1), Math.max(6, fr.c.width >> 2), fr.ay >> 1, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (m.stunT > 0) {
+      for (let i = 0; i < 3; i++) {
+        const t = performance.now() / 180 + i * 2.09;
+        ctx.fillStyle = "#ffe680";
+        ctx.fillRect(Math.round(sx + Math.cos(t) * 6), Math.round(top - 2 + Math.sin(t) * 2), 1, 1);
+      }
+    }
+    if (m.flee && m.fearT > 0) {
+      ctx.fillStyle = "rgba(150,255,150,0.7)";
+      ctx.fillRect(sx - 4, top - 3 - ((performance.now() / 60) % 5), 1, 1);
+      ctx.fillRect(sx + 3, top - 3 - ((performance.now() / 70 + 2) % 5), 1, 1);
+    }
+  }
+
+  /** Grim Ward: a bone totem with a skull, and a faint ring where monsters won't go. */
+  private drawWard(w: { x: number; y: number; t: number; life: number; radius: number }, time: number) {
+    const ctx = this.ctx;
+    const sx = this.ax(w.x, w.y);
+    const sy = this.ay(w.x, w.y);
+    const fade = Math.min(1, (w.life - w.t) / 1.5, w.t / 0.3);
+    ctx.globalAlpha = 0.25 * fade;
+    ctx.strokeStyle = "#8aff8a";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const rx = w.radius * HW * 1.41;
+    ctx.ellipse(sx, sy, rx, rx / 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = fade;
+    this.shadow(sx, sy, 5);
+    ctx.fillStyle = "#6b5a44";
+    ctx.fillRect(sx - 1, sy - 20, 3, 20); // pole
+    ctx.fillStyle = "#d8d0bc";
+    ctx.fillRect(sx - 5, sy - 6, 4, 2); // bones at the foot
+    ctx.fillRect(sx + 2, sy - 4, 4, 2);
+    ctx.fillRect(sx - 3, sy - 26, 7, 6); // skull
+    ctx.fillRect(sx - 2, sy - 20, 5, 2);
+    const glow = 0.6 + 0.4 * Math.sin(time * 4);
+    ctx.fillStyle = `rgba(120,255,120,${glow.toFixed(2)})`;
+    ctx.fillRect(sx - 2, sy - 24, 1, 1);
+    ctx.fillRect(sx + 2, sy - 24, 1, 1);
     ctx.globalAlpha = 1;
   }
 

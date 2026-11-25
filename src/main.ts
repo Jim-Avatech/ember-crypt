@@ -342,7 +342,10 @@ function step(now: number) {
     }
     input.taps.length = 0;
     const v = input.vector();
-    game.update(dt, { ...v, attack: input.attack, skills: input.skills });
+    // a tap that went down and up between two frames still fires once
+    game.update(dt, { ...v, attack: input.attack || input.pressedAttack, skills: input.skills.map((s, i) => s || input.pressedSkills[i]) });
+    input.pressedAttack = false;
+    input.pressedSkills.fill(false);
     if (tutorial) {
       tutorialT += dt;
       if (v.mag > 0 || input.attack || tutorialT > 9) {
