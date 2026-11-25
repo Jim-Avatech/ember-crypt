@@ -259,10 +259,15 @@ check("Drag a one-hander onto the off-hand: dual wielding", offId === "sword" &&
 await tap('[data-src="bag"][data-uid="3004"]');
 await tap('.slot[data-slot="head"]');
 check("Tap an item, then tap a slot, equips it", (await ev(() => __ec.game.player.equip.head?.baseId)) === "helm");
-// g. ring via second tap (quick equip)
+// g. a second tap deselects; the Equip button equips
 await tap('[data-src="bag"][data-uid="3003"]');
+const selOn = await ev(() => !!document.querySelector('[data-src="bag"][data-uid="3003"].sel'));
 await tap('[data-src="bag"][data-uid="3003"]');
-check("Tapping a selected item again equips it", (await ev(() => __ec.game.player.equip.ring1?.baseId)) === "ring");
+const selOff = await ev(() => ({ sel: !!document.querySelector('[data-src="bag"][data-uid="3003"].sel'), ring: __ec.game.player.equip.ring1?.baseId ?? null, inBag: !!__ec.game.bagEntry(3003) }));
+check("Tapping a selected item again deselects it (doesn't equip)", selOn && !selOff.sel && selOff.ring === null && selOff.inBag, JSON.stringify({ selOn, selOff }));
+await tap('[data-src="bag"][data-uid="3003"]');
+await tap('.idetail [data-act="equip"]');
+check("The Equip button equips the selected item", (await ev(() => __ec.game.player.equip.ring1?.baseId)) === "ring");
 // h. two-handed sword blocks the off-hand
 await drag(await center('[data-src="bag"][data-uid="3005"]'), { ...(await center('.slot[data-slot="main"]')), y: (await center('.slot[data-slot="main"]')).y + LIFT });
 const th = await ev(() => {
@@ -666,11 +671,15 @@ await wait(200);
   await drag(await center('[data-src="stash"][data-uid="7101"]'), await bagCell(6, 5, 2, 3));
   const b1 = await bagPos(7101);
   check("Drag a stash item into the new lower rows of the backpack", b1 && b1[0] === 6 && b1[1] === 5, JSON.stringify(b1));
-  // tap twice to send across
+  // a second tap deselects; "To backpack" moves it
   await tap('[data-src="stash"][data-uid="7102"]');
   await tap('[data-src="stash"][data-uid="7102"]');
   await wait(150);
-  check("Tapping a stash item twice moves it to the backpack", !!(await ev(() => __ec.game.bagEntry(7102))));
+  const desel = await ev(() => ({ inStash: !!__ec.game.stashEntry(7102), sel: !!document.querySelector(".gi.sel") }));
+  await tap('[data-src="stash"][data-uid="7102"]');
+  await tap('[data-act="stash-take"]');
+  await wait(150);
+  check("Stash: a second tap deselects; “To backpack” moves it", desel.inStash && !desel.sel && !!(await ev(() => __ec.game.bagEntry(7102))), JSON.stringify(desel));
   await ev(() => { __ec.game.player.gold = 1234; __ec.ui.refresh(); });
   await tap('[data-src="bag"][data-uid="7002"]');
   await wait(150);
@@ -756,6 +765,27 @@ await wait(200);
 const mt = await ev(() => ({ name: document.querySelector(".idetail .iname.q-magic")?.textContent, mods: document.querySelectorAll(".idetail .mod").length, cmp: document.querySelector(".idetail .cmp")?.textContent, box: !!document.querySelector('[data-uid="8101"].q-magic') }));
 check("Magic tooltip: blue name, affix lines, compare vs equipped", !!mt.name && / Axe|Axe /.test(mt.name) && mt.mods >= 2 && /vs /.test(mt.cmp ?? "") && mt.box, JSON.stringify(mt));
 await page.screenshot({ path: `${outDir}/magic-tooltip.png` });
+// full comparison: wear a sword with mana leech / life leech / resist; look at the magic axe (lacks them)
+{
+  await ev(() => {
+    const g = __ec.game;
+    const p = g.player;
+    const sw = __ec.items.makeItem("sword", 14);
+    Object.assign(sw, { uid: 8150, q: "magic", name: "Vampiric Sword of the Leech", mods: [{ s: "ml", v: 4 }, { s: "ll", v: 5 }, { s: "fres", v: 12 }, { s: "skill", v: 1, sk: "bash" }], aff: [] });
+    p.equip.main = sw;
+    p.equip.off = (() => { const sh = __ec.items.makeItem("shield", 12); sh.uid = 8151; return sh; })();
+    g.events.changed();
+    __ec.ui.refresh();
+  });
+  await ev(() => { __ec.ui.sel = null; __ec.ui.refresh(); });
+  await tap('[data-src="bag"][data-uid="8101"]');
+  await wait(200);
+  const cmp = await ev(() => [...document.querySelectorAll(".idetail .cmp")].map((c) => ({ head: c.querySelector(".cmph")?.textContent, downs: [...c.querySelectorAll(".down")].map((x) => x.textContent), ups: [...c.querySelectorAll(".up")].map((x) => x.textContent) })));
+  const main = cmp[0] ?? { downs: [] };
+  const lost = (re) => main.downs.some((t) => re.test(t));
+  check("Compare lists every stat: losses for mana leech, fire resist, +skill; both hands for a one-hander", cmp.length === 2 && lost(/mana leech/) && lost(/fire resist/) && lost(/Bash/) && /off-hand/i.test(cmp[1].head) && cmp[1].downs.some((t) => /defense/.test(t)), JSON.stringify(cmp));
+  await page.screenshot({ path: `${outDir}/compare.png` });
+}
 await tap('[data-src="bag"][data-uid="8102"]');
 await wait(200);
 const rt = await ev(() => ({ names: [...document.querySelectorAll(".idetail .iname.q-rare")].map((e) => e.textContent), mods: document.querySelectorAll(".idetail .mod").length, lvl: /Item level 16/.test(document.querySelector(".idetail .itype")?.textContent ?? "") }));

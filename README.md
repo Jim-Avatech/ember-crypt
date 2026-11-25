@@ -3,6 +3,13 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.7.1 — full item comparison, tap-to-deselect
+
+- **Item comparison shows every stat.** It's built from the game's stat model (`Game.compare`): damage (each hand), attacks/s, AR, crit, defense, life, mana, Str/Dex/Vit/Energy, life and mana leech, run speed, attack speed, each resist, gold find, magic find, +skills, and Str/Dex/level requirements. Gains are green, losses red. Stats the new item lacks count as losses.
+- A one-hand weapon compares in the main hand and in the off-hand (dual wield, replacing a shield). A ring compares against both rings.
+- `STAT_COMPARE` is a Record over every affix stat, so a new stat won't compile until it's mapped. `tests/compare.test.ts` checks every stat as both a gain and a loss.
+- **A second tap on a selected item deselects it**, in the backpack, stash and shop. Equip with the Equip / Main hand / Off-hand buttons, by dragging onto a slot, or by tapping the item then a slot. Sell, To stash and To backpack are buttons.
+
 ## v0.7 — bigger backpack and a camp stash
 
 - **Backpack doubled to 10×8 (80 cells)**, beside the equipment at 852×393. Cells stay about the same size (32 px), so nothing needs scrolling. Saves migrate to v5 with every item in the same spot, since the grid only grew downward.

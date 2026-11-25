@@ -225,6 +225,53 @@ export interface Derived {
   stats: Stats;
 }
 
+export interface CompareRow {
+  id: string;
+  label: string;
+  diff: number;
+  digits: number;
+  unit: string;
+  good: boolean;
+}
+
+const avgHit = (h: Hand | undefined) => (h ? ((h.min + h.max) / 2) * (1 + h.dmgPct / 100) : 0);
+
+/** The stats the compare tooltip diffs, all read from derived(). */
+export const COMPARE_METRICS: { id: string; label: string; get: (d: Derived) => number; digits?: number; unit?: string; lowerBetter?: boolean }[] = [
+  { id: "dmg", label: "damage", get: (d) => avgHit(d.hands[0]), digits: 1 },
+  { id: "dmg2", label: "off-hand damage", get: (d) => (d.dual ? avgHit(d.hands[1]) : 0), digits: 1 },
+  { id: "aps", label: "attacks/s", get: (d) => 1 / d.swing, digits: 2 },
+  { id: "ar", label: "attack rating", get: (d) => d.ar },
+  { id: "crit", label: "critical strike", get: (d) => d.crit, unit: "%" },
+  { id: "def", label: "defense", get: (d) => d.def },
+  { id: "life", label: "life", get: (d) => d.maxHp },
+  { id: "mana", label: "mana", get: (d) => d.maxMana },
+  { id: "str", label: "Strength", get: (d) => d.stats.str },
+  { id: "dex", label: "Dexterity", get: (d) => d.stats.dex },
+  { id: "vit", label: "Vitality", get: (d) => d.stats.vit },
+  { id: "ene", label: "Energy", get: (d) => d.stats.ene },
+  { id: "ll", label: "life leech", get: (d) => d.ll, unit: "%" },
+  { id: "ml", label: "mana leech", get: (d) => d.ml, unit: "%" },
+  { id: "frw", label: "run speed", get: (d) => d.frw, unit: "%" },
+  { id: "ias", label: "attack speed", get: (d) => d.gearIas, unit: "%" },
+  { id: "fres", label: "fire resist", get: (d) => d.res.fire, unit: "%" },
+  { id: "cres", label: "cold resist", get: (d) => d.res.cold, unit: "%" },
+  { id: "lres", label: "lightning resist", get: (d) => d.res.light, unit: "%" },
+  { id: "pres", label: "poison resist", get: (d) => d.res.poison, unit: "%" },
+  { id: "gf", label: "gold find", get: (d) => d.gf, unit: "%" },
+  { id: "mf", label: "magic find", get: (d) => d.mf, unit: "%" },
+];
+
+/**
+ * Which compare rows each affix stat shows up in. A Record over every StatKey, so adding a new
+ * affix stat won't compile until it's mapped here (and the unit test checks each one really changes).
+ */
+export const STAT_COMPARE: Record<StatKey, string[]> = {
+  edmg: ["dmg"], mindmg: ["dmg"], maxdmg: ["dmg"], ar: ["ar"], str: ["str"], dex: ["dex"], vit: ["vit", "life"], ene: ["ene", "mana"],
+  life: ["life"], mana: ["mana"], ll: ["ll"], ml: ["ml"], frw: ["frw"], ias: ["ias", "aps"], fres: ["fres"], cres: ["cres"], lres: ["lres"],
+  pres: ["pres"], ares: ["fres", "cres", "lres", "pres"], edef: ["def"], def: ["def"], gf: ["gf"], mf: ["mf"], skill: ["skill:*"],
+};
+
 /** Base walking speed in tiles per second (v0.3: raised from 3.5 to keep the v0.1 on-screen speed after the pixel-art rescale). */
 export const BASE_RUN = 4.6;
 
@@ -690,6 +737,61 @@ export class Game {
   }
 
   /** What derived stats would be with an item put in a slot (for tooltips). */
+  /**
+   * Which equipment slots to compare a bag item against: both hands for a one-hand weapon
+   * (main, and off-hand = dual wield / replacing a shield), both rings when both are worn.
+   */
+  compareSlots(it: Item): EquipSlot[] {
+    const e = this.player.equip;
+    const b = BASE_BY_ID[it.baseId];
+    const opts = this.slotsFor(it);
+    if (!opts.length) return [];
+    if (b.slot === "weapon" && b.hands === 1) return e.main && !isTwoHanded(e.main) ? ["main", "off"] : ["main"];
+    if (b.slot === "ring") return e.ring1 && e.ring2 ? ["ring1", "ring2"] : [!e.ring1 ? "ring1" : "ring2"];
+    return [opts[0]];
+  }
+
+  /**
+   * Every stat difference from equipping `it` in `slot`, from the full stat model (derived()) plus
+   * per-skill bonuses and requirements. Stats the new item lacks show up as losses.
+   */
+  compare(it: Item, slot: EquipSlot): CompareRow[] {
+    const now = this.derived();
+    const then = this.previewEquip(it, slot);
+    const rows: CompareRow[] = [];
+    for (const m of COMPARE_METRICS) {
+      const a = m.get(now);
+      const b = m.get(then);
+      const diff = b - a;
+      if (Math.abs(diff) < (m.digits ? 0.5 * 10 ** -m.digits : 0.5)) continue;
+      rows.push({ id: m.id, label: m.label, diff, digits: m.digits ?? 0, unit: m.unit ?? "", good: m.lowerBetter ? diff < 0 : diff > 0 });
+    }
+    // +skills (whether or not the skill is learned yet)
+    const skillsOf = (x: Item | undefined) => {
+      const out: Record<string, number> = {};
+      for (const md of x?.mods ?? []) if (md.s === "skill" && md.sk) out[md.sk] = (out[md.sk] ?? 0) + md.v;
+      return out;
+    };
+    const p = this.player;
+    const gone = [p.equip[slot], slot === "main" && isTwoHanded(it) ? p.equip.off : undefined];
+    const before: Record<string, number> = {};
+    for (const x of gone) for (const [k, v] of Object.entries(skillsOf(x))) before[k] = (before[k] ?? 0) + v;
+    const after = skillsOf(it);
+    for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      const diff = (after[k] ?? 0) - (before[k] ?? 0);
+      if (diff) rows.push({ id: `skill:${k}`, label: `to ${SKILL_BY_ID[k]?.name ?? k}`, diff, digits: 0, unit: "", good: diff > 0 });
+    }
+    // requirements: lower is better
+    const cur = p.equip[slot];
+    const rn = itemReqs(it);
+    const rc = cur ? itemReqs(cur) : { str: 0, dex: 0, lvl: 0 };
+    for (const [k, label] of [["str", "Strength needed"], ["dex", "Dexterity needed"], ["lvl", "level needed"]] as const) {
+      const diff = rn[k] - rc[k];
+      if (diff) rows.push({ id: `req:${k}`, label, diff, digits: 0, unit: "", good: diff < 0 });
+    }
+    return rows;
+  }
+
   previewEquip(it: Item, slot: EquipSlot): Derived {
     const p = this.player;
     const saved = { ...p.equip };

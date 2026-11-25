@@ -1,5 +1,5 @@
 /* Simple app-shell cache. Bump CACHE when shipping a new build. */
-const CACHE = "ember-crypt-v8";
+const CACHE = "ember-crypt-v9";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();

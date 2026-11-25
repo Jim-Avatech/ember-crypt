@@ -3,7 +3,7 @@ import {
   BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, QUALITY_LABEL, SLOT_LABEL, baseDamage, baseDefense, beltSlotsOf, ilvlOf,
   isTwoHanded, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
 } from "./data/items";
-import type { Derived, SaveData } from "./game";
+import type { SaveData } from "./game";
 import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, type Tab, TAB_NAMES } from "./data/skills";
 import { type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
@@ -812,27 +812,8 @@ export class Ui {
     this.hooks.click();
     if (pr.sel) {
       if (this.sameSel(pr.sel, this.sel)) {
-        // second tap: the obvious action
-        const it = this.selItem();
-        if (!it) return;
-        if (this.openTab === "stash" && (pr.sel.src === "bag" || pr.sel.src === "stash")) {
-          const err = pr.sel.src === "bag" ? g.toStash(pr.sel.uid!) : g.fromStash(pr.sel.uid!);
-          if (err) return this.toast(err);
-          this.sel = null;
-          return;
-        }
-        if (pr.sel.src === "bag" && this.openTab === "inv") {
-          if (BASE_BY_ID[it.baseId].potion) g.drinkFromBag(pr.sel.uid!);
-          else {
-            const err = g.equipFromBag(pr.sel.uid!);
-            if (err) return this.toast(err);
-          }
-          this.sel = null;
-        } else if (pr.sel.src === "eq") {
-          const err = g.unequip(pr.sel.slot!);
-          if (err) return this.toast(err);
-          this.sel = null;
-        }
+        // second tap on the selected item deselects it (equip / sell / stash use the buttons, a drag, or tap-then-slot)
+        this.sel = null;
         return;
       }
       // tapping another item while one is selected moves/equips onto it (bag → slot)
@@ -1003,35 +984,28 @@ export class Ui {
   }
 
   /** Diff of the character's totals if this item were equipped. */
+  /** Full stat diff vs what's equipped: one block per slot it could go in (both hands, both rings). */
   private compareLine(it: Item): string {
     const g = this.game();
-    const slot = g.defaultSlot(it);
-    if (!slot) return "";
-    const cur = g.player.equip[slot];
-    const now = g.derived();
-    const then = g.previewEquip(it, slot);
-    const avg = (d: Derived) => {
-      const h = d.hands[0];
-      return ((h.min + h.max) / 2) * (1 + h.dmgPct / 100);
-    };
-    const parts: string[] = [];
-    const add = (label: string, a: number, b: number, digits = 0, unit = "") => {
-      const diff = b - a;
-      if (Math.abs(diff) < (digits ? 0.05 : 0.5)) return;
-      parts.push(`<span class="${diff > 0 ? "up" : "down"}">${diff > 0 ? "+" : ""}${diff.toFixed(digits)}${unit} ${label}</span>`);
-    };
-    add("damage", avg(now), avg(then), 1);
-    add("attack rating", now.ar, then.ar);
-    add("defense", now.def, then.def);
-    add("life", now.maxHp, then.maxHp);
-    add("mana", now.maxMana, then.maxMana);
-    add("attack speed", now.gearIas, then.gearIas, 0, "%");
-    add("run speed", now.frw, then.frw, 0, "%");
-    add("life leech", now.ll, then.ll, 0, "%");
-    add("all resists", Math.min(now.res.fire, now.res.cold, now.res.light, now.res.poison), Math.min(then.res.fire, then.res.cold, then.res.light, then.res.poison), 0, "%");
-    add("magic find", now.mf, then.mf, 0, "%");
-    const head = cur ? `vs ${esc(itemName(cur))}:` : `${EQUIP_LABEL[slot]} is empty:`;
-    return `<div class="cmp">${head} ${parts.length ? parts.join(" · ") : "no change"}</div>`;
+    const p = g.player;
+    return g
+      .compareSlots(it)
+      .map((slot) => {
+        const cur = p.equip[slot];
+        const rows = g.compare(it, slot);
+        const where =
+          slot === "off" && BASE_BY_ID[it.baseId].slot === "weapon"
+            ? cur ? `In off-hand (dual wield) vs ${esc(itemName(cur))}:` : "In off-hand (dual wield):"
+            : slot === "main" && p.equip.off && BASE_BY_ID[it.baseId].slot === "weapon" && g.compareSlots(it).length > 1
+              ? cur ? `In main hand vs ${esc(itemName(cur))}:` : "In main hand:"
+              : cur ? `vs ${esc(itemName(cur))}:` : `${EQUIP_LABEL[slot]} is empty:`;
+        const chips = rows.map((r) => {
+          const n = `${r.diff > 0 ? "+" : ""}${r.diff.toFixed(r.digits)}${r.unit}`;
+          return `<span class="${r.good ? "up" : "down"}">${n} ${esc(r.label)}</span>`;
+        });
+        return `<div class="cmp" data-slot="${slot}"><b class="cmph">${where}</b> ${chips.length ? chips.join(" · ") : "no change"}</div>`;
+      })
+      .join("");
   }
 
   private itemBox(it: Item, src: Src, x: number, y: number, C: number, extra = "") {
@@ -1080,12 +1054,12 @@ export class Ui {
     const it = this.selItem();
     const stash = this.openTab === "stash";
     if ((!s || !it) && stash) {
-      return `<div class="hint">Your stash keeps items safe in camp, saved with your hero.<br/>Drag items between the stash and your backpack, or tap an item twice to move it across.</div>`;
+      return `<div class="hint">Your stash keeps items safe in camp, saved with your hero.<br/>Drag items between the stash and your backpack, or tap an item and use To stash / To backpack. Tap it again to deselect.</div>`;
     }
     if (!s || !it) {
       return shop
-        ? `<div class="hint">Tap an item to see its price.<br/>Drag your items onto Hilde's stock to sell. Drag hers into your bag to buy.</div>`
-        : `<div class="hint">Tap an item to see it. Tap again to equip.<br/>Drag items to rearrange or onto a slot to equip.<br/>Drag out of the window to drop.</div>`;
+        ? `<div class="hint">Tap an item to see its price.<br/>Drag your items onto Hilde's stock to sell (or tap and Sell). Drag hers into your bag to buy. Tap again to deselect.</div>`
+        : `<div class="hint">Tap an item to see it and compare; tap it again to deselect.<br/>Equip with the button, by dragging onto a slot, or tap the item then a slot.<br/>Drag out of the window to drop.</div>`;
     }
     const b = BASE_BY_ID[it.baseId];
     const btns: string[] = [];
@@ -1350,7 +1324,7 @@ export class Ui {
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.7 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.7.1 · all art made in code for this game</p>
       </div>`;
   }
 
