@@ -188,3 +188,6 @@ export const SKILLS: SkillDef[] = [
 ];
 
 export const SKILL_BY_ID: Record<string, SkillDef> = Object.fromEntries(SKILLS.map((s) => [s.id, s]));
+
+/** D2 rule: hard points in a skill are capped at 1 + (character level − the skill's required level), max 20. +skills from gear go on top. */
+export const skillCap = (charLevel: number, reqLvl: number) => Math.max(0, Math.min(MAX_SKILL_LVL, 1 + charLevel - reqLvl));

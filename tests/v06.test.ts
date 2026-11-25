@@ -51,7 +51,7 @@ describe("v4 migration refunds skills that no longer qualify", () => {
   });
   it("Frenzy at 24+ without Double Throw is refunded; with it, kept", () => {
     expect(migrateSave(v3(25, { bash: 1, double_swing: 1, frenzy: 5 }, []))!.player.skills.frenzy).toBeUndefined();
-    const ok = migrateSave(v3(25, { bash: 1, double_swing: 1, double_throw: 1, frenzy: 5 }, []))!;
+    const ok = migrateSave(v3(28, { bash: 1, double_swing: 1, double_throw: 1, frenzy: 5 }, []))!;
     expect(ok.player.skills.frenzy).toBe(5);
     expect(ok.refundedPoints).toBeUndefined();
   });

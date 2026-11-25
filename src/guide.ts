@@ -7,16 +7,19 @@ import { AFFIXES, type Cat, MAGIC_SPLIT, RARE_COUNTS, modText, qualityOdds } fro
 import {
   CLASS_USE, ITEM_BASES, type ItemBase, type Mod, QUALITY_COLOR, baseDamage, baseDefense, beltSlotsOf, makeItem,
 } from "./data/items";
-import { MONSTERS, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp } from "./data/monsters";
+import { ACTS, ARTIFACT_COLOR, LEVELS_PER_ACT, XP_RATE, firstFloorOf, mlvlOf } from "./data/acts";
+import { ELEM_COLOR, ELEM_NAME, ELITE_MODS, MONSTERS, type MonsterDef, scaleDmg, scaleHp, scaleXp } from "./data/monsters";
+import { artifactIcon } from "./sprites/artifacts";
 import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, TAB_NAMES } from "./data/skills";
 import { itemIconUrl } from "./sprites/items";
 
-export type GuideSec = "classes" | "levels" | "affixes" | "rarity" | "monsters" | "skills";
+export type GuideSec = "classes" | "levels" | "affixes" | "rarity" | "acts" | "monsters" | "skills";
 export const GUIDE_SECS: [GuideSec, string][] = [
   ["classes", "Item classes"],
   ["levels", "Stats by level"],
   ["affixes", "Affixes"],
   ["rarity", "Rarity & drops"],
+  ["acts", "Acts & artifacts"],
   ["monsters", "Monsters"],
   ["skills", "Skills"],
 ];
@@ -97,16 +100,40 @@ function rarityHtml(): string {
     <p class="gnote">Magic find raises magic odds fully and rare odds with diminishing returns (like Diablo II).</p>`;
 }
 
+const BEHAVIOR: Record<string, string> = { melee: "Melee", ranged: "Ranged", charger: "Charger", exploder: "Exploder" };
+
+function actsHtml(): string {
+  const rows = ACTS.map((a) => {
+    const f0 = firstFloorOf(a.n);
+    const icon = artifactIcon(a.artifact.id).toDataURL();
+    return `<tr><td><b>Act ${a.roman}</b><br/>${esc(a.area)}<br/><small>${esc(a.tagline)}</small></td>
+      <td>${mlvlOf(f0)}–${mlvlOf(f0 + LEVELS_PER_ACT - 1)}</td>
+      <td>${a.monsters.map((k) => esc(MONSTERS[k].name)).join(", ")}</td>
+      <td>${a.bossNames.map(esc).join(", ")}<br/><b>${esc(MONSTERS[a.finalBoss].name)}</b> (level ${LEVELS_PER_ACT})</td>
+      <td><img class="gicon" src="${icon}" alt="" style="width:28px;height:28px;image-rendering:pixelated"/> <span style="color:${ARTIFACT_COLOR}">${esc(a.artifact.name)}</span></td></tr>`;
+  }).join("");
+  return `<p class="gnote">Four acts of ${LEVELS_PER_ACT} levels, all reached from Ember Camp. Every level ends with a boss guarding the stairs; each level's boss is tougher than the last (monster level climbs, plus +4% life and +2% damage per level). Level ${LEVELS_PER_ACT} holds the act's final boss, with special attacks. It drops the act's artifact ✧ (kept in the Artifacts tab, not your bag) and opens the stairs to the next act, which then shows on the waypoint. Waypoints sit on level 1 and every 5th level. Deeper acts give a little more XP per kill (Act II ×1.1, III ×1.2, IV ×1.3) and +20% magic find per act (+1% per level within an act). Like Diablo II, monsters more than 3 levels below you give less XP (−15% per level, down to 5%). Expect about 2–5 minutes per level, an hour or more per act, and roughly 13–15 hero levels per act.</p>
+    <div class="gtable"><table><tr><th>Act</th><th>Monster lvl</th><th>Monsters</th><th>Bosses</th><th>Artifact</th></tr>${rows}</table></div>`;
+}
+
 function monstersHtml(): string {
-  const ms = Object.values(MONSTERS);
-  const rows = (lv: number) => ms.map((m) => `<tr><td>${esc(m.name)}</td><td>${lv}</td><td>${scaleHp(m.hp, lv)}</td><td>${scaleDmg(m.dmgMin, lv)}–${scaleDmg(m.dmgMax, lv)}</td><td>${scaleAR(m.ar, lv)}</td><td>${scaleDef(m.def, lv)}</td><td>${scaleXp(m.xp, lv)}</td><td>${m.speed}</td></tr>`).join("");
-  return `<p class="gnote">Monster level = crypt level (the boss is +1). Speed is tiles per second; you walk at 4.6.</p>
-    <div class="gtable"><table><tr><th>Monster</th><th>Lvl</th><th>Life</th><th>Damage</th><th>AR</th><th>Def</th><th>XP</th><th>Speed</th></tr>${[1, 3, 5, 10].map(rows).join("")}</table></div>`;
+  const row = (m: MonsterDef, lv: number, rw: number) => {
+    const el = m.elem === "phys" ? "—" : `<span style="color:${ELEM_COLOR[m.elem]}">${ELEM_NAME[m.elem]}</span>`;
+    const tag = m.rank === "final" ? " <small>(final boss)</small>" : m.rank === "boss" ? " <small>(level boss)</small>" : "";
+    return `<tr><td>${esc(m.name)}${tag}<br/><small>${esc(m.blurb)}</small></td><td>${BEHAVIOR[m.behavior]}</td><td>${el}</td><td>${lv}</td><td>${scaleHp(m.hp, lv)}</td><td>${scaleDmg(m.dmgMin, lv)}–${scaleDmg(m.dmgMax, lv)}</td><td>${Math.max(1, Math.round(scaleXp(m.xp, lv) * rw * XP_RATE))}</td><td>${m.speed}</td></tr>`;
+  };
+  return `<p class="gnote">Speed is tiles per second; you walk at 4.6. Stats shown at each monster's level on level 1 of its act (bosses get extra levels). Elemental damage is cut by your matching resist (max 75%); cold slows you for a moment and poison hurts over time. Rangers keep their distance; chargers rush you from a few tiles away; exploders burst when they reach you — kill them first or step back.</p>
+    <p class="gnote"><b style="color:#7fa2ff">Champions</b> (blue ring) come in small packs with 2.5× life, +30% damage, one modifier and 3× XP. <b style="color:#ffc65a">Uniques</b> (gold ring, named) lead a pack from Act I level 3 on (two per level from level 10): 4× life, +50% damage, 1–3 modifiers (more in later acts), 5× XP and two magic-or-better drops. Modifiers: ${Object.values(ELITE_MODS).join(", ")}. Fire Enchanted monsters burst into flame when they die. Potions heal over 1.5 s and a second one of the same kind can't be drunk for 1.5 s.</p>
+    ${ACTS.map((a) => {
+      const lv = mlvlOf(firstFloorOf(a.n));
+      const list = [...a.monsters.map((k) => row(MONSTERS[k], lv, a.reward)), row(MONSTERS[a.levelBoss], lv + 1, a.reward), row(MONSTERS[a.finalBoss], mlvlOf(firstFloorOf(a.n) + LEVELS_PER_ACT - 1) + 2, a.reward)].join("");
+      return `<h4>Act ${a.roman} · ${esc(a.area)}</h4><div class="gtable"><table><tr><th>Monster</th><th>Type</th><th>Element</th><th>Lvl</th><th>Life</th><th>Damage</th><th>XP</th><th>Speed</th></tr>${list}</table></div>`;
+    }).join("")}`;
 }
 
 function skillsHtml(): string {
   const tabs = [...new Set(SKILLS.map((s) => s.tab))];
-  return `<p class="gnote">Each level gives 1 skill point (max ${MAX_SKILL_LVL} per skill). Skills marked “soon” aren't playable yet.</p>${tabs
+  return `<p class="gnote">Each level gives 1 skill point. As in Diablo II, a skill's hard points are capped at 1 + (your level − the skill's level), up to ${MAX_SKILL_LVL}; +skills on gear go on top. Skills marked “soon” aren't playable yet.</p>${tabs
     .map((t) => {
       const rows = SKILLS.filter((s) => s.tab === t)
         .sort((a, b) => a.reqLvl - b.reqLvl || a.row - b.row)
@@ -119,6 +146,6 @@ function skillsHtml(): string {
 
 export function guideHtml(sec: GuideSec): string {
   const nav = GUIDE_SECS.map(([id, n]) => `<button class="gsec ${id === sec ? "on" : ""}" data-act="gsec" data-sec="${id}">${n}</button>`).join("");
-  const body = sec === "classes" ? classesHtml() : sec === "levels" ? levelsHtml() : sec === "affixes" ? affixesHtml() : sec === "rarity" ? rarityHtml() : sec === "monsters" ? monstersHtml() : skillsHtml();
+  const body = sec === "classes" ? classesHtml() : sec === "levels" ? levelsHtml() : sec === "affixes" ? affixesHtml() : sec === "rarity" ? rarityHtml() : sec === "monsters" ? monstersHtml() : sec === "acts" ? actsHtml() : skillsHtml();
   return `<div class="gnav">${nav}</div><div class="gbody" data-sec="${sec}">${body}</div>`;
 }

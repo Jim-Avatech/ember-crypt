@@ -11,8 +11,25 @@ import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./invento
 import type { Settings } from "./save";
 import { type GuideSec, guideHtml } from "./guide";
 import { itemIconUrl } from "./sprites/items";
+import { artifactIcon } from "./sprites/artifacts";
+import { ACTS, ARTIFACTS, LEVELS_PER_ACT, MAX_FLOOR, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, levelInAct } from "./data/acts";
+import { MONSTERS } from "./data/monsters";
 
-export type PanelTab = "char" | "inv" | "skills" | "guide" | "settings" | "shop" | "wp" | "stash";
+const artUrl = new Map<string, string>();
+/** data: URL of an artifact icon (cached). */
+const artifactUrl = (id: string, sil = false) => {
+  const k = `${id}|${sil}`;
+  let u = artUrl.get(k);
+  if (!u) {
+    u = artifactIcon(id, sil).toDataURL();
+    artUrl.set(k, u);
+  }
+  return u;
+};
+/** "Ember Crypt · Level 3" */
+const floorLabel = (f: number) => (f <= 0 ? "Ember Camp" : `${actDef(f).area} · Level ${levelInAct(f)}/${LEVELS_PER_ACT}`);
+
+export type PanelTab = "char" | "inv" | "skills" | "arts" | "guide" | "settings" | "shop" | "wp" | "stash";
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -265,8 +282,8 @@ export class Ui {
       Math.round(hpPct * 200), Math.round(mpPct * 200), Math.round(xpPct * 300), Math.ceil(p.hp), Math.ceil(p.mana),
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
       Math.ceil(p.buffs.shout), Math.ceil(p.buffs.bo), p.frenzy.stacks, Math.ceil(p.frenzy.t), g.maxFloor,
-      g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0,
-      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId,
+      g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
+      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
     ].join("|");
     if (key === this.lastHud) return;
     this.lastHud = key;
@@ -286,8 +303,10 @@ export class Ui {
     $(r, "#btn-mp b").textContent = `${p.mpPots}`;
     $(r, "#btn-hp").classList.toggle("empty", p.hpPots === 0);
     $(r, "#btn-mp").classList.toggle("empty", p.mpPots === 0);
-    $(r, "#floor-label").textContent = `${g.inTown ? "Ember Camp" : `Ember Crypt · Level ${g.floor}`}   ·   Lv ${p.level} Barbarian`;
-    $(r, "#objective").textContent = g.inTown ? (g.maxFloor <= 1 && p.kills === 0 ? "Walk to the glowing waypoint ✦ to enter the crypt" : g.portal ? `The blue portal ◎ leads back to Level ${g.portal.floor}` : "Trade with Hilde, then take the waypoint ✦") : g.recall ? "Returning to town… (walk to cancel)" : "";
+    $(r, "#btn-hp").classList.toggle("cool", g.potionWait("hp") > 0);
+    $(r, "#btn-mp").classList.toggle("cool", g.potionWait("mp") > 0);
+    $(r, "#floor-label").textContent = `${g.inTown ? "Ember Camp" : `Act ${actDef(g.floor).roman} · ${floorLabel(g.floor)}`}   ·   Lv ${p.level} Barbarian`;
+    $(r, "#objective").textContent = g.inTown ? (g.maxFloor <= 1 && p.kills === 0 ? "Walk to the glowing waypoint ✦ to enter the crypt" : g.portal ? `The blue portal ◎ leads back to ${floorLabel(g.portal.floor)}` : "Trade with Hilde, then take the waypoint ✦") : g.recall ? "Returning to town… (walk to cancel)" : g.victory && g.floor === MAX_FLOOR ? "The Burning Hells are conquered" : "";
     $(r, "#dot-char").textContent = p.statPoints ? `${p.statPoints}` : "";
     $(r, "#dot-skills").textContent = p.skillPoints ? `${p.skillPoints}` : "";
     for (let i = 0; i < 3; i++) {
@@ -312,8 +331,11 @@ export class Ui {
     const btn = $(r, "#btn-ctx");
     btn.hidden = !ctx;
     btn.dataset.kind = ctx ?? "";
-    btn.textContent = ctx === "descend" ? `▼ Descend to Level ${g.floor + 1}` : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to Level ${g.portal?.floor}` : "";
+    const nx = g.floor + 1;
+    btn.textContent = ctx === "descend" ? (levelInAct(nx) === 1 ? `▼ Enter Act ${actDef(nx).roman}: ${actDef(nx).area}` : `▼ Descend to Level ${levelInAct(nx)}`) : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)}` : "";
     const buffs: string[] = [];
+    if (p.chillT > 0) buffs.push(`<span class="buff chill">❄ Chilled</span>`);
+    if (p.poison.t > 0) buffs.push(`<span class="buff poison">☠ Poisoned</span>`);
     if (p.frenzy.stacks > 0) {
       const left = p.frenzy.t > 0 ? Math.ceil(p.frenzy.t) : 0;
       buffs.push(`<span class="buff frenzy">⚡ Frenzy ×${p.frenzy.stacks}${left ? ` ${left}s` : ""}</span>`);
@@ -413,6 +435,7 @@ export class Ui {
       ["char", "Character"],
       ["inv", "Inventory"],
       ["skills", "Skills"],
+      ["arts", "Artifacts"],
       ["guide", "Guide"],
       ["settings", "Settings"],
     ];
@@ -426,6 +449,7 @@ export class Ui {
     else if (tab === "shop") body = this.shopHtml();
     else if (tab === "stash") body = this.stashHtml();
     else if (tab === "wp") body = this.wpHtml();
+    else if (tab === "arts") body = this.artsHtml();
     else if (tab === "guide") body = guideHtml(this.guideSec);
     else body = this.settingsHtml();
     this.panel.innerHTML = `
@@ -435,6 +459,7 @@ export class Ui {
           <button class="pclose" data-act="close" aria-label="Close">✕</button>
         </div>
         <div class="pbody pbody-${tab}">${body}</div>
+        ${this.sheetHtml()}
       </div>`;
   }
 
@@ -473,6 +498,9 @@ export class Ui {
     this.hooks.click();
     const selItem = this.selItem();
     switch (act) {
+      case "cmp-close":
+        this.sel = null;
+        break;
       case "close":
         this.close();
         return;
@@ -759,6 +787,8 @@ export class Ui {
       pr.ghost?.remove();
       this.press = null;
       this.drop(pr.sel!, t);
+      // v0.8: a drag never leaves the compare sheet open over the grids
+      if (this.sel && (this.sel.src === "bag" || this.sel.src === "stash" || this.sel.src === "vendor")) this.sel = null;
     } else {
       this.press = null;
       this.tap(pr, e.clientX, e.clientY);
@@ -983,31 +1013,6 @@ export class Ui {
     return lines.map((l) => `<div>${l}</div>`).join("");
   }
 
-  /** Diff of the character's totals if this item were equipped. */
-  /** Full stat diff vs what's equipped: one block per slot it could go in (both hands, both rings). */
-  private compareLine(it: Item): string {
-    const g = this.game();
-    const p = g.player;
-    return g
-      .compareSlots(it)
-      .map((slot) => {
-        const cur = p.equip[slot];
-        const rows = g.compare(it, slot);
-        const where =
-          slot === "off" && BASE_BY_ID[it.baseId].slot === "weapon"
-            ? cur ? `In off-hand (dual wield) vs ${esc(itemName(cur))}:` : "In off-hand (dual wield):"
-            : slot === "main" && p.equip.off && BASE_BY_ID[it.baseId].slot === "weapon" && g.compareSlots(it).length > 1
-              ? cur ? `In main hand vs ${esc(itemName(cur))}:` : "In main hand:"
-              : cur ? `vs ${esc(itemName(cur))}:` : `${EQUIP_LABEL[slot]} is empty:`;
-        const chips = rows.map((r) => {
-          const n = `${r.diff > 0 ? "+" : ""}${r.diff.toFixed(r.digits)}${r.unit}`;
-          return `<span class="${r.good ? "up" : "down"}">${n} ${esc(r.label)}</span>`;
-        });
-        return `<div class="cmp" data-slot="${slot}"><b class="cmph">${where}</b> ${chips.length ? chips.join(" · ") : "no change"}</div>`;
-      })
-      .join("");
-  }
-
   private itemBox(it: Item, src: Src, x: number, y: number, C: number, extra = "") {
     const b = BASE_BY_ID[it.baseId];
     const sel = this.sel && this.sel.src === src && this.sel.uid === it.uid;
@@ -1049,7 +1054,6 @@ export class Ui {
   }
 
   private detailHtml(shop: boolean) {
-    const g = this.game();
     const s = this.sel;
     const it = this.selItem();
     const stash = this.openTab === "stash";
@@ -1061,6 +1065,24 @@ export class Ui {
         ? `<div class="hint">Tap an item to see its price.<br/>Drag your items onto Hilde's stock to sell (or tap and Sell). Drag hers into your bag to buy. Tap again to deselect.</div>`
         : `<div class="hint">Tap an item to see it and compare; tap it again to deselect.<br/>Equip with the button, by dragging onto a slot, or tap the item then a slot.<br/>Drag out of the window to drop.</div>`;
     }
+    if (this.sheetShown()) return `<div class="hint">Comparing…</div>`;
+    const b = BASE_BY_ID[it.baseId];
+    const { btns, price } = this.actionsFor(shop);
+    return `
+      <div class="iname q-${qualityOf(it)}">${esc(itemName(it))}</div>
+      ${qualityOf(it) === "rare" ? `<div class="iname q-rare sub">${esc(b.name)}</div>` : ""}
+      <div class="itype">${s.src === "eq" ? EQUIP_LABEL[s.slot!] : SLOT_LABEL[b.slot]} · ${QUALITY_LABEL[qualityOf(it)]}${b.potion ? "" : ` · Item level ${ilvlOf(it)}`}</div>
+      ${this.itemLines(it)}
+      ${price}
+      <div class="ibtns">${btns.join("")}</div>`;
+  }
+
+  /** Buttons (and price line) for the selected item, shared by the detail pane and the compare sheet. */
+  private actionsFor(shop: boolean): { btns: string[]; price: string } {
+    const g = this.game();
+    const s = this.sel!;
+    const it = this.selItem()!;
+    const stash = this.openTab === "stash";
     const b = BASE_BY_ID[it.baseId];
     const btns: string[] = [];
     let price = "";
@@ -1092,14 +1114,47 @@ export class Ui {
     } else {
       btns.push(`<button class="gbtn" data-act="unequip">Unequip</button>`);
     }
-    return `
-      <div class="iname q-${qualityOf(it)}">${esc(itemName(it))}</div>
-      ${qualityOf(it) === "rare" ? `<div class="iname q-rare sub">${esc(b.name)}</div>` : ""}
-      <div class="itype">${s.src === "eq" ? EQUIP_LABEL[s.slot!] : SLOT_LABEL[b.slot]} · ${QUALITY_LABEL[qualityOf(it)]}${b.potion ? "" : ` · Item level ${ilvlOf(it)}`}</div>
-      ${this.itemLines(it)}
-      ${s.src !== "eq" && !b.potion ? this.compareLine(it) : ""}
-      ${price}
-      <div class="ibtns">${btns.join("")}</div>`;
+    return { btns, price };
+  }
+
+  /**
+   * Side-by-side compare (v0.8): the selected item's full card next to what's equipped in the
+   * slot(s) it would go in (both rings; main and off-hand for one-handers). Each card lists its own
+   * stats plainly, with no deltas. Closing it deselects.
+   */
+  /** The side-by-side compare sheet is up (a bag, stash or shop item that isn't a potion is selected). */
+  private sheetShown(): boolean {
+    const s = this.sel;
+    const it = this.selItem();
+    if (!s || !it || s.src === "eq" || BASE_BY_ID[it.baseId].potion) return false;
+    return this.openTab === "inv" || this.openTab === "stash" || this.openTab === "shop";
+  }
+
+  private sheetHtml(): string {
+    const g = this.game();
+    const s = this.sel;
+    const it = this.selItem();
+    if (!s || !it || !this.sheetShown()) return "";
+    const p = g.player;
+    const card = (x: Item, head: string, cls: string) => `<div class="ccard ${cls}"><div class="chead">${head}</div>
+      <div class="iname q-${qualityOf(x)}">${esc(itemName(x))}</div>
+      ${qualityOf(x) === "rare" ? `<div class="iname q-rare sub">${esc(BASE_BY_ID[x.baseId].name)}</div>` : ""}
+      <div class="itype">${SLOT_LABEL[BASE_BY_ID[x.baseId].slot]} · ${QUALITY_LABEL[qualityOf(x)]} · Item level ${ilvlOf(x)}</div>
+      <div class="clines">${this.itemLines(x)}</div></div>`;
+    const slots = g.compareSlots(it);
+    const eq = slots.map((sl) => {
+      const cur = p.equip[sl];
+      const label = `Equipped · ${EQUIP_LABEL[sl]}`;
+      if (cur) return card(cur, label, "eqc");
+      if (sl === "off" && isTwoHanded(p.equip.main)) return `<div class="ccard eqc empty"><div class="chead">${label}</div><div class="hint">Blocked by your two-handed weapon</div></div>`;
+      return `<div class="ccard eqc empty"><div class="chead">${label}</div><div class="hint">Nothing equipped</div></div>`;
+    });
+    const { btns, price } = this.actionsFor(this.openTab === "shop");
+    const where = s.src === "vendor" ? "Hilde's item" : s.src === "stash" ? "In your stash" : "Selected";
+    return `<div class="cmpsheet" data-n="${1 + eq.length}">
+      <div class="ccards">${card(it, where, "selc")}${eq.join("")}</div>
+      <div class="cfoot">${price}<div class="ibtns">${btns.join("")}<button class="gbtn dim" data-act="cmp-close">✕ Close</button></div></div>
+    </div>`;
   }
 
   private beltLine() {
@@ -1160,20 +1215,48 @@ export class Ui {
       <div class="idetail">${this.detailHtml(false)}</div>`;
   }
 
+  /** Waypoint: camp, then each act's levels in a column. Acts you haven't reached are locked. */
   private wpHtml() {
     const g = this.game();
     const here = g.inTown ? 0 : g.floor;
-    const rows = [0, ...Array.from({ length: g.maxFloor }, (_, i) => i + 1)]
-      .map((f) => {
-        const name = f === 0 ? "Ember Camp" : `Ember Crypt · Level ${f}`;
-        return `<button class="wprow ${f === here ? "here" : ""}" data-act="wp" data-floor="${f}" ${f === here ? "disabled" : ""}>
-          <span class="wpg">✦</span>${name}${f === here ? " <small>(you are here)</small>" : ""}</button>`;
-      })
-      .join("");
+    const row = (f: number, label: string) =>
+      `<button class="wprow ${f === here ? "here" : ""}" data-act="wp" data-floor="${f}" ${f === here ? "disabled" : ""}><span class="wpg">✦</span>${label}${f === here ? " <small>(here)</small>" : ""}</button>`;
+    const reachedAct = actOf(g.maxFloor);
+    const cols = ACTS.map((a) => {
+      if (a.n > reachedAct) return `<div class="wpact locked"><div class="wph">Act ${a.roman} · ${a.area}</div><div class="wplock">🔒 Beat ${a.n > 1 ? MONSTERS[ACTS[a.n - 2].finalBoss].name : ""} to unlock</div></div>`;
+      const rows: string[] = [];
+      for (let l = 1; l <= LEVELS_PER_ACT; l++) {
+        const f = firstFloorOf(a.n) + l - 1;
+        if (f > g.maxFloor) break;
+        if (hasWaypoint(f)) rows.push(row(f, `Level ${l}${isFinalLevel(f) ? " ☠" : ""}`));
+      }
+      const deepest = Math.min(g.maxFloor, firstFloorOf(a.n) + LEVELS_PER_ACT - 1);
+      if (actOf(deepest) === a.n && !hasWaypoint(deepest)) rows.push(`<div class="wpnext">Deepest: Level ${levelInAct(deepest)} · next waypoint at ${Math.ceil(levelInAct(deepest) / 5) * 5}</div>`);
+      return `<div class="wpact"><div class="wph">Act ${a.roman} · ${a.area}</div>${rows.join("")}</div>`;
+    }).join("");
     return `
-      <div class="wplist">${rows}</div>
-      <div class="idetail"><div class="iname">Waypoint</div>
-        <div class="hint">Travel between camp and any crypt level you've reached. Going back down rebuilds the level, and its monsters return.</div></div>`;
+      <div class="wpwrap">
+        <div class="wpcamp">${row(0, "Ember Camp")}<small class="hint">Waypoints on level 1 and every 5th level of each act. Use ⌂ Town and the blue portal to come back to any other level. ☠ = the act's final boss (level ${LEVELS_PER_ACT}).</small></div>
+        <div class="wpacts">${cols}</div>
+      </div>`;
+  }
+
+  /** Artifacts collected from each act's final boss. Unfound ones show as dark outlines with a hint. */
+  private artsHtml() {
+    const p = this.game().player;
+    const cards = ARTIFACTS.map((a) => {
+      const f = p.artifacts.find((x) => x.id === a.id);
+      const act = ACTS[a.act - 1];
+      if (!f)
+        return `<div class="artcard unfound"><img src="${artifactUrl(a.id, true)}" alt=""/><div><div class="artname">Unknown artifact</div><div class="artlore">Act ${act.roman} · ${act.area}: carried by ${esc(MONSTERS[act.finalBoss].name)}.</div></div></div>`;
+      const when = new Date(f.at).toLocaleDateString([], { month: "short", day: "numeric" });
+      return `<div class="artcard found" data-art="${a.id}"><img src="${artifactUrl(a.id)}" alt=""/><div><div class="artname">${esc(a.name)}</div><div class="artlore">${esc(a.lore)}</div><div class="artmeta">Act ${act.roman} · from ${esc(MONSTERS[act.finalBoss].name)} · found ${when} at Lv ${f.level}</div></div></div>`;
+    }).join("");
+    return `
+      <div class="artwrap">
+        <div class="arthead"><b>Artifacts</b> · ${p.artifacts.length} of ${ARTIFACTS.length} found<small> · Each act's final boss carries one. They're kept here, not in your bag, and saved with your hero.</small></div>
+        <div class="artgrid">${cards}</div>
+      </div>`;
   }
 
   // ------------------------------------------------------------ skills
@@ -1247,7 +1330,7 @@ export class Ui {
           : "";
       detail = `
         <div class="iname">${s.glyph} ${esc(s.name)}</div>
-        <div class="itype">${s.kind === "passive" ? "Passive" : "Active"} · Level ${lvl}/${MAX_SKILL_LVL}${s.mana && s.implemented ? ` · Mana ${s.mana(Math.max(1, lvl))}` : ""}</div>
+        <div class="itype">${s.kind === "passive" ? "Passive" : "Active"} · Level ${lvl}/${MAX_SKILL_LVL}${p.level >= s.reqLvl && Math.min(MAX_SKILL_LVL, 1 + p.level - s.reqLvl) < MAX_SKILL_LVL ? ` (cap ${1 + p.level - s.reqLvl} at your level)` : ""}${s.mana && s.implemented ? ` · Mana ${s.mana(Math.max(1, lvl))}` : ""}</div>
         <div class="sblurb">${esc(s.blurb)}</div>
         ${s.implemented && s.effect ? `${lvl ? `<div class="seff">Now: ${esc(s.effect(lvl))}</div>` : ""}${lvl < MAX_SKILL_LVL ? `<div class="seff next">Next: ${esc(s.effect(lvl + 1))}</div>` : ""}` : `<div class="seff soon">Coming soon</div>`}
         <div class="sreq ${p.level < s.reqLvl ? "bad" : ""}">Required level: ${s.reqLvl}</div>
@@ -1304,7 +1387,7 @@ export class Ui {
     return `
       <div class="set-col">
         ${this.game().inTown ? "" : `<button class="gbtn town" data-act="recall">⌂ Return to Town</button>`}
-        <button class="gbtn guide" data-act="tab" data-tab="guide">📖 Item Guide &amp; Compendium</button>
+        <div class="srow2"><button class="gbtn guide" data-act="tab" data-tab="guide">📖 Item Guide</button><button class="gbtn arts" data-act="tab" data-tab="arts">✧ Artifacts ${this.game().player.artifacts.length}/${ARTIFACTS.length}</button></div>
         ${t("autoHp", "Auto health potion", `Drinks one when life is at or below ${this.settings.autoHpAt}%`)}
         ${this.settings.autoHp ? `<div class="stepper"><span>Auto health at</span><button class="gbtn" data-act="hpat" data-d="-5" aria-label="Lower">−</button><b>${this.settings.autoHpAt}%</b><button class="gbtn" data-act="hpat" data-d="5" aria-label="Higher">+</button></div>` : ""}
         ${t("autoMp", "Auto mana potion", "Press a skill again within 1.5 s while out of mana to drink one")}
@@ -1322,9 +1405,10 @@ export class Ui {
         <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn.</p>
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
-        <p>Kill the boss to open the stairs to the next level. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
+        <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
+        <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.7.1 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.8 · all art made in code for this game</p>
       </div>`;
   }
 

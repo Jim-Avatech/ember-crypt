@@ -195,6 +195,40 @@ export class Sfx {
       case "click":
         this.tone(800, 0.04, "square", 0.06);
         break;
+      case "shoot":
+        this.hiss(0.12, 0.14, 2600, 1.4, "bandpass", 3);
+        break;
+      case "bolt":
+        this.tone(700, 0.18, "sawtooth", 0.1, 0.5);
+        this.hiss(0.15, 0.12, 1400, 1);
+        break;
+      case "explode":
+        this.tone(55, 0.5, "sawtooth", 0.3, 0.4);
+        this.hiss(0.45, 0.35, 500, 1, "lowpass");
+        break;
+      case "nova_warn":
+        this.tone(180, 0.7, "triangle", 0.14, 2.2);
+        break;
+      case "nova":
+        this.tone(90, 0.6, "sawtooth", 0.25, 0.4);
+        this.hiss(0.5, 0.3, 900, 1, "lowpass");
+        break;
+      case "charge":
+        this.tone(110, 0.4, "sawtooth", 0.18, 1.8);
+        this.hiss(0.3, 0.15, 700, 0.8);
+        break;
+      case "summon":
+        this.tone(240, 0.5, "triangle", 0.15, 0.5);
+        break;
+      case "artifact":
+        [392, 523, 659, 784, 1046, 1318].forEach((f, i) => this.tone(f, 0.5, "triangle", 0.16, 1, i * 0.09));
+        break;
+      case "poison":
+        this.tone(300, 0.2, "sine", 0.1, 0.6);
+        break;
+      case "chill":
+        this.tone(1400, 0.2, "triangle", 0.08, 0.6);
+        break;
     }
   }
 }

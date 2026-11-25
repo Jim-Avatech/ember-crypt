@@ -1252,3 +1252,53 @@ body.portrait #rotate {
 .sndrow small { color: #b8a888; font-size: 12px; line-height: 1.3; }
 .cmp .cmph { color: #c8b890; font-weight: normal; }
 .cmp + .cmp { margin-top: 6px; }
+
+/* v0.8: acts — waypoint by act, artifacts, ailments */
+.buff.chill { color: #bfe6ff; border-color: #3a6a8a; }
+.buff.poison { color: #b8f07a; border-color: #4a7a2a; }
+.pbody-wp { flex-direction: column; }
+.wpwrap { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.wpcamp { display: flex; align-items: center; gap: 12px; }
+.wpcamp .wprow { min-width: 170px; }
+.wpcamp .hint { margin: 0; }
+.wpacts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.wpact { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.wpact .wprow { padding: 4px 10px; font-size: 14px; min-height: 40px; }
+.wph { font-size: 12px; color: #e8c86a; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 0; border-bottom: 1px solid #3a2a18; }
+.wpact.locked .wph { color: #6a5a44; }
+.wplock { font-size: 12px; color: #7a6a52; padding: 6px 2px; }
+.pbody-arts { flex-direction: column; }
+.artwrap { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.arthead { color: #ffb050; font-size: 15px; }
+.arthead small { color: #9a8a6a; font-size: 12px; }
+.artgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.artcard { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid #4a3418; border-radius: 6px; background: linear-gradient(#1e140a, #120c06); }
+.artcard img { width: 48px; height: 48px; image-rendering: pixelated; flex: none; }
+.artcard.found { border-color: #c87a20; box-shadow: 0 0 12px rgba(255, 140, 40, 0.18) inset; }
+.artcard.found img { filter: drop-shadow(0 0 6px rgba(255, 150, 40, 0.6)); }
+.artname { color: #ff9a2a; font-weight: bold; font-size: 15px; }
+.artcard.unfound .artname { color: #6a5a44; }
+.artlore { color: #d8c8a0; font-size: 13px; font-style: italic; line-height: 1.3; margin-top: 2px; }
+.artcard.unfound .artlore { color: #7a6a52; font-style: normal; }
+.artmeta { color: #9a8462; font-size: 11px; margin-top: 4px; }
+.gbtn.arts { color: #ffb050; border-color: #8a5420; }
+.gnav { gap: 3px; }
+.gsec { padding: 4px 10px; font-size: 13px; }
+.set-col .srow2 .gbtn.guide, .set-col .srow2 .gbtn.arts { flex: 1; }
+.wpnext { font-size: 11.5px; color: #8a7a5a; padding: 2px 4px; }
+/* v0.8 side-by-side compare sheet */
+.pbox { position: relative; }
+.cmpsheet { position: absolute; left: 6px; right: 6px; top: 50px; bottom: 6px; z-index: 5; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(12, 9, 6, 0.97); border: 1px solid #5a4428; border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7); }
+.ccards { flex: 1; min-height: 0; display: flex; gap: 8px; overflow-y: auto; touch-action: pan-y; }
+.ccard { flex: 1 1 0; min-width: 0; padding: 6px 10px; border: 1px solid #3a2e1e; border-radius: 5px; background: rgba(0, 0, 0, 0.35); font-size: 13px; line-height: 1.5; color: #d8ccb0; }
+.ccard.selc { border-color: #c7a050; }
+.ccard .iname { font-size: 15px; }
+.ccard.empty .hint { margin-top: 8px; }
+.chead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #a08c64; margin-bottom: 2px; }
+.ccard.selc .chead { color: var(--gold2); }
+.cfoot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cfoot .ibtns { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; }
+.cfoot .price { margin: 0; }
+
+/* v0.8: potion cooldown */
+#btn-hp.cool, #btn-mp.cool { filter: grayscale(.7) brightness(.6); }

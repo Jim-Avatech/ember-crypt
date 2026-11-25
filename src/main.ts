@@ -149,6 +149,15 @@ if (saved?.migratedSold !== undefined) {
   const what = saved.migratedFrom === 1 ? "Your bag now uses a grid, like Diablo II." : "Your gear was converted to the new item classes.";
   setTimeout(() => ui.toast(n ? `${what} ${n} item${n === 1 ? "" : "s"} didn't fit and were sold.` : what), 600);
 }
+if (saved?.actsFrom !== undefined) {
+  // converted from the single endless crypt: write the v6 save now, and explain the acts once
+  setTimeout(() => doSave(true), 0);
+  if (saved.actsFrom > 1) setTimeout(() => ui.toast("The crypt now leads to four acts of 20 levels. Your hero keeps their progress in Act I; the Ember Lich waits on level 20.", 7000), 5200);
+}
+if (saved?.cappedPoints) {
+  const n = saved.cappedPoints;
+  setTimeout(() => ui.toast(`Skills now follow Diablo II's level cap (1 point per character level after a skill unlocks). ${n} point${n === 1 ? "" : "s"} refunded from ${saved.cappedSkills!.join(", ")}.`, 7000), 2600);
+}
 if (saved?.refundedPoints) {
   const n = saved.refundedPoints;
   setTimeout(

@@ -32,6 +32,7 @@ const check = (name, ok, extra = "") => {
 };
 const ev = (fn, arg) => page.evaluate(fn, arg);
 const center = async (sel) => {
+  await page.evaluate((q) => { try { document.querySelector(q)?.scrollIntoView({ block: "nearest" }); } catch {} }, sel).catch(() => {});
   const b = await page.locator(sel).first().boundingBox();
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 };
@@ -241,32 +242,29 @@ await drag(await center('[data-src="bag"][data-uid="3002"]'), await bagCell(6, 0
 const bk2 = await bagPos(3002);
 const rg2 = await bagPos(3003);
 check("Dropping onto one item swaps them", bk2 && bk2[0] === 6 && bk2[1] === 0 && rg2 && !(rg2[0] === 6 && rg2[1] === 0), `(buckler ${bk2}, ring ${rg2})`);
-// d. tap-to-place: tap ring, tap an empty cell
+// d. v0.8: tapping an item opens the side-by-side compare sheet; ✕ Close returns to the bag
 await tap('[data-src="bag"][data-uid="3003"]');
-{
-  const r = await page.locator('[data-grid="bag"]').boundingBox();
-  const C = await ev(() => __ec.ui.C);
-  await tapAt({ x: r.x + 4.5 * C, y: r.y + 3.5 * C });
-}
-const rg3 = await bagPos(3003);
-check("Tap an item, then tap a cell, moves it there", rg3 && rg3[0] === 4 && rg3[1] === 3, `(ring at ${rg3})`);
+await wait(150);
+const sh = await ev(() => ({ cards: [...document.querySelectorAll(".cmpsheet .ccard .chead")].map((e) => e.textContent), deltas: document.querySelectorAll(".cmpsheet .up, .cmpsheet .down, .cmp").length, btns: [...document.querySelectorAll(".cmpsheet .ibtns button")].map((b) => b.textContent.trim()) }));
+check("Tapping a ring opens the compare sheet: the ring next to both ring slots, plain stats, action buttons", sh.cards.length === 3 && /Selected/i.test(sh.cards[0]) && sh.cards.filter((c) => /Ring/i.test(c)).length === 2 && sh.deltas === 0 && sh.btns.includes("Equip") && sh.btns.some((b) => /Close/.test(b)), JSON.stringify(sh));
+await tap('[data-act="cmp-close"]');
+await wait(150);
+const rg3c = await ev(() => ({ sheet: !!document.querySelector(".cmpsheet"), sel: !!document.querySelector(".gi.sel") }));
+check("✕ Close shuts the compare sheet and deselects", !rg3c.sheet && !rg3c.sel, JSON.stringify(rg3c));
 // e. drag the short sword onto the off-hand slot: dual wield
 await drag(await center('[data-src="bag"][data-uid="3001"]'), { ...(await center('.slot[data-slot="off"]')), y: (await center('.slot[data-slot="off"]')).y + LIFT });
 const offId = await ev(() => __ec.game.player.equip.off?.baseId);
 const dual = await ev(() => __ec.game.derived().dual);
 check("Drag a one-hander onto the off-hand: dual wielding", offId === "sword" && dual, `(off-hand ${offId})`);
-// f. tap cap, tap head slot
+// f. tap cap, then Equip in the compare sheet
 await tap('[data-src="bag"][data-uid="3004"]');
-await tap('.slot[data-slot="head"]');
-check("Tap an item, then tap a slot, equips it", (await ev(() => __ec.game.player.equip.head?.baseId)) === "helm");
-// g. a second tap deselects; the Equip button equips
+await wait(150);
+await tap('.cmpsheet [data-act="equip"]');
+check("Tap an item, then Equip in the compare sheet, equips it", (await ev(() => __ec.game.player.equip.head?.baseId)) === "helm");
+// g. the sheet's Equip button equips the ring
 await tap('[data-src="bag"][data-uid="3003"]');
-const selOn = await ev(() => !!document.querySelector('[data-src="bag"][data-uid="3003"].sel'));
-await tap('[data-src="bag"][data-uid="3003"]');
-const selOff = await ev(() => ({ sel: !!document.querySelector('[data-src="bag"][data-uid="3003"].sel'), ring: __ec.game.player.equip.ring1?.baseId ?? null, inBag: !!__ec.game.bagEntry(3003) }));
-check("Tapping a selected item again deselects it (doesn't equip)", selOn && !selOff.sel && selOff.ring === null && selOff.inBag, JSON.stringify({ selOn, selOff }));
-await tap('[data-src="bag"][data-uid="3003"]');
-await tap('.idetail [data-act="equip"]');
+await wait(150);
+await tap('.cmpsheet [data-act="equip"]');
 check("The Equip button equips the selected item", (await ev(() => __ec.game.player.equip.ring1?.baseId)) === "ring");
 // h. two-handed sword blocks the off-hand
 await drag(await center('[data-src="bag"][data-uid="3005"]'), { ...(await center('.slot[data-slot="main"]')), y: (await center('.slot[data-slot="main"]')).y + LIFT });
@@ -586,7 +584,8 @@ check("Walking up to Hilde offers Trade, which opens the shop", shopOpen && /Tra
 // sell by tapping + Sell button
 const g0 = await ev(() => __ec.game.player.gold);
 await tap('[data-src="bag"][data-uid="6001"]');
-await tap('[data-act="sell"]');
+await wait(150);
+await tap('.cmpsheet [data-act="sell"]');
 const sold = await ev(() => ({ gold: __ec.game.player.gold, gone: !__ec.game.bagEntry(6001), inStock: __ec.game.vendorStock.some((q) => q.item.uid === 6001) }));
 check("Selling loot adds gold", sold.gold > g0 && sold.gone && sold.inStock, `(gold ${g0} → ${sold.gold})`);
 // sell by dragging onto Hilde's wares
@@ -671,20 +670,22 @@ await wait(200);
   await drag(await center('[data-src="stash"][data-uid="7101"]'), await bagCell(6, 5, 2, 3));
   const b1 = await bagPos(7101);
   check("Drag a stash item into the new lower rows of the backpack", b1 && b1[0] === 6 && b1[1] === 5, JSON.stringify(b1));
-  // a second tap deselects; "To backpack" moves it
+  // ✕ Close deselects; "To backpack" moves it
   await tap('[data-src="stash"][data-uid="7102"]');
-  await tap('[data-src="stash"][data-uid="7102"]');
+  await wait(150);
+  await tap('[data-act="cmp-close"]');
   await wait(150);
   const desel = await ev(() => ({ inStash: !!__ec.game.stashEntry(7102), sel: !!document.querySelector(".gi.sel") }));
   await tap('[data-src="stash"][data-uid="7102"]');
-  await tap('[data-act="stash-take"]');
   await wait(150);
-  check("Stash: a second tap deselects; “To backpack” moves it", desel.inStash && !desel.sel && !!(await ev(() => __ec.game.bagEntry(7102))), JSON.stringify(desel));
+  await tap('.cmpsheet [data-act="stash-take"]');
+  await wait(150);
+  check("Stash: ✕ Close deselects; “To backpack” in the compare sheet moves it", desel.inStash && !desel.sel && !!(await ev(() => __ec.game.bagEntry(7102))), JSON.stringify(desel));
   await ev(() => { __ec.game.player.gold = 1234; __ec.ui.refresh(); });
   await tap('[data-src="bag"][data-uid="7002"]');
   await wait(150);
   await page.screenshot({ path: `${outDir}/stash.png` });
-  await tap('[data-act="stash-put"]');
+  await tap('.cmpsheet [data-act="stash-put"]');
   check("“To stash” button stores the selected item", !!(await ev(() => __ec.game.stashEntry(7002))));
   // saved with the hero and in the export code
   await page.locator(".pclose").tap();
@@ -695,7 +696,7 @@ await wait(200);
     const back = JSON.parse(decodeURIComponent(escape(atob(code.slice("EMBERCRYPT1:".length)))));
     return { v: raw.v, stash: raw.player.stash.map((e) => e.item.uid).sort(), exp: (back.player.stash || []).length };
   });
-  check("The stash is saved with the hero (v5) and included in the export code", saved.v === 5 && saved.stash.join() === "7002,7003" && saved.exp === 2, JSON.stringify(saved));
+  check("The stash is saved with the hero (v6) and included in the export code", saved.v === 6 && saved.stash.join() === "7002,7003" && saved.exp === 2, JSON.stringify(saved));
   // town only
   await ev(() => __ec.game.goDungeon(1));
   await wait(200);
@@ -751,7 +752,7 @@ await ev(() => {
   let mag;
   for (let i = 0; i < 200; i++) { mag = enchant(makeItem("axe", 14), "magic", r); if (mag.aff.length === 2 && mag.mods.length >= 2) break; }
   let rare;
-  for (let i = 0; i < 200; i++) { rare = enchant(makeItem("helm", 16), "rare", r); if (rare.aff.length >= 5) break; }
+  for (let i = 0; i < 200; i++) { rare = enchant(makeItem("helm", 16), "rare", r); if (rare.aff.length >= 4) break; }
   mag.uid = 8101; rare.uid = 8102;
   p.level = 20; p.base.str = 80; p.base.dex = 60;
   p.bag = [{ item: mag, x: 0, y: 0 }, { item: rare, x: 2, y: 0 }, { item: { uid: 8103, baseId: "ring", ilvl: 10, q: "rare", name: "Test Band", mods: [{ s: "str", v: 15 }, { s: "life", v: 30 }, { s: "ias", v: 10 }] }, x: 4, y: 0 }];
@@ -762,8 +763,8 @@ await page.locator('.mbtn[data-tab="inv"]').tap();
 await wait(300);
 await tap('[data-src="bag"][data-uid="8101"]');
 await wait(200);
-const mt = await ev(() => ({ name: document.querySelector(".idetail .iname.q-magic")?.textContent, mods: document.querySelectorAll(".idetail .mod").length, cmp: document.querySelector(".idetail .cmp")?.textContent, box: !!document.querySelector('[data-uid="8101"].q-magic') }));
-check("Magic tooltip: blue name, affix lines, compare vs equipped", !!mt.name && / Axe|Axe /.test(mt.name) && mt.mods >= 2 && /vs /.test(mt.cmp ?? "") && mt.box, JSON.stringify(mt));
+const mt = await ev(() => ({ name: document.querySelector(".cmpsheet .selc .iname.q-magic")?.textContent, mods: document.querySelectorAll(".cmpsheet .selc .mod").length, cards: document.querySelectorAll(".cmpsheet .ccard").length, box: !!document.querySelector('[data-uid="8101"].q-magic') }));
+check("Magic item card: blue name, affix lines, shown next to the equipped weapon slots", !!mt.name && / Axe|Axe /.test(mt.name) && mt.mods >= 1 && mt.cards === 3 && mt.box, JSON.stringify(mt));
 await page.screenshot({ path: `${outDir}/magic-tooltip.png` });
 // full comparison: wear a sword with mana leech / life leech / resist; look at the magic axe (lacks them)
 {
@@ -780,22 +781,26 @@ await page.screenshot({ path: `${outDir}/magic-tooltip.png` });
   await ev(() => { __ec.ui.sel = null; __ec.ui.refresh(); });
   await tap('[data-src="bag"][data-uid="8101"]');
   await wait(200);
-  const cmp = await ev(() => [...document.querySelectorAll(".idetail .cmp")].map((c) => ({ head: c.querySelector(".cmph")?.textContent, downs: [...c.querySelectorAll(".down")].map((x) => x.textContent), ups: [...c.querySelectorAll(".up")].map((x) => x.textContent) })));
-  const main = cmp[0] ?? { downs: [] };
-  const lost = (re) => main.downs.some((t) => re.test(t));
-  check("Compare lists every stat: losses for mana leech, fire resist, +skill; both hands for a one-hander", cmp.length === 2 && lost(/mana leech/) && lost(/fire resist/) && lost(/Bash/) && /off-hand/i.test(cmp[1].head) && cmp[1].downs.some((t) => /defense/.test(t)), JSON.stringify(cmp));
+  const cmp = await ev(() => [...document.querySelectorAll(".cmpsheet .ccard")].map((c) => ({ head: c.querySelector(".chead")?.textContent, text: c.textContent, deltas: c.querySelectorAll(".up, .down").length })));
+  const mainC = cmp.find((c) => /Main hand/i.test(c.head ?? "")) ?? { text: "" };
+  check("Compare sheet: the axe card next to the main-hand sword and the off-hand shield, each listing its own stats with no deltas",
+    cmp.length === 3 && /Selected/.test(cmp[0].head) && /mana/i.test(mainC.text) && /Fire Resist/i.test(mainC.text) && /Bash/.test(mainC.text) && cmp.some((c) => /Off-hand/i.test(c.head ?? "") && /Defense/.test(c.text)) && cmp.every((c) => c.deltas === 0), JSON.stringify(cmp.map((c) => c.head)));
   await page.screenshot({ path: `${outDir}/compare.png` });
+  await tap('[data-act="cmp-close"]');
+  await wait(150);
 }
 await tap('[data-src="bag"][data-uid="8102"]');
 await wait(200);
-const rt = await ev(() => ({ names: [...document.querySelectorAll(".idetail .iname.q-rare")].map((e) => e.textContent), mods: document.querySelectorAll(".idetail .mod").length, lvl: /Item level 16/.test(document.querySelector(".idetail .itype")?.textContent ?? "") }));
-check("Rare tooltip: yellow two-word name over the class, 3+ affixes, item level", rt.names.length === 2 && rt.names[1] === "Helm" && rt.mods >= 4 && rt.lvl, JSON.stringify(rt));
+const rt = await ev(() => ({ names: [...document.querySelectorAll(".cmpsheet .selc .iname.q-rare")].map((e) => e.textContent), mods: document.querySelectorAll(".cmpsheet .selc .mod").length, lvl: /Item level 16/.test(document.querySelector(".cmpsheet .selc .itype")?.textContent ?? "") }));
+check("Rare item card: yellow two-word name over the class, 3–4 affixes, item level", rt.names.length === 2 && rt.names[1] === "Helm" && rt.mods >= 3 && rt.lvl, JSON.stringify(rt));
+await tap('[data-act="cmp-close"]');
+await wait(150);
 await page.screenshot({ path: `${outDir}/rare-tooltip.png` });
 // equip a rare ring and check the stats actually change
 const st0 = await ev(() => { const d = __ec.game.derived(); return { str: d.stats.str, hp: d.maxHp, swing: d.swing }; });
 await tap('[data-src="bag"][data-uid="8103"]');
 await wait(150);
-await tap('[data-act="equip"]');
+await tap('.cmpsheet [data-act="equip"]');
 await wait(200);
 const st1 = await ev(() => { const d = __ec.game.derived(); return { str: d.stats.str, hp: d.maxHp, swing: d.swing, ring: __ec.game.player.equip.ring1?.uid }; });
 check("Equipping a rare ring raises Strength, Life and attack speed", st1.ring === 8103 && st1.str === st0.str + 15 && st1.hp === st0.hp + 30 && st1.swing < st0.swing, `${JSON.stringify(st0)} → ${JSON.stringify(st1)}`);
@@ -977,7 +982,7 @@ await ev(() => __ec.ui.close());
   const scrolled = await ev(() => document.querySelector(".gbody").scrollTop);
   check("Guide scrolls with a finger", scrolled > 40, `(scrollTop ${scrolled})`);
   const secs = {};
-  for (const sec of ["levels", "affixes", "rarity", "monsters", "skills"]) {
+  for (const sec of ["levels", "affixes", "rarity", "acts", "monsters", "skills"]) {
     await tap(`[data-act="gsec"][data-sec="${sec}"]`);
     await wait(120);
     secs[sec] = await ev(() => ({ on: document.querySelector(".gbody")?.dataset.sec, rows: document.querySelectorAll(".gbody tr").length }));
@@ -985,7 +990,7 @@ await ev(() => __ec.ui.close());
   }
   const tiers = await ev(() => __ec.data.AFFIXES.reduce((a, x) => a + x.tiers.length, 0) + __ec.data.AFFIXES.length);
   const navBig = await ev(() => [...document.querySelectorAll(".gsec")].every((b) => b.getBoundingClientRect().height >= 44));
-  check("Guide sections: levels, affixes (every tier), rarity, monsters, skills", Object.entries(secs).every(([k, v]) => v.on === k && v.rows > 3) && secs.affixes.rows === tiers && navBig, JSON.stringify({ secs, tiers, navBig }));
+  check("Guide sections: levels, affixes (every tier), rarity, acts, monsters, skills", Object.entries(secs).every(([k, v]) => v.on === k && v.rows > 3) && secs.affixes.rows === tiers && navBig, JSON.stringify({ secs, tiers, navBig }));
   await ev(() => __ec.ui.close());
 }
 
@@ -1025,6 +1030,109 @@ await ev(() => __ec.ui.close());
   });
   check("Auto health potion (on by default) drinks one at 10% life", ah.on && ah.pots === 1, JSON.stringify(ah));
   await ev(() => __ec.game.goTown());
+}
+
+// ---------------------------------------------------------------- 14f. v0.8 acts: final boss → artifact → next act
+{
+  await ev(() => {
+    const g = __ec.game;
+    const p = g.player;
+    p.base.vit = 600;
+    p.base.str = 200;
+    g.maxFloor = Math.max(g.maxFloor, 20);
+    g.goDungeon(20);
+  });
+  await wait(400);
+  const lair = await ev(() => ({ kind: __ec.game.boss.def.kind, name: __ec.game.boss.def.name, label: document.getElementById("floor-label").textContent }));
+  check("Act I level 20/20 is the lair of the final boss, The Ember Lich", lair.kind === "lich" && /Act I · Ember Crypt · Level 20\/20/.test(lair.label), JSON.stringify(lair));
+  // stand by the Lich and let it use its specials
+  const sp = await ev(async () => {
+    const g = __ec.game;
+    const b = g.boss;
+    g.player.x = b.x - 3;
+    g.player.y = b.y;
+    for (const [dx, dy] of [[-3, 0], [0, -3], [3, 0], [0, 3]]) if (!g.blocked(b.x + dx, b.y + dy, 0.3)) { g.player.x = b.x + dx; g.player.y = b.y + dy; break; }
+    b.state = "chase";
+    b.cd = 0;
+    let shots = 0;
+    let novas = 0;
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      shots = Math.max(shots, g.shots.length);
+      novas = Math.max(novas, g.novas.length);
+      g.player.hp = g.derived().maxHp;
+    }
+    return { shots, novas };
+  });
+  check("The Ember Lich uses special attacks (fire bolt fan, flame nova)", sp.shots >= 3 && sp.novas >= 1, JSON.stringify(sp));
+  await page.screenshot({ path: `${outDir}/final-boss.png` });
+  // kill it: the artifact drops, walking over it collects it
+  const drop = await ev(() => {
+    const g = __ec.game;
+    g.kill(g.boss);
+    const a = g.ground.find((x) => x.artifact);
+    return { art: a?.artifact ?? null, stairs: !!g.stairs, toast: document.getElementById("toast").textContent };
+  });
+  await wait(500);
+  await page.screenshot({ path: `${outDir}/artifact-drop.png` });
+  await ev(() => { const g = __ec.game; const a = g.ground.find((x) => x.artifact); g.player.x = a.x + 0.2; g.player.y = a.y; });
+  await wait(400);
+  const col = await ev(() => ({ arts: __ec.game.player.artifacts.map((a) => a.id), bag: __ec.game.player.bag.length, onGround: __ec.game.ground.some((x) => x.artifact) }));
+  check("Killing the Ember Lich drops the Ember Heart artifact and opens the stairs", drop.art === "ember_heart" && drop.stairs && /Act II/.test(drop.toast), JSON.stringify(drop));
+  check("Walking over the artifact collects it (not into the bag)", col.arts.join() === "ember_heart" && !col.onGround, JSON.stringify(col));
+  // take the stairs to Act II
+  await ev(() => { const g = __ec.game; g.player.x = g.stairs.x; g.player.y = g.stairs.y; });
+  await wait(400);
+  const btnText = await ev(() => document.getElementById("btn-ctx").textContent);
+  await tap("#btn-ctx");
+  await wait(600);
+  const a2 = await ev(() => {
+    const g = __ec.game;
+    return { floor: g.floor, max: g.maxFloor, label: document.getElementById("floor-label").textContent, kinds: [...new Set(g.monsters.map((m) => m.def.kind))].sort(), toast: document.getElementById("toast").textContent };
+  });
+  check("The stairs lead into Act II: Sunken Tombs, with its own monsters", /Enter Act II/.test(btnText) && a2.floor === 21 && a2.max >= 21 && /Act II · Sunken Tombs · Level 1\/20/.test(a2.label) && a2.kinds.every((k) => ["mummy", "raider", "priest", "boss2"].includes(k)), JSON.stringify({ btnText, ...a2 }));
+  await page.screenshot({ path: `${outDir}/act2.png` });
+  // ranged casters shoot lightning; resists cut it
+  const rng = await ev(async () => {
+    const g = __ec.game;
+    let pr = g.monsters.find((m) => m.def.kind === "priest");
+    if (!pr) {
+      g.startFloor(22);
+      pr = g.monsters.find((m) => m.def.kind === "priest");
+    }
+    if (!pr) return { none: true };
+    for (const [dx, dy] of [[4, 0], [0, 4], [-4, 0], [0, -4], [3, 3], [-3, -3]]) if (!g.blocked(pr.x + dx, pr.y + dy, 0.3) && !g.blocked(pr.x + dx / 2, pr.y + dy / 2, 0.3)) { g.player.x = pr.x + dx; g.player.y = pr.y + dy; break; }
+    pr.state = "chase";
+    let bolts = 0;
+    for (let i = 0; i < 40 && !bolts; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      bolts = g.shots.filter((s) => s.elem === "light").length;
+      g.player.hp = g.derived().maxHp;
+    }
+    return { bolts };
+  });
+  check("Act II Serpent Priests cast lightning bolts from range", rng.bolts >= 1, JSON.stringify(rng));
+  // waypoint is grouped by act; Act II now unlocked, III locked
+  await ev(() => __ec.game.goTown());
+  await wait(300);
+  await ev(() => __ec.ui.open("wp"));
+  await wait(300);
+  const wp = await ev(() => ({ acts: [...document.querySelectorAll(".wpact")].map((e) => `${e.querySelector(".wph").textContent}${e.classList.contains("locked") ? " (locked)" : ""}:${e.querySelectorAll(".wprow").length}`), a2: !!document.querySelector('.wprow[data-floor="21"]') }));
+  check("Waypoint lists levels 1, 5, 10, 15, 20 by act; reaching Act II unlocked it", wp.a2 && /Act I · Ember Crypt:5/.test(wp.acts.join("|")) && /Act II · Sunken Tombs:1/.test(wp.acts.join("|")) && /Act III.*\(locked\)/.test(wp.acts.join("|")), JSON.stringify(wp));
+  await page.screenshot({ path: `${outDir}/waypoint-acts.png` });
+  await tap('[data-act="tab"][data-tab="arts"]');
+  await wait(300);
+  const av = await ev(() => ({ found: document.querySelectorAll(".artcard.found").length, unfound: document.querySelectorAll(".artcard.unfound").length, name: document.querySelector(".artcard.found .artname")?.textContent, color: getComputedStyle(document.querySelector(".artcard.found .artname")).color }));
+  check("Artifacts tab shows the Ember Heart in orange and 3 unknown slots", av.found === 1 && av.unfound === 3 && av.name === "The Ember Heart" && av.color === "rgb(255, 154, 42)", JSON.stringify(av));
+  await page.screenshot({ path: `${outDir}/artifacts.png` });
+  const sv = await ev(() => {
+    const code = __ec.ui["hooks"].save.exportCode();
+    const back = JSON.parse(decodeURIComponent(escape(atob(code.slice("EMBERCRYPT1:".length)))));
+    return { v: back.v, arts: (back.player.artifacts || []).map((a) => a.id) };
+  });
+  check("Artifacts are saved in the export code (save v6)", sv.v === 6 && sv.arts.join() === "ember_heart", JSON.stringify(sv));
+  await page.locator(".pclose").tap();
+  await wait(200);
 }
 
 // ---------------------------------------------------------------- 15. portrait + perf
@@ -1072,6 +1180,38 @@ await page.close();
   check("No page errors after migration", errs2.length === 0, errs2.join(" | "));
   await p2.close();
   await ctx2.close();
+}
+
+// ---------------------------------------------------------------- 16a. v0.7 save (endless crypt, level 9) keeps Act I progress
+{
+  const ctx5 = await browser.newContext(ctxOpts);
+  await ctx5.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    const v5 = {
+      v: 5, seed: 99, floor: 9, maxFloor: 9,
+      player: {
+        level: 15, xp: 40000, base: { str: 60, dex: 30, vit: 40, ene: 10 }, statPoints: 0, skillPoints: 0, skills: { bash: 3 }, slots: ["bash", null, null],
+        gold: 4321, hpPots: 2, mpPots: 1, kills: 500, equip: { main: { uid: 1, baseId: "axe", ilvl: 9 } },
+        bag: [{ item: { uid: 2, baseId: "sword", ilvl: 5 }, x: 2, y: 6 }], stash: [{ item: { uid: 3, baseId: "ring", ilvl: 6 }, x: 9, y: 9 }],
+      },
+    };
+    localStorage.setItem("ember-crypt-save-v1", JSON.stringify(v5));
+    localStorage.setItem("ember-crypt-settings-v1", '{"tutorialSeen":true}');
+  });
+  const p5 = await ctx5.newPage();
+  const errs5 = [];
+  p5.on("pageerror", (e) => errs5.push(e.message));
+  await p5.goto(`${base}?debug`);
+  await p5.waitForTimeout(1500);
+  const m5 = await p5.evaluate(() => {
+    const g = __ec.game;
+    const saved = JSON.parse(localStorage.getItem("ember-crypt-save-v1"));
+    return { lvl: g.player.level, gold: g.player.gold, max: g.maxFloor, bag: g.player.bag.map((e) => `${e.x},${e.y}`).join(), stash: g.player.stash.length, arts: g.player.artifacts.length, v: saved.v };
+  });
+  check("A v0.7 save deep in the old crypt migrates to v6 and keeps its progress in Act I", m5.lvl === 15 && m5.gold === 4321 && m5.max === 9 && m5.bag === "2,6" && m5.stash === 1 && m5.arts === 0 && m5.v === 6, JSON.stringify(m5));
+  check("No page errors after v6 migration", errs5.length === 0, errs5.join(" | "));
+  await ctx5.close();
 }
 
 // ---------------------------------------------------------------- 16b. damaged save → backup

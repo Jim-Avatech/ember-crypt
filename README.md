@@ -3,6 +3,31 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.8 — four acts, new monsters, bosses and artifacts
+
+- **Four acts of 20 levels each**, all reached from Ember Camp, which stays the same: **I Ember Crypt**, **II Sunken Tombs** (sandstone), **III Drowned Jungle** (moss and water), **IV Burning Hells** (basalt and lava). Levels are generated from the act's theme, with their own floor, wall, torch and decal art. The HUD shows *Act N · Area · Level M/20*.
+- **Pacing**: each level takes about 2–5 minutes, so an act takes an hour or more. A full clear gives about 13–15 hero levels per act (roughly level 15 / 29 / 42 / 56 at the end of Acts I–IV). Monster level climbs from 1 to 12, then 13–24, 25–36 and 37–49, which raises item levels. Kills give less XP than before (×0.3), deeper acts a little more (×1.1/1.2/1.3), and monsters more than 3 levels below you give less (−15% per level, like Diablo II).
+- **New monsters, 3–4 per act**, each with its own pixel sprite and behavior: Skeleton Archers (ranged); Tomb Mummies (poison), Sand Raiders (charging packs), Serpent Priests (lightning casters); Bog Lurkers (cold, chill you), Flayers (fast packs), Thorn Spitters (poison spit), Swamp Bloaters (explode); Hell Imps (fire packs), Doom Knights (charge), Pit Conjurers (fire bolts), Burning Souls (explode in fire).
+- **A boss on every level**, named and tougher each level of the act (monster level climbs, plus +4% life and +2% damage per level). Level 20 holds the act's **final boss** with special attacks: The Ember Lich (fire bolt fan, flame nova), Queen Sekhet (charge, lightning fan), Mother Mire (poison nova, summons her brood), Malakar, Lord of Embers (fire nova, burning charge, summoned imps).
+- **Artifacts**: each final boss drops one (The Ember Heart, The Sun Scarab, The Mire Pearl, The Cinder Crown). Walk over it to collect it. Artifacts are kept in a new **Artifacts** tab (also in Settings), not your bag, and saved and exported with your hero. They do nothing yet.
+- **Elemental damage**: fire, cold, lightning and poison are cut by your resists (max 75%). Cold slows you; poison hurts over time.
+- **Waypoints** on level 1 and every 5th level of each act, grouped by act; reaching an act unlocks it. Use ⌂ Town and the blue portal to return to any other level. Magic find rises +20% per act and +1% per level. The Item Guide has new **Acts & artifacts** and per-act **Monsters** sections.
+- **Saves v6**: older heroes keep everything. Levels 1–20 of the old endless crypt become Act I levels 1–20; deeper heroes are held at Act I level 20 until they beat the Ember Lich.
+
+### v0.8 also: compare sheet, skill cap, fewer affixes, harder fights
+
+- **Compare sheet:** tapping a bag, stash or shop item opens its full card beside what you wear in that slot (both rings; main and off-hand for one-handers). Each card lists its own stats, with no +/- list. The action buttons sit underneath, plus ✕ Close.
+- **Diablo II skill cap:** hard points in a skill are at most 1 + (your level − the skill's level). +skills on gear go on top. Old saves get points above the cap refunded.
+- **Affixes:** magic items roll 1–2, rares roll 3–4 (was 3–6). Rares you already own keep all their affixes.
+- **Difficulty:**
+  - Monster life and damage grow faster per level.
+  - Champion packs (blue) and named uniques (gold) carry modifiers: Extra Strong, Extra Fast, Stone Skin, Fire Enchanted and Cold Enchanted.
+  - Monsters are denser later in each act and in later acts.
+  - Level bosses have +25% life; final bosses have +20% life.
+  - Potions heal over 1.5 s, with a 1.5 s cooldown per kind.
+  - Natural regen is slower and potions drop less often.
+  - Gear requirements climb faster, so stat points matter.
+
 ## v0.7.1 — full item comparison, tap-to-deselect
 
 - **Item comparison shows every stat.** It's built from the game's stat model (`Game.compare`): damage (each hand), attacks/s, AR, crit, defense, life, mana, Str/Dex/Vit/Energy, life and mana leech, run speed, attack speed, each resist, gold find, magic find, +skills, and Str/Dex/level requirements. Gains are green, losses red. Stats the new item lacks count as losses.

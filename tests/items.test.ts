@@ -65,14 +65,14 @@ describe("affix rolling", () => {
     expect(it2.name).toContain("Axe");
   });
 
-  it("rare items get 3–6 affixes, at most 3 prefixes and 3 suffixes, no duplicate groups", () => {
+  it("rare items get 3–4 affixes, at most 3 prefixes and 3 suffixes, no duplicate groups", () => {
     const r = rng(2);
     for (let i = 0; i < 600; i++) {
       const cat = CATS[i % CATS.length];
       const ilvl = 1 + (i % 30);
       const res = rollAffixes(cat, ilvl, "rare", r);
       expect(res.aff.length, `${cat} ilvl ${ilvl}`).toBeGreaterThanOrEqual(3);
-      expect(res.aff.length).toBeLessThanOrEqual(6);
+      expect(res.aff.length).toBeLessThanOrEqual(4);
       expect(res.prefixes.length).toBeLessThanOrEqual(3);
       expect(res.suffixes.length).toBeLessThanOrEqual(3);
       expect(new Set(res.aff).size).toBe(res.aff.length);
@@ -180,7 +180,7 @@ describe("stat application", () => {
     const big = makeItem("great_sword", 30);
     expect(g.meetsReq(big)).toBe(false);
     g.player.level = 30;
-    g.player.equip.amulet = { ...makeItem("amulet", 5), q: "magic", mods: [{ s: "str", v: 80 }, { s: "dex", v: 80 }] };
+    g.player.equip.amulet = { ...makeItem("amulet", 5), q: "magic", mods: [{ s: "str", v: 100 }, { s: "dex", v: 100 }] };
     expect(g.meetsReq(big)).toBe(true);
   });
 });

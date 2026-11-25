@@ -4,10 +4,13 @@
  * separate full-resolution overlay so it stays sharp.
  */
 import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, qualityOf } from "./data/items";
-import type { Game, GroundItem, Monster, Projectile } from "./game";
+import { ARTIFACT_BY_ID, ARTIFACT_COLOR, type Theme, actDef } from "./data/acts";
+import { ELEM_COLOR, ELITE_MODS } from "./data/monsters";
+import type { Game, GroundItem, Monster, MonsterShot, Nova, Projectile } from "./game";
+import { artifactIcon } from "./sprites/artifacts";
 import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
-import { type Anim, FRAMES, type Look, type Model, dirOf, getFrame, lookKey } from "./sprites/puppet";
+import { type Anim, FRAMES, type Look, dirOf, getFrame, lookKey, spriteTop } from "./sprites/puppet";
 import * as T from "./sprites/tiles";
 
 const HW = 16; // half tile width in art px
@@ -51,7 +54,7 @@ let ART: Art | null = null;
 function art(): Art {
   if (!ART)
     ART = {
-      crypt: [0, 1, 2, 3].map(T.cryptFloor),
+      crypt: [0, 1, 2, 3].map((v) => T.cryptFloor(v)),
       wallTall: T.cryptWall(true),
       wallLow: T.cryptWall(false),
       grass: [0, 1, 2, 3].map(T.grassTile),
@@ -73,7 +76,33 @@ function art(): Art {
   return ART;
 }
 
-const MODEL: Record<string, Model> = { zombie: "zombie", fallen: "fallen", boss: "boss" };
+/** Floor, walls, torches and decals for one act, built on first visit. */
+interface ActArt {
+  theme: Theme;
+  crypt: HTMLCanvasElement[];
+  wallTall: HTMLCanvasElement;
+  wallLow: HTMLCanvasElement;
+  torch: HTMLCanvasElement[];
+  decals: Record<string, HTMLCanvasElement>;
+}
+const ACT_ART = new Map<number, ActArt>();
+function actArt(floor: number): ActArt {
+  const a = actDef(floor);
+  let r = ACT_ART.get(a.n);
+  if (!r) {
+    const th = a.theme;
+    r = {
+      theme: th,
+      crypt: [0, 1, 2, 3].map((v) => T.cryptFloor(v, th)),
+      wallTall: T.cryptWall(true, th),
+      wallLow: T.cryptWall(false, th),
+      torch: T.torchFrames(th.flame, th.core),
+      decals: Object.fromEntries(Object.entries(th.decals).map(([k, v]) => [k, T.decalSprite(v)])),
+    };
+    ACT_ART.set(a.n, r);
+  }
+  return r;
+}
 
 export class Renderer {
   canvas: HTMLCanvasElement;
@@ -155,12 +184,14 @@ export class Renderer {
 
   // -------------------------------------------------------------- frame
   render(game: Game, dt: number, showLabels: boolean) {
-    const A = art();
+    const A0 = art();
     const ctx = this.ctx;
     ctx.imageSmoothingEnabled = false;
     const p = game.player;
     const L = game.level;
     const town = L.kind === "town";
+    const AA = town ? null : actArt(game.floor);
+    const A = AA ? { ...A0, crypt: AA.crypt, wallTall: AA.wallTall, wallLow: AA.wallLow, torch: AA.torch, decals: AA.decals } : A0;
     const tx = (p.x - p.y) * HW;
     const ty = (p.x + p.y) * HH - p.z * HH;
     const k = 1 - Math.exp(-10 * dt);
@@ -180,7 +211,7 @@ export class Renderer {
     if (p.dead && this.playerDeadAt < 0) this.playerDeadAt = game.time;
     if (!p.dead) this.playerDeadAt = -1;
 
-    ctx.fillStyle = town ? "#0c0f08" : "#070605";
+    ctx.fillStyle = town ? "#0c0f08" : AA!.theme.void;
     ctx.fillRect(0, 0, this.AW, this.AH);
 
     const R = Math.ceil(Math.max(this.AW / 32, this.AH / 16)) + 4;
@@ -227,8 +258,14 @@ export class Renderer {
         ctx.fillRect(Math.round(cx + Math.cos(a) * rx), Math.round(cy + Math.sin(a) * rx * 0.5), 1, 1);
       }
     }
+    // boss novas: a warning ring on the ground, then the burst
+    for (const n of game.novas) this.drawNova(n, game.time);
     // ground items
     for (const g of game.ground) {
+      if (g.artifact) {
+        this.drawArtifact(g, game.time);
+        continue;
+      }
       const c = g.item ? groundSprite(g.item) : goldSprite();
       const bounce = g.t < 0.4 ? Math.sin((g.t / 0.4) * Math.PI) * 0.5 : 0;
       const q = g.item ? qualityOf(g.item) : "normal";
@@ -342,6 +379,7 @@ export class Renderer {
     }
     list.push({ d: pD, f: () => this.drawPlayer(game) });
     for (const q of game.projectiles) list.push({ d: q.x + q.y + 0.3, f: () => this.drawProjectile(q) });
+    for (const q of game.shots) list.push({ d: q.x + q.y + 0.3, f: () => this.drawShot(q) });
     list.sort((a, b) => a.d - b.d);
     for (const it of list) it.f();
 
@@ -360,13 +398,13 @@ export class Renderer {
 
     // health bars (crisp art pixels)
     for (const m of game.monsters) {
-      if (m.state === "dead" || m.def.kind === "boss") continue;
-      if (m.hp >= m.maxHp && m.state === "idle") continue;
+      if (m.state === "dead" || m === game.boss) continue;
+      if (m.hp >= m.maxHp && m.state === "idle" && !m.elite) continue;
       const sx = this.ax(m.x, m.y);
-      const sy = this.ay(m.x, m.y) - (m.def.kind === "fallen" ? 30 : 46);
+      const sy = this.ay(m.x, m.y) - Math.round(spriteTop(m.def.species) * 1.6);
       ctx.fillStyle = "#000";
       ctx.fillRect(sx - 9, sy - 1, 18, 4);
-      ctx.fillStyle = "#c8281c";
+      ctx.fillStyle = m.elite === 2 ? "#e0a030" : m.elite === 1 ? "#4f7cff" : "#c8281c";
       ctx.fillRect(sx - 8, sy, Math.max(0, Math.round(16 * (m.hp / m.maxHp))), 2);
     }
 
@@ -375,7 +413,8 @@ export class Renderer {
     f.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     f.clearRect(0, 0, this.W, this.H);
     this.labels = [];
-    if (showLabels) this.drawLabels(game);
+    this.drawLabels(game, showLabels);
+    this.drawEliteNames(game);
     if (L.vendor) {
       const v = L.vendor;
       const near = game.nearVendor();
@@ -410,11 +449,11 @@ export class Renderer {
       const y = 12;
       f.fillStyle = "rgba(0,0,0,.75)";
       f.fillRect(x - 2, y - 2, w + 4, 22);
-      f.fillStyle = "#7a1410";
+      f.fillStyle = b.def.rank === "final" ? "#a0400c" : "#7a1410";
       f.fillRect(x, y, w * (b.hp / b.maxHp), 18);
       f.font = "bold 13px Georgia, serif";
       f.textAlign = "center";
-      f.fillStyle = "#e9d9a8";
+      f.fillStyle = b.def.rank === "final" ? "#ffcf7a" : "#e9d9a8";
       f.fillText(b.def.name, this.W / 2, y + 14);
     }
     const maxHp = game.derived().maxHp;
@@ -468,6 +507,10 @@ export class Renderer {
       hole(t.x + 0.9, t.y + 0.9, 3.6 * fl, 0.8);
     }
     if (game.stairs) hole(game.stairs.x, game.stairs.y, 3, 0.7);
+    // bosses glow faintly so they read in the dark; bolts light their path
+    if (game.boss && game.boss.state !== "dead") hole(game.boss.x, game.boss.y, game.boss.def.rank === "final" ? 3.4 : 2.4, 0.55);
+    for (const q of game.shots) if (q.look === "bolt") hole(q.x, q.y, 1.4, 0.6);
+    for (const n of game.novas) hole(n.x, n.y, n.radius + 0.6, 0.5);
     hole(L.waypoint.x, L.waypoint.y, 2.6, 0.7);
     const fires = L.props.filter((pr) => pr.kind === "campfire");
     for (const fr of fires) hole(fr.x + 0.5, fr.y + 0.5, 6 + Math.sin(game.time * 7) * 0.2, 1);
@@ -488,8 +531,10 @@ export class Renderer {
     };
     for (const t of L.torches) {
       if (Math.abs(t.x - p.x) > 14 || Math.abs(t.y - p.y) > 14) continue;
-      glow(t.x + 0.9, t.y + 0.9, 2.6, "120,60,10", 0.28);
+      glow(t.x + 0.9, t.y + 0.9, 2.6, town ? "120,60,10" : actArt(game.floor).theme.glow, 0.28);
     }
+    for (const q of game.shots) if (q.look === "bolt") glow(q.x, q.y, 1.2, q.elem === "light" ? "200,200,80" : "200,90,20", 0.35);
+    for (const g of game.ground) if (g.artifact) glow(g.x, g.y, 2.2, "255,140,40", 0.3 + Math.sin(game.time * 4) * 0.08);
     for (const fr of fires) glow(fr.x + 0.5, fr.y + 0.5, 4.5, "150,70,10", 0.3 + Math.sin(game.time * 11) * 0.03);
     glow(L.waypoint.x, L.waypoint.y, 2, "40,90,200", 0.25 + Math.sin(game.time * 3) * 0.06);
     ctx.globalCompositeOperation = "source-over";
@@ -643,7 +688,7 @@ export class Renderer {
   }
 
   private drawMonster(m: Monster) {
-    const model = MODEL[m.def.kind] ?? "zombie";
+    const model = m.def.species;
     const sx = this.ax(m.x, m.y);
     const sy = this.ay(m.x, m.y);
     let anim: Anim = "idle";
@@ -665,12 +710,102 @@ export class Renderer {
       anim = "idle";
       f = Math.floor((m.walkPhase + m.id) * 0.5);
     }
-    if (m.state !== "dead") this.shadow(sx, sy, model === "boss" ? 13 : model === "fallen" ? 5 : 7);
+    if (m.state !== "dead") this.shadow(sx, sy, Math.round(m.def.radius * 26));
+    if (m.elite && m.state !== "dead") {
+      // champion (blue) or unique (gold) glow ring at its feet
+      const c = this.ctx;
+      const rx = Math.round(m.def.radius * 30) + 2;
+      c.globalAlpha = 0.55 + 0.25 * Math.sin(m.walkPhase * 0.5 + m.id);
+      c.strokeStyle = m.elite === 2 ? "#ffb43a" : "#5a8cff";
+      c.lineWidth = 1;
+      c.beginPath();
+      c.ellipse(sx, sy, rx, rx / 2, 0, 0, Math.PI * 2);
+      c.stroke();
+      c.globalAlpha = 1;
+    }
     const fr = getFrame(model, {}, "", anim, dirOf(m.fx, m.fy), f, m.flash > 0.4 && m.state !== "dead");
     const ctx = this.ctx;
     if (m.state === "dead" && m.searched) ctx.globalAlpha = 0.75;
     ctx.drawImage(fr.c, sx - fr.ax, sy - fr.ay);
     ctx.globalAlpha = 1;
+  }
+
+  /** Monster arrows, bolts and spit. */
+  private drawShot(q: MonsterShot) {
+    const ctx = this.ctx;
+    const x = this.ax(q.x, q.y);
+    const y = this.ay(q.x, q.y, 0.9);
+    const l = Math.hypot(q.vx, q.vy) || 1;
+    // direction on screen
+    const dx = (q.vx - q.vy) / l;
+    const dy = (q.vx + q.vy) / l / 2;
+    if (q.look === "arrow") {
+      ctx.fillStyle = "#6a4a2a";
+      for (let i = 0; i < 7; i++) ctx.fillRect(Math.round(x - dx * i), Math.round(y - dy * i), 1, 1);
+      ctx.fillStyle = q.color;
+      ctx.fillRect(Math.round(x), Math.round(y) - 1, 2, 2);
+      return;
+    }
+    const r = q.look === "spit" ? 2 : q.big ? 3 : 2;
+    ctx.fillStyle = q.color;
+    for (let i = 1; i < 5; i++) {
+      ctx.globalAlpha = 0.5 - i * 0.1;
+      ctx.fillRect(Math.round(x - dx * i * 2.5) - 1, Math.round(y - dy * i * 2.5) - 1, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillRect(Math.round(x) - r, Math.round(y) - r + 1, r * 2, r * 2 - 1);
+    ctx.fillRect(Math.round(x) - r + 1, Math.round(y) - r, r * 2 - 2, r * 2 + 1);
+    ctx.fillStyle = q.look === "spit" ? "#e0ff90" : "#fff6d0";
+    ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2);
+  }
+
+  /** Telegraphed burst: a pulsing ring that fills in, then flashes. */
+  private drawNova(n: Nova, t: number) {
+    const ctx = this.ctx;
+    const cx = this.ax(n.x, n.y);
+    const cy = this.ay(n.x, n.y);
+    const rx = n.radius * HW * 1.41;
+    const col = ELEM_COLOR[n.elem];
+    const k = Math.min(1, n.t / n.warn);
+    ctx.fillStyle = col;
+    if (!n.done) {
+      ctx.globalAlpha = 0.5 + 0.4 * Math.sin(t * 20);
+      const m = Math.max(24, Math.round(rx * 1.6));
+      for (let j = 0; j < m; j++) {
+        const a = (j / m) * Math.PI * 2;
+        ctx.fillRect(Math.round(cx + Math.cos(a) * rx), Math.round(cy + Math.sin(a) * rx * 0.5), 2, 1);
+      }
+      ctx.globalAlpha = 0.12 + 0.18 * k;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx * k, rx * k * 0.5, 0, 0, 7);
+      ctx.fill();
+    } else {
+      ctx.globalAlpha = Math.max(0, 0.55 - (n.t - n.warn));
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, rx * 0.5, 0, 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** An act artifact on the ground: orange beam and its icon. */
+  private drawArtifact(g: GroundItem, t: number) {
+    const ctx = this.ctx;
+    const bx = this.ax(g.x, g.y);
+    const by = this.ay(g.x, g.y);
+    const pulse = 0.75 + 0.25 * Math.sin(t * 3);
+    const H = 48;
+    for (let k = 0; k < H; k++) {
+      const a = (1 - k / H) * 0.6 * pulse;
+      ctx.fillStyle = `rgba(255,150,40,${a.toFixed(3)})`;
+      ctx.fillRect(bx - 2, by - k, 5, 1);
+      ctx.fillStyle = `rgba(255,150,40,${(a * 0.35).toFixed(3)})`;
+      ctx.fillRect(bx - 5, by - k, 3, 1);
+      ctx.fillRect(bx + 3, by - k, 3, 1);
+    }
+    const ic = artifactIcon(g.artifact!);
+    const bob = Math.round(Math.sin(t * 2.5) * 1.5);
+    ctx.drawImage(ic, bx - 10, by - 24 + bob);
   }
 
   private drawVendor(game: Game) {
@@ -686,7 +821,35 @@ export class Renderer {
   }
 
   // -------------------------------------------------------------- labels / hit tests (CSS px)
-  private drawLabels(game: Game) {
+  /** Item labels (when shown); artifact labels always. */
+  /** Names (and modifiers) over champions and uniques near the hero. */
+  private drawEliteNames(game: Game) {
+    const f = this.fctx;
+    const p = game.player;
+    f.textAlign = "center";
+    for (const m of game.monsters) {
+      if (!m.elite || m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > 9) continue;
+      if (m.state === "idle" && m.hp >= m.maxHp && m.elite === 1) continue;
+      const x = this.cx(m.x, m.y);
+      const y = this.cy(m.x, m.y) - (spriteTop(m.def.species) * 1.6 + 6) * this.ascale;
+      const name = m.elite === 2 ? m.def.name : m.def.name.replace(/^Champion /, "");
+      f.font = "bold 11px Georgia, 'Times New Roman', serif";
+      f.lineWidth = 3;
+      f.strokeStyle = "rgba(0,0,0,.85)";
+      f.strokeText(name, x, y);
+      f.fillStyle = m.elite === 2 ? "#ffc65a" : "#7fa2ff";
+      f.fillText(name, x, y);
+      if (m.mods.length) {
+        const mods = m.mods.map((k) => ELITE_MODS[k]).join(" · ");
+        f.font = "10px Georgia, 'Times New Roman', serif";
+        f.strokeText(mods, x, y + 11);
+        f.fillStyle = "#d8d0c0";
+        f.fillText(mods, x, y + 11);
+      }
+    }
+  }
+
+  private drawLabels(game: Game, show: boolean) {
     const f = this.fctx;
     const fs = 12;
     f.font = `${fs}px Georgia, 'Times New Roman', serif`;
@@ -696,14 +859,16 @@ export class Renderer {
     const items = [...game.ground].sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y));
     for (const g of items) {
       if (Math.hypot(g.x - p.x, g.y - p.y) > 11) continue;
-      if (!g.item || BASE_BY_ID[g.item.baseId].kind === "potion") continue; // gold and potions: walk over them
-      const text = itemName(g.item);
-      const color = QUALITY_COLOR[qualityOf(g.item)];
-      const usable = game.meetsReq(g.item);
+      const art = g.artifact ? ARTIFACT_BY_ID[g.artifact] : null;
+      if (!art && !show) continue;
+      if (!art && (!g.item || BASE_BY_ID[g.item.baseId].kind === "potion")) continue; // gold and potions: walk over them
+      const text = art ? art.name : itemName(g.item!);
+      const color = art ? ARTIFACT_COLOR : QUALITY_COLOR[qualityOf(g.item!)];
+      const usable = art ? true : game.meetsReq(g.item!);
       const w = f.measureText(text).width + 12;
       const h = 18;
       const x = this.cx(g.x, g.y) - w / 2;
-      let y = this.cy(g.x, g.y) - 6 * this.ascale - h;
+      let y = this.cy(g.x, g.y) - (art ? 28 : 6) * this.ascale - h;
       for (let tries = 0; tries < 6; tries++) {
         const hit = placed.find((o) => x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y);
         if (!hit) break;
@@ -781,12 +946,13 @@ export class Renderer {
       g.fillRect(ox + (wx - wy) * S - s / 2, oy + (wx + wy) * S * 0.5 - s / 2, s, s);
     };
     if (game.stairs) dot(game.stairs.x, game.stairs.y, "#ffb04a", 5);
+    for (const gi of game.ground) if (gi.artifact) dot(gi.x, gi.y, ARTIFACT_COLOR, 5);
     dot(L.waypoint.x, L.waypoint.y, "#5aa8ff", 5);
     if (L.vendor) dot(L.vendor.x, L.vendor.y, "#ffe08a", 4);
     for (const m of game.monsters) {
       if (m.state === "dead" || !L.explored[idx(Math.floor(m.x), Math.floor(m.y))]) continue;
       if (Math.hypot(m.x - p.x, m.y - p.y) > 9) continue;
-      dot(m.x, m.y, m.def.kind === "boss" ? "#ff40ff" : "#ff3a2a", 3);
+      dot(m.x, m.y, m.def.rank !== "normal" ? "#ff40ff" : "#ff3a2a", m.def.rank !== "normal" ? 4 : 3);
     }
     g.fillStyle = "#4aa0ff";
     g.fillRect(W / 2 - 2, H / 2 - 2, 4, 4);

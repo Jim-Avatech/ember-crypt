@@ -125,11 +125,12 @@ export interface Rolled {
 }
 
 /** How many affixes a rare gets (picked uniformly from this list). */
-export const RARE_COUNTS = [3, 3, 4, 4, 4, 5, 5, 6];
+/** v0.8: rares roll 3–4 affixes (was 3–6). Rares found before keep theirs. */
+export const RARE_COUNTS = [3, 3, 3, 4, 4];
 /** Magic: chance of prefix only / suffix only (the rest get both). */
 export const MAGIC_SPLIT = { prefixOnly: 0.25, suffixOnly: 0.25 };
 
-/** Roll a set of affixes. Magic: 1 prefix and/or 1 suffix. Rare: 3–6, at most 3 of each side. */
+/** Roll a set of affixes. Magic: 1 prefix and/or 1 suffix. Rare: 3–4, at most 3 of each side. */
 export function rollAffixes(cat: Cat, ilvl: number, q: Quality, r: Rng = Math.random): Rolled {
   const res: Rolled = { mods: [], aff: [], prefixes: [], suffixes: [] };
   if (q === "normal") return res;

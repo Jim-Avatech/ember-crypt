@@ -68,7 +68,7 @@ describe("item comparison covers every stat", () => {
     g.player.equip.ring2 = plain("ring");
     expect(g.compareSlots(plain("ring"))).toEqual(["ring1", "ring2"]);
     delete g.player.equip.ring2;
-    expect(g.compareSlots(plain("ring"))).toEqual(["ring2"]);
+    expect(g.compareSlots(plain("ring"))).toEqual(["ring1", "ring2"]); // v0.8: the sheet always shows both rings
   });
 
   it("mana leech shows up (the bug James saw) along with requirements", () => {

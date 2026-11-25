@@ -2,7 +2,7 @@
  * Itemization (v0.3): one base per item class.
  *  - the class sets size, hands, attack speed, damage spread and how requirements grow
  *  - the item level sets the damage / defense numbers (and which art is used)
- *  - the rarity sets how many random affixes it has (normal 0, magic 1–2, rare 3–6)
+ *  - the rarity sets how many random affixes it has (normal 0, magic 1–2, rare 3–4)
  */
 import { LOOK_BY_ID } from "./looks";
 
@@ -178,7 +178,8 @@ export interface Reqs {
 export function itemReqs(it: Item): Reqs {
   const b = BASE_BY_ID[it.baseId];
   const L = ilvlOf(it);
-  const r = (p?: [number, number]) => (p ? Math.round(p[0] + p[1] * L) : 0);
+  // v0.8: requirements climb 35% faster with item level, so stat points matter
+  const r = (p?: [number, number]) => (p ? Math.round(p[0] + p[1] * L * 1.35) : 0);
   const q = qualityOf(it);
   return { str: r(b.str), dex: r(b.dex), lvl: q === "normal" || b.potion ? 0 : Math.max(1, Math.floor(L * 0.75)) };
 }

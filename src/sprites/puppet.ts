@@ -6,7 +6,62 @@
 import { LOOK_BY_ID as BASE_BY_ID } from "../data/looks";
 import { Mask, PB, type RGB, hex, mul, whiteOf } from "../pixel";
 
-export type Model = "barb" | "zombie" | "fallen" | "boss" | "vendor";
+import type { Species } from "../data/monsters";
+
+export type Model = "barb" | "vendor" | Species;
+/** Body families: each species borrows one family's skeleton, scaled. */
+type Fam = "barb" | "zombie" | "fallen" | "boss" | "vendor";
+type Acc =
+  | "horns" | "bigHorns" | "spikes" | "crown" | "robe" | "headdress" | "hood" | "bow" | "staff" | "spear" | "blade" | "sword"
+  | "shield" | "helm" | "wings" | "tail" | "belly" | "tusks" | "flames" | "mask" | "mane" | "petals" | "wraps";
+interface SpeciesDef {
+  fam: Fam;
+  pose: "barb" | "zombie" | "fallen" | "vendor" | "upright" | "float";
+  scale: number;
+  /** limb thickness multiplier */
+  thin?: number;
+  /** head size multiplier */
+  head?: number;
+  pal?: { skin: string; leg: string; boot: string; torso: string; pat?: "rot" | "ribs" | "wrap" | "scale" | "plate" };
+  eye: string;
+  outline?: string;
+  acc: Acc[];
+  /** accessory colors */
+  a1?: string;
+  a2?: string;
+  /** extra headroom (wings, horns, staffs) */
+  pad?: number;
+}
+const SPECIES: Record<Model, SpeciesDef> = {
+  barb: { fam: "barb", pose: "barb", scale: 1, eye: "#1a0e08", acc: [] },
+  vendor: { fam: "vendor", pose: "vendor", scale: 1, eye: "#1a0e08", acc: [] },
+  zombie: { fam: "zombie", pose: "zombie", scale: 1, eye: "#e8f0a0", acc: [] },
+  fallen: { fam: "fallen", pose: "fallen", scale: 1, eye: "#ffe14a", acc: ["horns", "blade"] },
+  boss: { fam: "boss", pose: "zombie", scale: 1, eye: "#ff4a1a", outline: "#120818", acc: ["spikes"] },
+  // Act I
+  skeleton: { fam: "zombie", pose: "upright", scale: 0.95, thin: 0.72, eye: "#ff5a1a", pal: { skin: "#d8d0b4", leg: "#cfc6a8", boot: "#a89e80", torso: "#d8d0b4", pat: "ribs" }, acc: ["bow"], a1: "#6a4426" },
+  lich: { fam: "boss", pose: "upright", scale: 0.95, thin: 0.8, eye: "#ff8a1a", outline: "#140808", pal: { skin: "#d6ccb0", leg: "#2a1820", boot: "#1a1014", torso: "#3a2030", pat: "ribs" }, acc: ["robe", "crown", "staff", "flames"], a1: "#e0a030", a2: "#ff7a1a", pad: 1.2 },
+  // Act II
+  mummy: { fam: "zombie", pose: "zombie", scale: 1.02, eye: "#8ae04a", pal: { skin: "#c8b88e", leg: "#b8a87c", boot: "#988a64", torso: "#c0b088", pat: "wrap" }, acc: ["wraps"] },
+  raider: { fam: "barb", pose: "upright", scale: 0.9, eye: "#1a0e08", pal: { skin: "#a86a40", leg: "#c8a870", boot: "#6a4a2a", torso: "#b0402a", pat: "wrap" }, acc: ["hood", "blade"], a1: "#d8c090" },
+  priest: { fam: "barb", pose: "upright", scale: 0.92, eye: "#f8f070", pal: { skin: "#4a8a5a", leg: "#2a4a6a", boot: "#1a2a3a", torso: "#2a4a7a", pat: "scale" }, acc: ["robe", "headdress", "staff"], a1: "#d0a840", a2: "#f8f070", pad: 1.1 },
+  boss2: { fam: "boss", pose: "zombie", scale: 1, eye: "#f8f070", outline: "#140e04", pal: { skin: "#c0a070", leg: "#9a8058", boot: "#6a5a3a", torso: "#a88a58", pat: "wrap" }, acc: ["headdress", "wraps", "spikes"], a1: "#d0a840", a2: "#2a4a8a" },
+  sekhet: { fam: "boss", pose: "upright", scale: 0.95, thin: 0.85, eye: "#f8f070", outline: "#140e04", pal: { skin: "#b07a48", leg: "#e8e0c8", boot: "#d0a840", torso: "#d0a840", pat: "plate" }, acc: ["robe", "headdress", "spear", "tail"], a1: "#d0a840", a2: "#2a4a9a", pad: 1.15 },
+  // Act III
+  lurker: { fam: "boss", pose: "zombie", scale: 0.72, eye: "#bff4ff", pal: { skin: "#4a7a8a", leg: "#3a5a6a", boot: "#2a4a5a", torso: "#3e6a7a", pat: "scale" }, acc: ["tusks", "spikes"], a1: "#d8ecf0" },
+  flayer: { fam: "fallen", pose: "fallen", scale: 0.95, eye: "#ffe14a", pal: { skin: "#5a8a3a", leg: "#4a7a2a", boot: "#3a5a1a", torso: "#5a8a3a" }, acc: ["mask", "spear"], a1: "#e6dcc0" },
+  spitter: { fam: "fallen", pose: "zombie", scale: 1.2, head: 1.3, eye: "#e0ff40", pal: { skin: "#7aa03a", leg: "#5a7a2a", boot: "#3a5a1a", torso: "#6a9030", pat: "scale" }, acc: ["petals"], a1: "#c0405a" },
+  bloater: { fam: "zombie", pose: "zombie", scale: 1, eye: "#e0ff60", pal: { skin: "#8aa850", leg: "#5a6a3a", boot: "#3a4a2a", torso: "#7a9848", pat: "rot" }, acc: ["belly"], a1: "#c8d870" },
+  boss3: { fam: "boss", pose: "zombie", scale: 1.02, eye: "#bff4ff", outline: "#06140e", pal: { skin: "#3a6a5a", leg: "#2a4a3a", boot: "#1a3a2a", torso: "#2e5a4a", pat: "scale" }, acc: ["tusks", "mane", "spikes"], a1: "#d8ecd8", a2: "#3a6a2a" },
+  mire: { fam: "boss", pose: "zombie", scale: 1.12, head: 1.1, eye: "#e0ff40", outline: "#081406", pal: { skin: "#5a7a3a", leg: "#3a5a2a", boot: "#2a3a1a", torso: "#4a6a2a", pat: "rot" }, acc: ["belly", "bigHorns", "mane"], a1: "#8a9a6a", a2: "#3a6a2a", pad: 1.1 },
+  // Act IV
+  imp: { fam: "fallen", pose: "fallen", scale: 1, eye: "#ffe14a", pal: { skin: "#c03a18", leg: "#a02a10", boot: "#5a1408", torso: "#b03214" }, acc: ["horns", "wings", "tail"], a1: "#5a1a14", pad: 1.15 },
+  knight: { fam: "barb", pose: "upright", scale: 1.1, eye: "#ff3a1a", pal: { skin: "#3a2a2a", leg: "#4a4048", boot: "#2a2228", torso: "#4a4048", pat: "plate" }, acc: ["helm", "shield", "sword"], a1: "#5a4a50", a2: "#8a1a10", pad: 1.1 },
+  conjurer: { fam: "barb", pose: "upright", scale: 0.92, eye: "#ff6a1a", pal: { skin: "#8a3a6a", leg: "#2a1218", boot: "#1a0a10", torso: "#3a1420" }, acc: ["robe", "hood", "flames", "horns"], a1: "#2a1218", a2: "#ff6a1a" },
+  soul: { fam: "fallen", pose: "float", scale: 1.05, eye: "#fff8e0", outline: "#3a0a00", pal: { skin: "#ff8a2a", leg: "#ff6a1a", boot: "#ff4a10", torso: "#ffa040" }, acc: ["flames"], a2: "#ffd060" },
+  boss4: { fam: "boss", pose: "zombie", scale: 1.04, eye: "#ffe040", outline: "#140404", pal: { skin: "#7a2a1a", leg: "#4a1a10", boot: "#2a0e08", torso: "#5a1e12", pat: "plate" }, acc: ["bigHorns", "spikes"], a1: "#2a1a14", pad: 1.1 },
+  malakar: { fam: "boss", pose: "upright", scale: 1.2, eye: "#ffe040", outline: "#140202", pal: { skin: "#b02a14", leg: "#4a2420", boot: "#2a1210", torso: "#5a2a22", pat: "plate" }, acc: ["bigHorns", "wings", "sword", "flames", "tail"], a1: "#3a1410", a2: "#ff6a1a", pad: 1.2 },
+};
 export type Anim = "idle" | "walk" | "atk0" | "atk1" | "thr0" | "thr1" | "cry" | "leap" | "death";
 export const FRAMES: Record<Anim, number> = { idle: 4, walk: 8, atk0: 6, atk1: 6, thr0: 6, thr1: 6, cry: 4, leap: 3, death: 6 };
 
@@ -56,7 +111,7 @@ interface Dims {
   limb: number;
 }
 
-const DIMS: Record<Model, Dims> = {
+const DIMS: Record<Fam, Dims> = {
   barb: { hipZ: 13, hipW: 2.2, thigh: 6.5, shin: 6.5, torso: 8.5, shW: 4.6, upper: 5.4, fore: 5, neck: 2.6, headR: 3.2, limb: 1.45 },
   zombie: { hipZ: 12, hipW: 2, thigh: 6, shin: 6, torso: 8, shW: 4.1, upper: 5.4, fore: 5, neck: 2.4, headR: 3, limb: 1.3 },
   fallen: { hipZ: 6.4, hipW: 1.6, thigh: 3.3, shin: 3.3, torso: 5, shW: 3, upper: 3.4, fore: 3, neck: 1.6, headR: 3.4, limb: 1.1 },
@@ -64,7 +119,7 @@ const DIMS: Record<Model, Dims> = {
   vendor: { hipZ: 12, hipW: 1.8, thigh: 6, shin: 6, torso: 8, shW: 3.8, upper: 5, fore: 4.5, neck: 2.4, headR: 3, limb: 1.25 },
 };
 
-const SIZE: Record<Model, [number, number, number, number]> = {
+const SIZE: Record<Fam, [number, number, number, number]> = {
   // w, h, anchorX, anchorY (feet)
   barb: [52, 58, 26, 52],
   zombie: [48, 50, 24, 45],
@@ -354,12 +409,41 @@ function armorColor(id?: string): { c: RGB; pat?: (x: number, y: number) => numb
 const tierColor = (id: string | undefined, leather: string, metal: string, metalFrom = 7) =>
   id ? hex(BASE_BY_ID[id].qlvl >= metalFrom ? metal : leather) : null;
 
+/** Sprite size [w, h, anchorX, anchorY] for any model. */
+function sizeOf(model: Model): [number, number, number, number] {
+  const sp = SPECIES[model];
+  const [bw, bh, , bay] = SIZE[sp.fam];
+  if (sp.scale === 1 && !sp.pad) return SIZE[sp.fam];
+  const W = Math.ceil(bw * sp.scale * (sp.pad ?? 1));
+  const H = Math.ceil(bh * sp.scale * (sp.pad ?? 1));
+  return [W, H, Math.floor(W / 2), H - Math.ceil((bh - bay) * sp.scale)];
+}
+function dimsOf(model: Model): Dims {
+  const sp = SPECIES[model];
+  const b = DIMS[sp.fam];
+  if (sp.scale === 1 && !sp.thin && !sp.head) return b;
+  const o = { ...b };
+  for (const k of Object.keys(o) as (keyof Dims)[]) o[k] *= sp.scale;
+  o.limb *= sp.thin ?? 1;
+  o.headR *= sp.head ?? 1;
+  return o;
+}
+/** Height of the top of the head above the feet, in sprite pixels (for health bars). */
+export function spriteTop(model: Model): number {
+  const d = dimsOf(model);
+  return d.hipZ + d.torso + d.neck + d.headR * 1.9;
+}
+
 function render(model: Model, look: Look, anim: Anim, dir: number, f: number): HTMLCanvasElement {
-  const [W, H, AX, AY] = SIZE[model];
-  const d = DIMS[model];
+  const [W, H, AX, AY] = sizeOf(model);
+  const sp = SPECIES[model];
+  const acc = new Set(sp.acc);
+  const d = dimsOf(model);
   const pb = new PB(W, H);
-  const p =
-    model === "barb" ? barbPose(anim, f, look) : model === "fallen" ? fallenPose(anim, f) : model === "vendor" ? vendorPose(f) : zombiePose(anim, f);
+  let p =
+    sp.pose === "barb" ? barbPose(anim, f, look) : sp.pose === "upright" ? barbPose(anim, f, {}) : sp.pose === "fallen" || sp.pose === "float" ? fallenPose(anim, f) : sp.pose === "vendor" ? vendorPose(f) : zombiePose(anim, f);
+  if (sp.pose === "float") p = { ...p, bob: p.bob + 3 + Math.sin((f / 4) * Math.PI) * 0.8, legL: leg(0.9, 1.6), legR: leg(0.7, 1.5) };
+  const fam = sp.fam;
   const sk = solve(d, p);
   const a = (dir * Math.PI) / 4;
   const ca = Math.cos(a);
@@ -416,6 +500,8 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     bootC = hex("#3a2a1c");
     torsoC = hex("#3c7262");
     handC = skin;
+  } else if (model !== "barb") {
+    // set from the species palette below
   } else {
     const ar = armorColor(look.chest);
     if (ar) {
@@ -426,6 +512,24 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     handC = tierColor(look.gloves, "#7a5232", "#9aa2aa", 12) ?? C.skin;
   }
 
+  if (sp.pal) {
+    skin = hex(sp.pal.skin);
+    legC = hex(sp.pal.leg);
+    bootC = hex(sp.pal.boot);
+    torsoC = hex(sp.pal.torso);
+    handC = skin;
+    const pt = sp.pal.pat;
+    torsoPat =
+      pt === "rot" ? (x, y) => (hash2(x, y) < 0.18 ? 1.35 : 1)
+      : pt === "ribs" ? (_x, y) => (y % 2 === 0 ? 0.62 : 1.05)
+      : pt === "wrap" ? (x, y) => ((y + (x >> 2)) % 3 === 0 ? 0.78 : 1)
+      : pt === "scale" ? (x, y) => ((x + ((y >> 1) % 2)) % 3 === 0 ? 0.8 : 1.05)
+      : pt === "plate" ? (x, y) => (y % 4 === 0 ? 0.7 : x % 5 === 0 ? 1.25 : 1)
+      : undefined;
+  }
+  const A1 = hex(sp.a1 ?? "#e6dcc0");
+  const A2 = hex(sp.a2 ?? "#ff8a2a");
+
   // legs
   for (let i = 0; i < 2; i++) {
     cap(sk.hips[i], sk.knees[i], scale * 1.1, legC);
@@ -434,6 +538,11 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     if (model === "barb") cap(add(sk.knees[i], [0, 0, -1.5]), sk.feet[i], scale * 1.05, bootC, 0.1);
   }
   // torso
+  if (acc.has("robe")) {
+    const hem: V = [0.4, 0, 1.2 * d.limb];
+    cap(hem, sk.C, d.shW * 0.95, legC, -0.1, (_x, y) => (y % 5 === 0 ? 0.85 : 1));
+    disc(hem, d.shW * 1.1, mul(legC, 0.85), -0.4, d.shW * 0.55);
+  }
   if (model === "vendor") {
     // long robe down to the ground
     const hem: V = [0.5, 0, 1.5];
@@ -442,8 +551,13 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     cap(add(sk.P, [0, -3, 1]), add(sk.P, [0, 3, 1]), 1, hex("#8a6a2a"), 4.4);
   } else {
     const belly = add(sk.P, [0, 0, 1]);
-    const tw = model === "fallen" ? 2.6 : model === "boss" ? 5.2 : 3.6;
+    const tw = (fam === "fallen" ? 2.6 : fam === "boss" ? 5.2 : 3.6) * sp.scale * (sp.thin ? Math.max(0.8, sp.thin) : 1);
     cap(belly, sk.C, tw, torsoC, 0, torsoPat);
+    if (acc.has("belly")) {
+      // swollen gut, drawn as a sphere around the lower torso so it shows from every side
+      const c = add(sk.P, add(scl(fwd, tw * 0.35), [0, 0, d.torso * 0.4]));
+      parts.push({ d: pr(c).d + 0.6, color: A1, pattern: (x, y) => (hash2(x, y) < 0.2 ? 1.25 : (x + y) % 7 === 0 ? 0.85 : 1), shape: (m) => { const q = pr(c); m.ellipse(q.x, q.y, tw * 1.45, tw * 1.25); } });
+    }
     cap(add(sk.C, scl(sk.side, -tw * 0.45)), add(sk.C, scl(sk.side, tw * 0.45)), tw * 0.95, torsoC, 0.05, torsoPat);
     if (model === "barb") {
       // fur loincloth and belt
@@ -460,7 +574,8 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     cap(sk.el[i], sk.hand[i], scale * 0.95, armC, 0.4);
     disc(sk.hand[i], scale * 0.95, i === 1 || model !== "barb" ? handC : handC, 0.5);
     if (model === "barb") disc(sk.sh[i], 1.9, look.chest && BASE_BY_ID[look.chest].qlvl >= 11 ? hex("#a2aab2") : C.fur, 0.6);
-    if (model === "boss") cap(sk.sh[i], add(sk.sh[i], [0, i ? 1.5 : -1.5, 4]), 1, hex("#e2d6b8"), 0.7);
+    if (acc.has("spikes")) cap(sk.sh[i], add(sk.sh[i], [0, i ? 1.5 * sp.scale : -1.5 * sp.scale, 4 * sp.scale]), 1, model === "boss" ? hex("#e2d6b8") : A1, 0.7);
+    if (acc.has("flames")) disc(add(sk.hand[i], [0, 0, 1.2]), d.limb * 1.5, A2, 0.7, d.limb * 2);
   }
   // head
   const hd = sk.head;
@@ -476,10 +591,64 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
       disc(add(hd, add(scl(fwd, -1.2), [0, 0, 0.8])), hr * 0.85, C.hair, -0.1);
       if (faceVisible) cap(add(hd, add(scl(fwd, 1.8), [0, 0, -1.4])), add(hd, add(scl(fwd, 1.2), [0, 0, -3])), 1.2, C.hair, 0.3);
     }
-    if (model === "fallen") {
-      for (const s of [-1, 1]) cap(add(hd, add(scl(sk.side, s * 1.8), [0, 0, 2])), add(hd, add(scl(sk.side, s * 3.2), [0.5, 0, 4.5])), 0.7, hex("#e6dcc0"), 0.6);
+    if (acc.has("horns")) {
+      const k = hr / 3.4;
+      for (const s of [-1, 1]) cap(add(hd, add(scl(sk.side, s * 1.8 * k), [0, 0, 2 * k])), add(hd, add(scl(sk.side, s * 3.2 * k), [0.5, 0, 4.5 * k])), 0.7, model === "fallen" ? hex("#e6dcc0") : model === "conjurer" ? hex("#c8b8a0") : hex("#2a1a14"), 0.6);
     }
   }
+  // species accessories on the head
+  if (acc.has("bigHorns"))
+    for (const s of [-1, 1]) {
+      const b0 = add(hd, add(scl(sk.side, s * hr * 0.7), [0, 0, hr * 0.5]));
+      const b1 = add(hd, add(scl(sk.side, s * hr * 1.7), [0, 0, hr * 1.1]));
+      const b2 = add(hd, add(scl(sk.side, s * hr * 1.9), [hr * 0.3, 0, hr * 2.2]));
+      cap(b0, b1, hr * 0.32, hex("#2a1e18"), 0.5);
+      cap(b1, b2, hr * 0.22, hex("#c8b8a0"), 0.55);
+    }
+  if (acc.has("crown")) {
+    const top = add(hd, [0, 0, hr * 0.8]);
+    cap(add(top, scl(sk.side, -hr * 0.8)), add(top, scl(sk.side, hr * 0.8)), 0.8, A1, 0.6);
+    for (const s of [-1, 0, 1]) cap(add(top, scl(sk.side, s * hr * 0.6)), add(top, add(scl(sk.side, s * hr * 0.7), [0, 0, 2.4])), 0.5, A1, 0.62);
+  }
+  if (acc.has("headdress")) {
+    disc(add(hd, add(scl(fwd, -0.8), [0, 0, 0.6])), hr * 1.25, A2, 0.05, hr * 1.2, (_x, y) => (y % 2 === 0 ? 1.5 : 1));
+    for (const s of [-1, 1]) cap(add(hd, scl(sk.side, s * hr * 0.9)), add(sk.sh[s < 0 ? 0 : 1], [0, 0, 0.5]), hr * 0.4, A1, 0.15, (_x, y) => (y % 2 === 0 ? 0.7 : 1));
+  }
+  if (acc.has("hood")) {
+    disc(add(hd, add(scl(fwd, -0.6), [0, 0, 0.5])), hr * 1.22, A1, 0.15, hr * 1.25);
+    if (faceVisible) disc(add(hd, scl(fwd, hr * 0.5)), hr * 0.6, mul(skin, 0.5), 0.3);
+  }
+  if (acc.has("helm")) {
+    const top = pr(add(hd, [0, 0, 0.6]));
+    parts.push({ d: headDepth + 0.25, color: A1, shape: (m) => { m.ellipse(top.x, top.y, hr + 0.8, hr * 0.85); m.rect(top.x - hr - 0.8, top.y, (hr + 0.8) * 2, hr * 0.9); } });
+    for (const s of [-1, 1]) cap(add(hd, add(scl(sk.side, s * hr), [0, 0, hr * 0.6])), add(hd, add(scl(sk.side, s * hr * 1.7), [0, 0, hr * 1.8])), 0.7, hex("#c8b8a0"), 0.4);
+  }
+  if (acc.has("tusks") && faceVisible)
+    for (const s of [-1, 1]) cap(add(hd, add(scl(fwd, hr * 0.8), add(scl(sk.side, s * hr * 0.5), [0, 0, -hr * 0.5]))), add(hd, add(scl(fwd, hr * 1.3), add(scl(sk.side, s * hr * 0.6), [0, 0, hr * 0.3]))), 0.6, A1, 0.5);
+  if (acc.has("mask") && faceVisible) disc(add(hd, scl(fwd, hr * 0.6)), hr * 0.75, A1, 0.35, hr * 0.9);
+  if (acc.has("mane")) for (const s of [-1, -0.4, 0.4, 1]) cap(add(hd, add(scl(fwd, -hr * 0.6), scl(sk.side, s * hr * 0.8))), add(hd, add(scl(fwd, -hr * 0.9), add(scl(sk.side, s * hr), [0, 0, -hr * 2.6]))), 0.7, A2, -0.2);
+  if (acc.has("petals")) for (let i = 0; i < 5; i++) {
+    const an = (i / 5) * Math.PI * 2;
+    cap(add(hd, [0, 0, hr * 0.4]), add(hd, add(scl(fwd, Math.cos(an) * hr * 1.5), add(scl(sk.side, Math.sin(an) * hr * 1.5), [0, 0, hr * 0.9]))), hr * 0.35, A1, Math.cos(an) * 0.4);
+  }
+  if (acc.has("wraps")) for (const k of [0.3, 0.6]) cap(add(sk.C, add(scl(sk.side, -2), [1, 0, -d.torso * k])), add(sk.C, add(scl(sk.side, 2.5), [1, 0, -d.torso * k - 1.5])), 0.5, mul(torsoC, 0.75), 0.3);
+  if (acc.has("wings"))
+    for (const s of [-1, 1]) {
+      const root = add(sk.C, add(scl(fwd, -d.shW * 0.4), scl(sk.side, s * d.shW * 0.4)));
+      const tip = add(root, add(scl(sk.side, s * d.shW * 2.2), add(scl(fwd, -d.shW * 0.4), [0, 0, d.torso * 0.9])));
+      const low = add(root, add(scl(sk.side, s * d.shW * 1.8), [0, 0, -d.torso * 0.6]));
+      cap(root, tip, d.limb * 0.7, A1, -1.2);
+      cap(tip, low, d.limb * 1.4, A1, -1.3);
+      cap(root, low, d.limb * 1.8, mul(A1, 1.2), -1.4);
+    }
+  if (acc.has("tail")) {
+    const t0 = add(sk.P, scl(fwd, -d.hipW));
+    const t1 = add(t0, add(scl(fwd, -d.thigh * 0.9), [0, 0, -d.hipZ * 0.5]));
+    const t2 = add(t1, add(scl(fwd, -d.thigh * 0.6), add(scl(sk.side, d.hipW), [0, 0, -d.hipZ * 0.3])));
+    cap(t0, t1, d.limb * 0.8, model === "sekhet" ? hex("#3a7a4a") : skin, -0.8);
+    cap(t1, t2, d.limb * 0.55, model === "sekhet" ? hex("#3a7a4a") : skin, -0.8);
+  }
+  if (model === "soul") disc(add(hd, [0, 0, hr * 0.9]), hr * 0.9, A2, 0.5, hr * 1.4);
   // helm
   if (model === "barb" && look.head) {
     const q = BASE_BY_ID[look.head].qlvl;
@@ -546,10 +715,40 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
   if (model === "barb") {
     drawWeapon(1, look.main);
     drawWeapon(0, look.off);
-  } else if (model === "fallen") {
+  }
+  {
+    const k = d.thigh / 6;
     const hnd = sk.hand[1];
     const w = sk.wdir[1];
-    cap(add(hnd, scl(w, 0.5)), add(hnd, scl(w, 5)), 0.6, hex("#c8ccc8"), 0.9);
+    if (acc.has("blade")) cap(add(hnd, scl(w, 0.5)), add(hnd, scl(w, model === "fallen" ? 5 : 8 * k)), 0.6, hex("#c8ccc8"), 0.9);
+    if (acc.has("sword")) {
+      cap(add(hnd, scl(w, -1.5)), hnd, 0.7, hex("#3a2a20"), 0.8);
+      cap(add(hnd, scl(sk.side, -2)), add(hnd, scl(sk.side, 2)), 0.6, A2, 0.85);
+      cap(add(hnd, scl(w, 1)), add(hnd, scl(w, 13 * k)), 1.1, hex("#3a3438"), 0.9);
+      cap(add(hnd, scl(w, 2)), add(hnd, scl(w, 12 * k)), 0.45, A2, 0.95);
+    }
+    if (acc.has("spear")) {
+      cap(add(hnd, scl(w, -5 * k)), add(hnd, scl(w, 10 * k)), 0.5, model === "sekhet" ? A1 : hex("#9a6a3a"), 0.8);
+      cap(add(hnd, scl(w, 9.5 * k)), add(hnd, scl(w, 12.5 * k)), 0.85, model === "sekhet" ? A2 : hex("#c8ccc8"), 0.9);
+    }
+    if (acc.has("staff")) {
+      const top = add(hnd, [0, 0, 9 * k]);
+      cap(add(hnd, [0, 0, -9 * k]), top, 0.6, hex("#4a3020"), 0.8);
+      disc(top, 1.6 * Math.max(1, k), A2, 0.95);
+    }
+    if (acc.has("bow")) {
+      const h0 = sk.hand[0];
+      const up: V = [0, 0, 6 * k];
+      const bend = scl(fwd, 1.5);
+      cap(add(h0, up), add(h0, bend), 0.5, A1, 0.9);
+      cap(add(h0, bend), add(h0, scl(up, -1)), 0.5, A1, 0.9);
+      cap(add(h0, up), add(h0, scl(up, -1)), 0.2, hex("#e8e0d0"), 0.85);
+    }
+    if (acc.has("shield")) {
+      const at = add(sk.hand[0], scl(fwd, 1.4));
+      disc(at, 4.2 * k, A1, 1.2, 5.4 * k, (x) => (x % 3 === 0 ? 0.8 : 1));
+      disc(at, 1.2 * k, A2, 1.3);
+    }
   }
   void handFront;
 
@@ -563,7 +762,7 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
   // eyes on top
   if (faceVisible && model !== "vendor") {
     const e = pr(add(hd, add(scl(fwd, hr * 0.8), [0, 0, 0.3])));
-    const eyeC: RGB = model === "boss" ? hex("#ff4a1a") : model === "fallen" ? hex("#ffe14a") : model === "zombie" ? hex("#e8f0a0") : C.eye;
+    const eyeC: RGB = hex(sp.eye);
     const sx = Math.round(e.x);
     const sy = Math.round(e.y);
     const sideOff = Math.round(Math.cos(a) * 0) || 0;
@@ -573,7 +772,7 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     const e = pr(add(hd, add(scl(fwd, hr * 0.9), [0, 0, 0.2])));
     pb.set(Math.round(e.x), Math.round(e.y), C.eye);
   }
-  pb.outline(model === "boss" ? hex("#120818") : hex("#120c08"));
+  pb.outline(hex(sp.outline ?? "#120c08"));
   return pb.canvas();
 }
 
@@ -611,7 +810,7 @@ export function getFrame(model: Model, look: Look, key: string, anim: Anim, dir:
     }
     c = w;
   }
-  const [, , ax, ay] = SIZE[model];
+  const [, , ax, ay] = sizeOf(model);
   return { c, ax, ay };
 }
 

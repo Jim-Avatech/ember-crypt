@@ -4,13 +4,16 @@ import {
   isThrowing, itemDefense, itemName, itemPrice, itemReqs, makeItem, migrateItem, modTotal, QUALITY_COLOR, qtyMax, qualityOf, sellPrice,
 } from "./data/items";
 import {
-  MONSTERS, type MonsterDef, type MonsterKind, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp,
+  ELEM_COLOR, ELITE_MODS, type Elem, type EliteMod, MONSTERS, type MonsterDef, type MonsterKind, type Shot, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp, uniqueName,
 } from "./data/monsters";
+import {
+  ACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, MAX_FLOOR, actDef, actOf, floorName, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
+} from "./data/acts";
 import {
   FRENZY_HOLD, FRENZY_MAX_STACKS, MAX_SKILL_LVL, SKILL_BY_ID, bashAR, bashDmg, boDur, boPct, doubleSwingAR, doubleThrowAR,
   findPotionChance, frenzyAR, frenzyDmg, frenzyIas, frenzyMove, howlDur,
   incSpeed, ironSkinDef, leapAttackDmg, leapRange, masteryAR, masteryCrit, masteryDmg, shoutDef, shoutDur,
-  stunAR, stunDur,
+  stunAR, stunDur, skillCap,
 } from "./data/skills";
 import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
 import { type Level, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
@@ -80,6 +83,12 @@ export interface Player {
   healLeft: number;
   manaLeft: number;
   kills: number;
+  /** artifacts collected from act bosses (not in the bag) */
+  artifacts: FoundArtifact[];
+  /** cold: seconds of chill left (slower movement) */
+  chillT: number;
+  /** poison damage over time */
+  poison: { t: number; dps: number };
 }
 
 export interface Monster {
@@ -115,7 +124,25 @@ export interface Monster {
   deadT: number;
   searched: boolean;
   lastHurt: number;
+  /** charge / special cooldown */
+  cd: number;
+  /** seconds of charge left, and its direction */
+  charging: number;
+  cdx: number;
+  cdy: number;
+  /** next special (final bosses) */
+  spIdx: number;
+  /** exploder fuse (-1 = not lit) */
+  fuse: number;
+  /** summoned by a boss */
+  minion: boolean;
+  /** 0 normal, 1 champion (blue), 2 unique (gold) */
+  elite: 0 | 1 | 2;
+  mods: EliteMod[];
 }
+
+/** Seconds between two potions of the same kind (v0.8). */
+export const POTION_CD = 1.5;
 
 export interface GroundItem {
   id: number;
@@ -123,7 +150,50 @@ export interface GroundItem {
   y: number;
   item?: Item;
   gold?: number;
+  /** artifact id (orange, auto-collected) */
+  artifact?: string;
   t: number;
+}
+
+export interface FoundArtifact {
+  id: string;
+  /** ms since epoch */
+  at: number;
+  /** player level when found */
+  level: number;
+}
+
+/** A monster arrow / bolt / spit in flight. */
+export interface MonsterShot {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  dist: number;
+  range: number;
+  dmgMin: number;
+  dmgMax: number;
+  ar: number;
+  mlvl: number;
+  elem: Elem;
+  look: Shot["look"];
+  color: string;
+  t: number;
+  big: boolean;
+}
+
+/** A telegraphed area attack (boss nova, exploder burst). */
+export interface Nova {
+  x: number;
+  y: number;
+  t: number;
+  /** seconds of warning before it goes off */
+  warn: number;
+  radius: number;
+  elem: Elem;
+  dmgMin: number;
+  dmgMax: number;
+  done: boolean;
 }
 
 export interface HitLog {
@@ -211,7 +281,7 @@ export interface Derived {
   crit: number;
   swing: number;
   weaponKind: Kind | "fist";
-  /** resistances in % (no elemental monsters yet) */
+  /** resistances in % (capped at 75) against elemental monster attacks */
   res: { fire: number; cold: number; light: number; poison: number };
   /** % of damage dealt returned as life / mana */
   ll: number;
@@ -284,7 +354,7 @@ export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
 export const xpForLevel = (L: number) => (L <= 1 ? 0 : Math.round(100 * Math.pow(L - 1, 1.9)));
 
 /** Current save schema. Bump it (and add a migration step) whenever the save shape changes. */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export interface SaveData {
   /** schema version (SAVE_VERSION when written) */
@@ -296,13 +366,18 @@ export interface SaveData {
   seed: number;
   floor: number;
   maxFloor: number;
-  player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & { stash?: BagEntry[] };
+  player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & { stash?: BagEntry[]; artifacts?: FoundArtifact[] };
   /** items that didn't fit when an old save was converted */
   migratedSold?: number;
   migratedFrom?: number;
   /** v4: skills whose points were refunded because the tree changed (names) */
   refundedSkills?: string[];
   refundedPoints?: number;
+  /** v6: skill points refunded by the D2 per-level skill cap */
+  cappedSkills?: string[];
+  cappedPoints?: number;
+  /** v6: deepest level of the old endless crypt (set when a pre-acts save is converted) */
+  actsFrom?: number;
 }
 
 /**
@@ -330,6 +405,27 @@ export function refundSkills(p: Pick<Player, "level" | "skills" | "slots" | "ski
     p.skillPoints += points;
     p.slots = p.slots.map((s) => (s && p.skills[s] ? s : null));
   }
+  return { names, points };
+}
+
+/**
+ * v0.8 (D2 rule): trim hard points above 1 + (character level − required level) and refund them.
+ * Returns how many points came back and from which skills.
+ */
+export function capSkills(p: Pick<Player, "level" | "skills" | "skillPoints">): { names: string[]; points: number } {
+  const names: string[] = [];
+  let points = 0;
+  for (const [id, pts] of Object.entries(p.skills)) {
+    const def = SKILL_BY_ID[id];
+    if (!def || !pts) continue;
+    const cap = skillCap(p.level, def.reqLvl);
+    if (pts > cap) {
+      points += pts - cap;
+      names.push(def.name);
+      p.skills[id] = cap;
+    }
+  }
+  p.skillPoints += points;
   return { names, points };
 }
 
@@ -363,11 +459,45 @@ function sanitizeV3(d: SaveData): SaveData {
 export function migrateSave(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== "object") return null;
   const d = raw as { v: number };
-  if (d.v === 5) return sanitizeV3(d as SaveData);
-  if (d.v === 4) return toV5(sanitizeV3(d as SaveData));
+  if (d.v === 6) return sanitizeV6(sanitizeV3(d as SaveData));
+  if (d.v === 5) return toV6(sanitizeV3(d as SaveData));
+  if (d.v === 4) return toV6(toV5(sanitizeV3(d as SaveData)));
   const v3 = d.v === 3 ? sanitizeV3(d as SaveData) : migrateToV3(raw);
   if (!v3) return null;
-  return toV5(toV4(v3));
+  return toV6(toV5(toV4(v3)));
+}
+
+/** Keep only known, unique artifacts and floors inside the game. */
+function sanitizeV6(d: SaveData): SaveData {
+  const seen = new Set<string>();
+  const list = Array.isArray(d.player.artifacts) ? d.player.artifacts : [];
+  d.player.artifacts = list.filter((a) => a && ARTIFACT_BY_ID[a.id] && !seen.has(a.id) && seen.add(a.id));
+  d.floor = Math.max(1, Math.min(MAX_FLOOR, Number(d.floor) || 1));
+  d.maxFloor = Math.max(d.floor, Math.min(MAX_FLOOR, Number(d.maxFloor) || 1));
+  return d;
+}
+
+/**
+ * v6: the dungeon became four acts of five levels. Old saves had one endless crypt, so the hero
+ * keeps their Act I progress: floors past level 5 clamp to Act I level 5 (the Ember Lich), and
+ * the artifact collection starts empty.
+ */
+function toV6(d: SaveData): SaveData {
+  d.v = 6;
+  d.player.artifacts = [];
+  const f = Number(d.floor) || 1;
+  const mf = Math.max(f, Number(d.maxFloor) || 1);
+  d.actsFrom = mf;
+  if (Number.isFinite(d.player.level) && d.player.skills) {
+    const c = capSkills(d.player);
+    if (c.points) {
+      d.cappedSkills = c.names;
+      d.cappedPoints = c.points;
+    }
+  }
+  d.floor = Math.max(1, Math.min(LEVELS_PER_ACT, f));
+  d.maxFloor = Math.max(1, Math.min(LEVELS_PER_ACT, mf));
+  return d;
 }
 
 /** v5: backpack grew from 10×4 to 10×8 (positions unchanged) and the camp stash was added (empty). */
@@ -469,6 +599,11 @@ export class Game {
   vendorStock: BagEntry[] = [];
   hitLog: HitLog[] = [];
   projectiles: Projectile[] = [];
+  shots: MonsterShot[] = [];
+  novas: Nova[] = [];
+  /** set when Malakar falls */
+  victory = false;
+  potCd = { hp: 0, mp: 0 };
   private flow = new Uint16Array(60 * 60);
   private flowFrom = -1;
   private nextId = 1;
@@ -497,12 +632,15 @@ export class Game {
       base: { ...BASE_STATS }, statPoints: 0, skillPoints: 1, skills: {}, slots: [null, null, null],
       bag: [], stash: [], equip: {}, nextHand: 0, frenzy: { stacks: 0, t: 0, decay: 0 }, gold: 0, hpPots: 3, mpPots: 1,
       action: null, walkPhase: 0, moving: false, buffs: { shout: 0, bo: 0 }, flash: 0, z: 0,
-      moveTarget: null, dead: false, healLeft: 0, manaLeft: 0, kills: 0,
+      moveTarget: null, dead: false, healLeft: 0, manaLeft: 0, kills: 0, artifacts: [], chillT: 0, poison: { t: 0, dps: 0 },
     };
     if (save) {
       Object.assign(this.player, JSON.parse(JSON.stringify(save.player)));
       this.player.bag = this.player.bag ?? [];
       this.player.stash = this.player.stash ?? [];
+      this.player.artifacts = this.player.artifacts ?? [];
+      this.player.chillT = 0;
+      this.player.poison = { t: 0, dps: 0 };
       this.floor = save.floor;
       this.maxFloor = Math.max(save.maxFloor ?? save.floor, save.floor);
     } else {
@@ -524,7 +662,7 @@ export class Game {
       player: {
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
         skills: p.skills, slots: p.slots, bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold,
-        hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills,
+        hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills, artifacts: p.artifacts,
       },
     };
   }
@@ -552,10 +690,14 @@ export class Game {
     p.dead = false;
     p.buffs = { shout: 0, bo: 0 };
     p.frenzy = { stacks: 0, t: 0, decay: 0 };
+    p.chillT = 0;
+    p.poison = { t: 0, dps: 0 };
     const d = this.derived();
     p.hp = d.maxHp;
     p.mana = d.maxMana;
     this.projectiles = [];
+    this.shots = [];
+    this.novas = [];
     this.restock();
     // throwing weapons refill for free in camp
     let refilled = 0;
@@ -577,7 +719,9 @@ export class Game {
   goDungeon(floor: number) {
     this.startFloor(floor);
     this.events.sound("stairs");
-    this.events.toast(`Ember Crypt — Level ${this.floor}`);
+    const a = actDef(this.floor);
+    const l = levelInAct(this.floor);
+    this.events.toast(l === 1 ? `Act ${a.roman}: ${a.area} — ${a.tagline}` : isFinalLevel(this.floor) ? `${floorName(this.floor)} — the lair of ${MONSTERS[a.finalBoss].name}` : `${floorName(this.floor)}/${LEVELS_PER_ACT}`);
     this.events.changed();
   }
 
@@ -586,7 +730,7 @@ export class Game {
     const stock: BagEntry[] = [];
     const rng = new Rng(this.seed + this.maxFloor * 31 + Math.floor(this.time * 7));
     const r = () => rng.next();
-    const lvl = Math.max(1, this.maxFloor * 2 - 1);
+    const lvl = Math.max(1, Math.round(mlvlOf(this.maxFloor) * 1.4));
     const add = (it: Item) => addItem(stock, it, VENDOR_W, VENDOR_H);
     add(makeItem("hp_potion"));
     add(makeItem("mp_potion"));
@@ -603,6 +747,7 @@ export class Game {
   }
 
   startFloor(floor: number) {
+    floor = Math.max(1, Math.min(MAX_FLOOR, floor));
     this.inTown = false;
     this.floor = floor;
     this.maxFloor = Math.max(this.maxFloor, floor);
@@ -613,6 +758,8 @@ export class Game {
     this.particles = [];
     this.rings = [];
     this.projectiles = [];
+    this.shots = [];
+    this.novas = [];
     this.stairs = null;
     this.flowFrom = -1;
     const rng = new Rng(this.seed + floor * 104729);
@@ -623,38 +770,109 @@ export class Game {
     p.moveTarget = null;
     this.boss = null;
     let pack = 0;
+    const act = actDef(floor);
+    const ml = mlvlOf(floor);
+    const lvl = levelInAct(floor);
+    // unique monsters: from Act I level 3 on, one per level (two from level 10 on)
+    let uniques = act.n === 1 && lvl < 3 ? 0 : lvl >= 10 ? 2 : 1;
     for (const room of this.level.rooms) {
       if (room === this.level.start) continue;
       const isBoss = room === this.level.bossRoom;
-      const packs = isBoss ? 1 : rng.int(1, 2);
+      // v0.8 difficulty: density climbs through each act and from act to act
+      const extra = 0.12 + 0.02 * (lvl - 1) + 0.08 * (act.n - 1);
+      const packs = isBoss ? 1 : rng.int(1, 2) + (rng.chance(extra) ? 1 : 0);
       for (let k = 0; k < packs; k++) {
         pack++;
-        const kind: MonsterKind = rng.chance(0.5) ? "zombie" : "fallen";
-        const n = kind === "zombie" ? rng.int(2, 4) : rng.int(3, 5);
+        const kind: MonsterKind = act.monsters[rng.int(0, act.monsters.length - 1)];
+        const [lo, hi] = MONSTERS[kind].pack;
+        // elite packs: a unique leader with a normal pack, or a small pack of champions
+        let tier: 0 | 1 | 2 = 0;
+        if (!isBoss && uniques > 0 && rng.chance(0.3)) {
+          tier = 2;
+          uniques--;
+        } else if (!isBoss && rng.chance(0.06 + 0.004 * lvl + 0.02 * (act.n - 1))) tier = 1;
+        const nMods = tier === 2 ? Math.min(3, act.n === 1 ? 1 : act.n <= 3 ? 2 : 3) : tier === 1 ? 1 : 0;
+        const mods = rng.shuffle(Object.keys(ELITE_MODS) as EliteMod[]).slice(0, nMods);
+        const name = tier === 2 ? uniqueName(() => rng.next()) : "";
+        const n = tier === 1 ? rng.int(2, Math.max(2, Math.min(4, hi))) : rng.int(lo, hi);
         for (let i = 0; i < n; i++) {
           const x = rng.int(room.x + 1, room.x + room.w - 2) + 0.5;
           const y = rng.int(room.y + 1, room.y + room.h - 2) + 0.5;
-          this.spawn(kind, floor, x, y, pack);
+          const m = this.spawn(kind, ml, x, y, pack);
+          if (tier === 1 || (tier === 2 && i === 0)) this.makeElite(m, tier, mods, name);
         }
       }
       if (isBoss) {
         pack++;
-        this.boss = this.spawn("boss", floor + 1, room.cx + 0.5, room.cy + 0.5, pack);
+        this.boss = this.spawnBoss(floor, room.cx + 0.5, room.cy + 0.5, pack);
       }
     }
     this.exploreAround(true);
   }
 
-  private spawn(kind: MonsterKind, mlvl: number, x: number, y: number, pack: number): Monster {
-    const def = MONSTERS[kind];
+  /**
+   * The boss guarding the stairs. Levels 1-4 of an act have a named level boss that gets tougher
+   * each level (higher monster level, more life and damage); level 5 has the act's final boss.
+   */
+  spawnBoss(floor: number, x: number, y: number, pack: number): Monster {
+    const act = actDef(floor);
+    const lvl = levelInAct(floor);
+    const ml = mlvlOf(floor);
+    if (isFinalLevel(floor)) {
+      const m = this.spawn(act.finalBoss, ml + 2, x, y, pack);
+      m.cd = 3;
+      m.maxHp = m.hp = Math.round(m.hp * 1.2); // v0.8: tougher final bosses
+      return m;
+    }
+    const m = this.spawn(act.levelBoss, ml + 1, x, y, pack, { ...MONSTERS[act.levelBoss], name: bossName(act, lvl) });
+    // on top of the climbing monster level, each level's boss gets +4% life and +2% damage
+    const k = 1 + 0.04 * (lvl - 1);
+    m.maxHp = m.hp = Math.round(m.hp * k * 1.25); // v0.8: +25% life on every level boss
+    m.dmgMin = Math.round(m.dmgMin * (1 + 0.02 * (lvl - 1)));
+    m.dmgMax = Math.round(m.dmgMax * (1 + 0.02 * (lvl - 1)));
+    m.xp = Math.round(m.xp * k);
+    return m;
+  }
+
+  /** Turn a monster into a champion (tier 1, blue) or a unique (tier 2, gold) with modifiers. */
+  makeElite(m: Monster, tier: 1 | 2, mods: EliteMod[], name: string) {
+    const d: MonsterDef = { ...m.def, name: tier === 2 ? name : `Champion ${m.def.name}` };
+    let hp = tier === 2 ? 4 : 2.5;
+    let dmg = tier === 2 ? 1.5 : 1.3;
+    if (mods.includes("strong")) dmg *= 1.5;
+    if (mods.includes("fast")) {
+      d.speed *= 1.35;
+      d.atkInterval *= 0.75;
+      d.windup *= 0.8;
+    }
+    if (mods.includes("stone")) {
+      hp *= 1.25;
+      m.defense *= 3;
+    }
+    if (mods.includes("fire")) d.elem = "fire";
+    if (mods.includes("cold")) d.elem = "cold";
+    d.aggro += 2;
+    m.def = d;
+    m.elite = tier;
+    m.mods = mods;
+    m.mlvl += tier;
+    m.maxHp = m.hp = Math.round(m.hp * hp);
+    m.dmgMin = Math.round(m.dmgMin * dmg);
+    m.dmgMax = Math.round(m.dmgMax * dmg);
+    m.ar = Math.round(m.ar * 1.2);
+    m.xp = Math.round(m.xp * (tier === 2 ? 5 : 3));
+  }
+
+  private spawn(kind: MonsterKind, mlvl: number, x: number, y: number, pack: number, defOverride?: MonsterDef): Monster {
+    const def = defOverride ?? MONSTERS[kind];
     const hp = scaleHp(def.hp, mlvl);
     const m: Monster = {
       id: this.nextId++, def, mlvl, x, y, hp, maxHp: hp,
       dmgMin: scaleDmg(def.dmgMin, mlvl), dmgMax: scaleDmg(def.dmgMax, mlvl),
-      ar: scaleAR(def.ar, mlvl), defense: scaleDef(def.def, mlvl), xp: scaleXp(def.xp, mlvl),
+      ar: scaleAR(def.ar, mlvl), defense: scaleDef(def.def, mlvl), xp: Math.max(1, Math.round(scaleXp(def.xp, mlvl) * actDef(Math.max(1, this.floor)).reward * XP_RATE)),
       state: "idle", atkT: 0, windT: 0, stunT: 0, fearT: 0, kx: 0, ky: 0, flash: 0, fx: 0, fy: 1,
       walkPhase: Math.random() * 6, pack, homeX: x, homeY: y, wanderT: Math.random() * 3, wx: x, wy: y,
-      deadT: 0, searched: false, lastHurt: -99,
+      deadT: 0, searched: false, lastHurt: -99, cd: rand(0.5, 2), charging: 0, cdx: 0, cdy: 0, spIdx: 0, fuse: -1, minion: false, elite: 0, mods: [],
     };
     this.monsters.push(m);
     return m;
@@ -728,7 +946,7 @@ export class Game {
     return {
       maxHp, maxMana, hands, dual: hands.length === 2,
       def: Math.round((armor + s.dex / 4) * (1 + defPct / 100)),
-      speed: BASE_RUN * (1 + incSpeed(this.skillLevel("increased_speed")) / 100 + move + frw / 100),
+      speed: BASE_RUN * (1 + incSpeed(this.skillLevel("increased_speed")) / 100 + move + frw / 100) * (p.chillT > 0 ? 0.65 : 1),
       ias,
       dmgMin: m.min, dmgMax: m.max, dmgPct: m.dmgPct, ar: m.ar, crit: m.crit, swing: m.speed / (1 + ias), weaponKind: m.kind,
       res: { fire: cap(g("fres") + all), cold: cap(g("cres") + all), light: cap(g("lres") + all), poison: cap(g("pres") + all) },
@@ -742,12 +960,12 @@ export class Game {
    * (main, and off-hand = dual wield / replacing a shield), both rings when both are worn.
    */
   compareSlots(it: Item): EquipSlot[] {
-    const e = this.player.equip;
     const b = BASE_BY_ID[it.baseId];
     const opts = this.slotsFor(it);
     if (!opts.length) return [];
-    if (b.slot === "weapon" && b.hands === 1) return e.main && !isTwoHanded(e.main) ? ["main", "off"] : ["main"];
-    if (b.slot === "ring") return e.ring1 && e.ring2 ? ["ring1", "ring2"] : [!e.ring1 ? "ring1" : "ring2"];
+    // v0.8 compare sheet: a one-hander is shown against both hands, a ring against both rings
+    if (b.slot === "weapon" && b.hands === 1) return ["main", "off"];
+    if (b.slot === "ring") return ["ring1", "ring2"];
     return [opts[0]];
   }
 
@@ -842,10 +1060,20 @@ export class Game {
         input = { ...input, mx: 0, my: 0, mag: 0, attack: false, skills: input.skills.map(() => false) };
       }
     } else if (p.dead) this.recall = null;
+    if (!p.dead) this.updateAilments(dt);
     if (!p.dead) this.updatePlayer(dt, input, d);
     this.updateMonsters(dt, d);
     this.updateFx(dt);
     this.updateProjectiles(dt);
+    this.updateShots(dt, d);
+    this.updateNovas(dt, d);
+    if (!p.dead) {
+      // artifacts are collected just by walking over them
+      for (const g of this.ground) if (g.artifact && Math.hypot(g.x - p.x, g.y - p.y) < 0.75) {
+        this.pickUp(g);
+        break;
+      }
+    }
     this.exploreT -= dt;
     if (this.exploreT <= 0) {
       this.exploreT = 0.2;
@@ -856,15 +1084,17 @@ export class Game {
   private updatePlayer(dt: number, input: FrameInput, d: Derived) {
     const p = this.player;
     // regen + potions
-    p.mana = Math.min(d.maxMana, p.mana + (d.maxMana / 22) * dt);
-    p.hp = Math.min(d.maxHp, p.hp + (d.maxHp / 160) * dt);
+    // v0.8: slower natural regen (was full mana in 22 s, full life in 160 s)
+    p.mana = Math.min(d.maxMana, p.mana + (d.maxMana / 45) * dt);
+    p.hp = Math.min(d.maxHp, p.hp + (d.maxHp / 300) * dt);
     if (p.healLeft > 0) {
-      const amt = Math.min(p.healLeft, d.maxHp * 0.9 * dt);
+      // potions heal over 1.5 s instead of half a second
+      const amt = Math.min(p.healLeft, d.maxHp * 0.3 * dt);
       p.healLeft -= amt;
       p.hp = Math.min(d.maxHp, p.hp + amt);
     }
     if (p.manaLeft > 0) {
-      const amt = Math.min(p.manaLeft, d.maxMana * 1.2 * dt);
+      const amt = Math.min(p.manaLeft, d.maxMana * 0.5 * dt);
       p.manaLeft -= amt;
       p.mana = Math.min(d.maxMana, p.mana + amt);
     }
@@ -993,6 +1223,7 @@ export class Game {
     if (!s.implemented) return { ok: false, why: "Coming soon" };
     if (lvl >= MAX_SKILL_LVL) return { ok: false, why: "Maxed" };
     if (p.level < s.reqLvl) return { ok: false, why: `Requires level ${s.reqLvl}` };
+    if (lvl >= skillCap(p.level, s.reqLvl)) return { ok: false, why: `Next point at character level ${s.reqLvl + lvl}` };
     const missing = s.prereq.filter((q) => !this.skillLevel(q));
     if (missing.length) return { ok: false, why: `Requires ${missing.map((m) => SKILL_BY_ID[m].name).join(" and ")}` };
     if (p.skillPoints <= 0) return { ok: false, why: "No skill points" };
@@ -1262,7 +1493,7 @@ export class Game {
         for (const m of this.monsters) {
           if (m.state === "dead") continue;
           if (Math.hypot(m.x - p.x, m.y - p.y) < 7) {
-            m.fearT = m.def.kind === "boss" ? howlDur(lvl) / 2 : howlDur(lvl);
+            m.fearT = m.def.rank !== "normal" ? howlDur(lvl) / (m.def.rank === "final" ? 4 : 2) : howlDur(lvl);
             m.state = "chase";
             n++;
           }
@@ -1445,16 +1676,16 @@ export class Game {
     const dx = m.x - p.x;
     const dy = m.y - p.y;
     const l = Math.hypot(dx, dy) || 1;
-    const knock = (o.knock ?? 0) * (m.def.kind === "boss" ? 0.3 : 1);
+    const knock = (o.knock ?? 0) * (m.def.rank === "final" ? 0.12 : m.def.rank === "boss" ? 0.3 : 1);
     m.kx += (dx / l) * knock;
     m.ky += (dy / l) * knock;
-    if (o.stun) m.stunT = Math.max(m.stunT, m.def.kind === "boss" ? o.stun / 2 : o.stun);
+    if (o.stun) m.stunT = Math.max(m.stunT, m.def.rank === "final" ? o.stun / 3 : m.def.rank === "boss" ? o.stun / 2 : o.stun);
     if (m.state === "attack" && (o.stun || knock > 3)) {
       m.state = "chase";
       m.atkT = Math.max(m.atkT, 0.4);
     }
     this.floatAt(m.x, m.y, crit ? `${dmg}!` : `${dmg}`, crit ? "#ffd84a" : "#fff", crit ? 20 : 15);
-    for (let i = 0; i < (crit ? 12 : 7); i++) this.spark(m.x, m.y, m.def.kind === "fallen" ? "#b0201a" : "#6e8a2a", 3);
+    for (let i = 0; i < (crit ? 12 : 7); i++) this.spark(m.x, m.y, m.def.blood, 3);
     this.events.sound(crit ? "crit" : "hit");
     if (crit || o.stun) this.events.shake(crit ? 4 : 2);
     if (m.hp <= 0) this.kill(m);
@@ -1473,27 +1704,61 @@ export class Game {
     m.ky *= 0.5;
     const p = this.player;
     p.kills++;
-    this.events.sound(m.def.kind === "fallen" ? "die_fallen" : "die_zombie");
-    for (let i = 0; i < 16; i++) this.spark(m.x, m.y, m.def.kind === "fallen" ? "#a01a14" : "#56702a", 4);
-    this.gainXp(m.xp);
-    // loot
-    if (m.def.kind === "boss") {
-      this.events.shake(10);
-      const mf = this.derived().mf;
-      for (let i = 0; i < 3; i++) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf, true) });
-      this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(40, 90) * m.mlvl) });
+    const small = m.def.radius < 0.27;
+    this.events.sound(small ? "die_fallen" : "die_zombie");
+    for (let i = 0; i < 16; i++) this.spark(m.x, m.y, m.def.blood, 4);
+    m.fuse = -1;
+    m.charging = 0;
+    this.gainXp(Math.max(1, Math.round(m.xp * xpPenalty(p.level, m.mlvl))));
+    // loot: deeper acts add magic find, so blue/yellow drops get more common as you go
+    const act = actDef(this.floor);
+    const mf = this.derived().mf + (act.n - 1) * 20 + (levelInAct(this.floor) - 1);
+    if (m.def.rank !== "normal") {
+      const final = m.def.rank === "final";
+      this.events.shake(final ? 14 : 10);
+      for (let i = 0; i < (final ? 5 : 3); i++) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (final ? 50 : 0), true) });
+      this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(40, 90) * m.mlvl * (final ? 2 : 1)) });
       this.dropAt(m.x, m.y, { item: makeItem("hp_potion") });
       this.dropAt(m.x, m.y, { item: makeItem("mp_potion") });
-      this.stairs = { x: this.level.bossRoom.cx + 0.5, y: this.level.bossRoom.cy + 2.5 };
-      if (!isFloor(this.level, Math.floor(this.stairs.x), Math.floor(this.stairs.y))) this.stairs = { x: m.x, y: m.y };
-      this.events.toast(`${m.def.name} is slain! Stairs down have opened.`);
       this.events.sound("boss");
-    } else {
+      if (final) {
+        const art = act.artifact;
+        if (!this.player.artifacts.some((a) => a.id === art.id)) this.dropArtifact(m.x, m.y, art.id);
+        else this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + 100, true) });
+      }
+      // other monsters flee their dead boss's room
+      for (const o of this.monsters) if (o.minion && o.state !== "dead") this.kill(o);
+      if (this.floor < MAX_FLOOR) {
+        this.stairs = { x: this.level.bossRoom.cx + 0.5, y: this.level.bossRoom.cy + 2.5 };
+        if (!isFloor(this.level, Math.floor(this.stairs.x), Math.floor(this.stairs.y))) this.stairs = { x: m.x, y: m.y };
+        const next = ACTS[act.n];
+        this.events.toast(final ? `${m.def.name} is slain! The way to Act ${next.roman}, ${next.area}, is open.` : `${m.def.name} is slain! Stairs down have opened.`);
+      } else {
+        this.victory = true;
+        this.events.toast(`${m.def.name} is slain! You have conquered the Burning Hells.`);
+      }
+    } else if (m.elite) {
+      // champions and uniques: better loot (uniques always drop magic or better)
+      const u = m.elite === 2;
+      for (let i = 0; i < (u ? 2 : 1); i++) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (u ? 100 : 50), u) });
+      this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(8, 20) * m.mlvl * (u ? 2 : 1)) });
+      if (u) this.events.sound("boss");
+    } else if (!m.minion || chance(0.3)) {
       const r = Math.random();
-      if (r < 0.17) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, this.derived().mf, false) });
+      if (r < 0.17) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf, false) });
       else if (r < 0.37) this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(3, 12) * m.mlvl) });
-      else if (r < 0.5) this.dropAt(m.x, m.y, { item: makeItem(chance(0.7) ? "hp_potion" : "mp_potion") });
+      else if (r < 0.46) this.dropAt(m.x, m.y, { item: makeItem(chance(0.7) ? "hp_potion" : "mp_potion") }); // v0.8: 9% (was 13%)
     }
+    // Fire Enchanted monsters burst into flame when they die
+    if (m.mods?.includes("fire"))
+      this.novas.push({ x: m.x, y: m.y, t: 0, warn: 0.5, radius: 1.7, elem: "fire", dmgMin: m.dmgMin * 0.8, dmgMax: m.dmgMax, done: false });
+  }
+
+  /** Drop an act artifact where it can be reached. */
+  dropArtifact(x: number, y: number, id: string) {
+    this.ground.push({ id: this.nextId++, x, y, t: 0, artifact: id });
+    this.rings.push({ x, y, t: 0, life: 1.4, radius: 3, color: "rgba(255,160,50," });
+    this.events.sound("artifact");
   }
 
   /** Gold find from gear. */
@@ -1576,7 +1841,7 @@ export class Game {
       if (m.state === "idle") {
         if (!p.dead && dist < m.def.aggro && lineOfSight(this.level, m.x, m.y, p.x, p.y)) {
           this.aggroPack(m);
-          if (m.def.kind === "boss") this.events.sound("boss_aggro");
+          if (m.def.rank !== "normal") this.events.sound("boss_aggro");
         } else {
           // wander near home
           m.wanderT -= dt;
@@ -1608,7 +1873,51 @@ export class Game {
         m.wy = m.homeY;
         continue;
       }
-      const reach = m.def.reach + m.def.radius + p.r;
+      const ranged = m.def.behavior === "ranged";
+      const reach = ranged ? m.def.reach : m.def.reach + m.def.radius + p.r;
+      m.cd = Math.max(0, m.cd - dt);
+      // exploder: lit fuse, then burst
+      if (m.fuse >= 0) {
+        m.fuse -= dt;
+        m.flash = 0.6 + 0.4 * Math.sin(this.time * 40);
+        if (m.fuse <= 0) this.explode(m);
+        continue;
+      }
+      // charging (chargers and some final bosses)
+      if (m.charging > 0) {
+        m.charging -= dt;
+        const sp = m.def.speed * (m.def.rank === "final" ? 4 : 3.2);
+        const ox = m.x;
+        const oy = m.y;
+        this.moveEntity(m, m.cdx * sp * dt, m.cdy * sp * dt, m.def.radius);
+        m.walkPhase += dt * sp * 4;
+        if (Math.random() < 0.6) this.spark(m.x, m.y, "#c8b080", 1.5);
+        const hitR = m.def.reach + m.def.radius + p.r;
+        if (dist <= hitR && !p.dead) {
+          m.charging = 0;
+          m.atkT = m.def.atkInterval;
+          this.monsterHit(m, d, 1.3);
+          const l = dist || 1;
+          this.moveEntity(p, (dx / l) * 0.6, (dy / l) * 0.6, p.r);
+        } else if (Math.hypot(m.x - ox, m.y - oy) < sp * dt * 0.3) m.charging = 0;
+        continue;
+      }
+      if (m.state !== "attack" && !p.dead) {
+        const los = dist < 9 && lineOfSight(this.level, m.x, m.y, p.x, p.y);
+        // final boss specials
+        if (m.def.specials && m.cd <= 0 && los) {
+          this.bossSpecial(m, dx, dy, dist);
+          continue;
+        }
+        if (m.def.behavior === "charger" && m.cd <= 0 && dist > 2.5 && dist < 7 && los) {
+          this.startCharge(m, dx, dy, dist);
+          continue;
+        }
+        if (m.def.behavior === "exploder" && dist <= m.def.reach + m.def.radius + p.r) {
+          m.fuse = m.def.windup;
+          continue;
+        }
+      }
       if (m.state === "attack") {
         m.windT -= dt;
         if (dist > 0.01) {
@@ -1618,12 +1927,24 @@ export class Game {
         if (m.windT <= 0) {
           m.state = "chase";
           m.atkT = m.def.atkInterval;
-          if (dist <= reach + 0.35 && !p.dead) this.monsterHit(m, d);
+          if (ranged) {
+            if (!p.dead) this.fireShot(m, Math.atan2(dy, dx));
+          } else if (dist <= reach + 0.35 && !p.dead) this.monsterHit(m, d);
         }
         continue;
       }
-      // chase
-      if (dist <= reach) {
+      // ranged: back off when you get close, shoot when in range and in sight
+      if (ranged && dist < 3 && m.atkT > 0.3 && lineOfSight(this.level, m.x, m.y, p.x, p.y)) {
+        const sp = m.def.speed * 0.85;
+        this.moveEntity(m, (-dx / dist) * sp * dt, (-dy / dist) * sp * dt, m.def.radius);
+        m.fx = dx / dist;
+        m.fy = dy / dist;
+        m.walkPhase += dt * sp * 4;
+        continue;
+      }
+      if (ranged && dist <= reach && !lineOfSight(this.level, m.x, m.y, p.x, p.y)) {
+        // no clear shot: walk closer
+      } else if (dist <= reach) {
         if (m.atkT <= 0) {
           m.state = "attack";
           m.windT = m.def.windup;
@@ -1691,23 +2012,164 @@ export class Game {
     }
   }
 
-  private monsterHit(m: Monster, d: Derived) {
+  private monsterHit(m: Monster, d: Derived, mult = 1) {
+    this.hurtPlayer({ ar: m.ar, mlvl: m.mlvl, dmgMin: m.dmgMin * mult, dmgMax: m.dmgMax * mult, elem: m.def.elem, big: m.def.rank !== "normal" }, d, true);
+  }
+
+  /** Elemental damage left after resistance (resists cap at 75%). */
+  static afterRes(dmg: number, elem: Elem, d: Pick<Derived, "res">): number {
+    if (elem === "phys") return dmg;
+    const r = Math.min(75, d.res[elem]);
+    return dmg * (1 - r / 100);
+  }
+
+  /**
+   * Damage the player. Physical damage rolls to hit against defense; elemental damage is cut by the
+   * matching resist. Cold chills (slower movement), poison deals part of the damage over time.
+   */
+  hurtPlayer(src: { ar: number; mlvl: number; dmgMin: number; dmgMax: number; elem: Elem; big: boolean }, d: Derived, roll: boolean) {
     const p = this.player;
-    if (p.action?.type === "leap") return;
-    const hc = Math.max(0.05, Math.min(0.95, 2 * (m.ar / (m.ar + d.def)) * (m.mlvl / (m.mlvl + p.level))));
-    if (!chance(hc)) {
-      this.floatAt(p.x, p.y, "Miss", "#9a9a9a", 12);
-      this.events.sound("whiff");
-      return;
+    if (p.dead || p.action?.type === "leap") return;
+    if (roll) {
+      const hc = Math.max(0.05, Math.min(0.95, 2 * (src.ar / (src.ar + d.def)) * (src.mlvl / (src.mlvl + p.level))));
+      if (!chance(hc)) {
+        this.floatAt(p.x, p.y, "Miss", "#9a9a9a", 12);
+        this.events.sound("whiff");
+        return;
+      }
     }
-    const dmg = randInt(m.dmgMin, m.dmgMax);
+    let dmg = Math.max(1, Math.round(Game.afterRes(rand(src.dmgMin, src.dmgMax + 0.99), src.elem, d)));
+    if (src.elem === "poison") {
+      // a third now, the rest over 2.5 s
+      const now = Math.max(1, Math.round(dmg / 3));
+      p.poison = { t: 2.5, dps: Math.max(p.poison.t > 0 ? p.poison.dps : 0, (dmg - now) / 2.5) };
+      dmg = now;
+      this.events.sound("poison");
+    } else if (src.elem === "cold") {
+      p.chillT = 1.5;
+      this.events.sound("chill");
+    }
     p.hp -= dmg;
     p.flash = 1;
-    this.floatAt(p.x, p.y, `-${dmg}`, "#ff5a4a", 15);
-    for (let i = 0; i < 6; i++) this.spark(p.x, p.y, "#9a1410", 2.5);
+    this.floatAt(p.x, p.y, `-${dmg}`, ELEM_COLOR[src.elem], 15);
+    for (let i = 0; i < 6; i++) this.spark(p.x, p.y, src.elem === "phys" ? "#9a1410" : ELEM_COLOR[src.elem], 2.5);
     this.events.sound("hurt");
-    this.events.shake(m.def.kind === "boss" ? 6 : 3);
+    this.events.shake(src.big ? 6 : 3);
     if (p.hp <= 0) this.die();
+  }
+
+  /** Chill wears off; poison ticks. */
+  private updateAilments(dt: number) {
+    const p = this.player;
+    p.chillT = Math.max(0, p.chillT - dt);
+    if (p.poison.t > 0) {
+      const step = Math.min(dt, p.poison.t);
+      p.poison.t -= step;
+      p.hp -= p.poison.dps * step;
+      if (Math.random() < dt * 6) this.spark(p.x, p.y, ELEM_COLOR.poison, 1.2);
+      if (p.hp <= 0) this.die();
+    }
+  }
+
+  private fireShot(m: Monster, ang: number, spread = 0) {
+    const s = m.def.shot ?? { speed: 8, range: 9, look: "bolt" as const, color: ELEM_COLOR[m.def.elem] };
+    const a = ang + spread;
+    const final = m.def.rank === "final";
+    this.shots.push({
+      x: m.x + Math.cos(a) * m.def.radius, y: m.y + Math.sin(a) * m.def.radius, vx: Math.cos(a) * s.speed, vy: Math.sin(a) * s.speed,
+      dist: 0, range: s.range, dmgMin: m.dmgMin * (final ? 0.7 : 1), dmgMax: m.dmgMax * (final ? 0.7 : 1), ar: m.ar, mlvl: m.mlvl,
+      elem: m.def.elem, look: s.look, color: s.color, t: 0, big: final,
+    });
+    this.events.sound(s.look === "arrow" ? "shoot" : "bolt");
+  }
+
+  private updateShots(dt: number, d: Derived) {
+    const p = this.player;
+    for (let i = this.shots.length - 1; i >= 0; i--) {
+      const s = this.shots[i];
+      s.t += dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.dist += Math.hypot(s.vx, s.vy) * dt;
+      let gone = s.dist > s.range || !isFloor(this.level, Math.floor(s.x), Math.floor(s.y));
+      if (!gone && !p.dead && Math.hypot(s.x - p.x, s.y - p.y) < p.r + 0.22) {
+        this.hurtPlayer(s, d, true);
+        gone = true;
+      }
+      if (gone) {
+        for (let k = 0; k < 4; k++) this.spark(s.x, s.y, s.color, 1.6);
+        this.shots.splice(i, 1);
+      }
+    }
+  }
+
+  private updateNovas(dt: number, d: Derived) {
+    const p = this.player;
+    for (let i = this.novas.length - 1; i >= 0; i--) {
+      const n = this.novas[i];
+      n.t += dt;
+      if (!n.done && n.t >= n.warn) {
+        n.done = true;
+        this.rings.push({ x: n.x, y: n.y, t: 0, life: 0.5, radius: n.radius, color: n.elem === "poison" ? "rgba(140,224,74," : "rgba(255,140,50," });
+        for (let k = 0; k < 24; k++) this.spark(n.x + rand(-n.radius, n.radius) * 0.7, n.y + rand(-n.radius, n.radius) * 0.7, ELEM_COLOR[n.elem], 2.5);
+        this.events.sound("nova");
+        this.events.shake(5);
+        if (!p.dead && Math.hypot(p.x - n.x, p.y - n.y) <= n.radius + p.r) this.hurtPlayer({ ar: 0, mlvl: 1, dmgMin: n.dmgMin, dmgMax: n.dmgMax, elem: n.elem, big: true }, d, false);
+      }
+      if (n.t > n.warn + 0.5) this.novas.splice(i, 1);
+    }
+  }
+
+  /** An exploder goes off: a short-warning burst around it, then it's gone (no loot when it blows itself up). */
+  private explode(m: Monster) {
+    this.novas.push({ x: m.x, y: m.y, t: 0.25, warn: 0.25, radius: 1.8, elem: m.def.elem, dmgMin: m.dmgMin, dmgMax: m.dmgMax, done: false });
+    m.hp = 0;
+    m.state = "dead";
+    m.deadT = 0;
+    m.fuse = -1;
+    m.searched = true;
+    this.events.sound("explode");
+  }
+
+  private startCharge(m: Monster, dx: number, dy: number, dist: number) {
+    m.cdx = dx / dist;
+    m.cdy = dy / dist;
+    m.fx = m.cdx;
+    m.fy = m.cdy;
+    m.charging = Math.min(1.1, dist / (m.def.speed * (m.def.rank === "final" ? 4 : 3.2)) + 0.25);
+    m.cd = m.def.rank === "final" ? 3 : 4;
+    this.events.sound("charge");
+  }
+
+  /** Final bosses take turns through their special attacks. */
+  private bossSpecial(m: Monster, dx: number, dy: number, dist: number) {
+    const sp = m.def.specials!;
+    const kind = sp[m.spIdx++ % sp.length];
+    m.cd = 3.6;
+    if (kind === "nova") {
+      this.novas.push({ x: m.x, y: m.y, t: 0, warn: 1.0, radius: 3.2, elem: m.def.elem, dmgMin: m.dmgMin * 1.2, dmgMax: m.dmgMax * 1.3, done: false });
+      this.events.sound("nova_warn");
+    } else if (kind === "bolts") {
+      const a = Math.atan2(dy, dx);
+      for (let i = -2; i <= 2; i++) this.fireShot(m, a, i * 0.22);
+    } else if (kind === "charge") {
+      if (dist > 1.6) this.startCharge(m, dx, dy, dist);
+      else m.cd = 0.5;
+    } else if (kind === "summon") {
+      const alive = this.monsters.filter((o) => o.minion && o.state !== "dead").length;
+      const kindOf: MonsterKind = actOf(this.floor) === 3 ? "flayer" : "imp";
+      for (let i = 0; i < Math.min(3, 8 - alive); i++) {
+        const a = (i / 3) * Math.PI * 2 + Math.random();
+        const x = m.x + Math.cos(a) * 1.2;
+        const y = m.y + Math.sin(a) * 1.2;
+        if (this.blocked(x, y, 0.2)) continue;
+        const o = this.spawn(kindOf, Math.max(1, m.mlvl - 3), x, y, m.pack);
+        o.minion = true;
+        o.state = "chase";
+        for (let k = 0; k < 8; k++) this.spark(x, y, m.def.blood, 2);
+      }
+      this.events.sound("summon");
+    }
   }
 
   private die() {
@@ -1766,6 +2228,19 @@ export class Game {
 
   pickUp(g: GroundItem): boolean {
     const p = this.player;
+    if (g.artifact) {
+      const a = ARTIFACT_BY_ID[g.artifact];
+      if (a && !p.artifacts.some((f) => f.id === a.id)) {
+        p.artifacts.push({ id: a.id, at: Date.now(), level: p.level });
+        this.floatAt(g.x, g.y, a.name, ARTIFACT_COLOR, 15);
+        this.rings.push({ x: p.x, y: p.y, t: 0, life: 1.2, radius: 2.8, color: "rgba(255,170,60," });
+        this.events.toast(`Artifact found: ${a.name} — see Artifacts`);
+        this.events.sound("artifact");
+      }
+      this.ground.splice(this.ground.indexOf(g), 1);
+      this.events.changed();
+      return true;
+    }
     if (g.gold) {
       p.gold += g.gold;
       this.floatAt(g.x, g.y, `+${g.gold} gold`, "#e8c547", 13);
@@ -1952,7 +2427,7 @@ export class Game {
   /** Waypoint travel: 0 = camp, n = crypt level n (if reached before). */
   travel(floor: number) {
     if (floor <= 0) this.goTown();
-    else if (floor <= this.maxFloor) this.goDungeon(floor);
+    else if (floor <= this.maxFloor && floor <= MAX_FLOOR) this.goDungeon(floor);
   }
 
   /** Take off an item, optionally to a chosen bag cell. */
@@ -2050,7 +2525,7 @@ export class Game {
     const e = this.bagEntry(uid);
     if (!e) return;
     const pk = BASE_BY_ID[e.item.baseId].potion;
-    if (!pk) return;
+    if (!pk || this.potionWait(pk) > 0) return;
     p.bag = p.bag.filter((q) => q !== e);
     this.drink(pk);
   }
@@ -2103,6 +2578,7 @@ export class Game {
   usePotion(kind: "hp" | "mp") {
     const p = this.player;
     if (p.dead) return;
+    if (this.potionWait(kind) > 0) return;
     if (kind === "hp" ? p.hpPots > 0 : p.mpPots > 0) {
       if (kind === "hp") p.hpPots--;
       else p.mpPots--;
@@ -2114,9 +2590,15 @@ export class Game {
     this.events.toast(kind === "hp" ? "No healing potions" : "No mana potions");
   }
 
+  /** Seconds until another potion of this kind can be drunk (v0.8: 1.5 s cooldown). */
+  potionWait(kind: "hp" | "mp"): number {
+    return Math.max(0, this.potCd[kind] - this.time);
+  }
+
   private drink(kind: "hp" | "mp") {
     const p = this.player;
     const d = this.derived();
+    this.potCd[kind] = this.time + POTION_CD;
     if (kind === "hp") p.healLeft += d.maxHp * 0.45;
     else p.manaLeft += d.maxMana * 0.6;
     this.events.sound("potion");
@@ -2143,6 +2625,7 @@ export class Game {
   }
 
   descend() {
+    if (this.floor >= MAX_FLOOR) return;
     this.goDungeon(this.floor + 1);
   }
 
