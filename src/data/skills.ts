@@ -1,5 +1,8 @@
-/** Barbarian skill tree modeled on Diablo II: Lord of Destruction (names, tabs, level gates, prerequisites). */
-export type Tab = "combat" | "masteries" | "warcries";
+/** Barbarian and Amazon skill trees modeled on Diablo II: Lord of Destruction (names, tabs, level gates, prerequisites). */
+export type Tab = "combat" | "masteries" | "warcries" | "bow" | "passive" | "javelin" | "basic";
+/** v1.0 hero classes */
+export type HeroClass = "barbarian" | "amazon";
+export const CLASS_NAME: Record<HeroClass, string> = { barbarian: "Barbarian", amazon: "Amazon" };
 
 export interface SkillDef {
   id: string;
@@ -17,13 +20,28 @@ export interface SkillDef {
   blurb: string;
   /** effect text at a given skill level */
   effect?: (lvl: number) => string;
+  /** v1.0: which class can learn it ("any" = basic attacks everyone has) */
+  cls: HeroClass | "any";
 }
 
 export const TAB_NAMES: Record<Tab, string> = {
   combat: "Combat Skills",
   masteries: "Combat Masteries",
   warcries: "Warcries",
+  bow: "Bow and Crossbow",
+  passive: "Passive and Magic",
+  javelin: "Javelin and Spear",
+  basic: "Basic Attacks",
 };
+/** v1.0: skill tabs per class, in D2 order, then the basic attacks everyone has */
+export const CLASS_TABS: Record<HeroClass, Tab[]> = {
+  barbarian: ["combat", "masteries", "warcries", "basic"],
+  amazon: ["bow", "passive", "javelin", "basic"],
+};
+/** v1.0: basic attacks (no points needed) that can go on a skill button or the main attack button */
+export const BASIC_IDS = ["basic_attack", "basic_throw", "basic_shoot"] as const;
+export type BasicId = (typeof BASIC_IDS)[number];
+export const isBasic = (id: string | null | undefined): id is BasicId => !!id && (BASIC_IDS as readonly string[]).includes(id);
 
 export const MAX_SKILL_LVL = 20;
 /** Skill buttons next to the attack button (v0.9: 4, was 3). */
@@ -93,8 +111,56 @@ const S = (d: Partial<SkillDef> & Pick<SkillDef, "id" | "name" | "tab" | "reqLvl
   prereq: [],
   kind: "active",
   implemented: false,
+  cls: d.tab === "bow" || d.tab === "passive" || d.tab === "javelin" ? "amazon" : d.tab === "basic" ? "any" : "barbarian",
   ...d,
 });
+
+// ---- v1.0 Amazon numbers (elemental parts are a % of the weapon's average hit, so they keep up with item level) ----
+export const jabDmg = (l: number) => -15 + (l - 1) * 5;
+export const jabAR = (l: number) => 10 + (l - 1) * 8;
+export const powerStrikeLight = (l: number) => 50 + (l - 1) * 20;
+export const poisonJavDps = (l: number) => 14 + (l - 1) * 5;
+export const impaleDmg = (l: number) => 100 + (l - 1) * 25;
+export const impaleAR = (l: number) => 25 + (l - 1) * 5;
+export const lightningBoltDmg = (l: number) => 110 + (l - 1) * 30;
+export const chargedStrikeBolts = (l: number) => Math.min(8, 2 + Math.floor(l / 2));
+export const chargedStrikeDmg = (l: number) => 35 + (l - 1) * 12;
+export const plagueDps = (l: number) => 30 + (l - 1) * 10;
+export const fendDmg = (l: number) => 40 + (l - 1) * 10;
+export const fendAR = (l: number) => 40 + (l - 1) * 10;
+export const lightningStrikeHits = (l: number) => Math.min(8, 2 + Math.floor(l / 3));
+export const lightningStrikeDmg = (l: number) => 80 + (l - 1) * 25;
+export const furyBolts = (l: number) => Math.min(10, 2 + Math.floor(l / 2));
+export const furyDmg = (l: number) => 90 + (l - 1) * 25;
+export const innerSightDef = (l: number) => Math.min(70, 30 + (l - 1) * 4);
+export const innerSightDur = (l: number) => 8 + l * 4;
+export const critStrike = (l: number) => (l <= 0 ? 0 : Math.min(75, Math.round((75 * l) / (l + 3.7))));
+export const dodgeChance = (l: number) => (l <= 0 ? 0 : Math.min(70, Math.round(6 + (64 * l) / (l + 4))));
+export const avoidChance = (l: number) => (l <= 0 ? 0 : Math.min(75, Math.round(12 + (63 * l) / (l + 4))));
+export const evadeChance = dodgeChance;
+export const slowMissilesDur = (l: number) => 12 + l * 3;
+export const penetrateAR = (l: number) => 35 + (l - 1) * 10;
+export const decoyDur = (l: number) => 10 + l * 5;
+export const valkDmg = (l: number) => 40 + (l - 1) * 15;
+export const valkLife = (l: number) => 150 + (l - 1) * 25; // % of the hero's max life
+export const pierceChance = (l: number) => (l <= 0 ? 0 : Math.min(100, Math.round(10 + (90 * l) / (l + 6))));
+export const magicArrowDmg = (l: number) => 10 + (l - 1) * 6;
+export const fireArrowDmg = (l: number) => 35 + (l - 1) * 15;
+export const coldArrowDmg = (l: number) => 25 + (l - 1) * 12;
+export const coldArrowChill = (l: number) => 2 + l * 0.4;
+export const multiShotArrows = (l: number) => Math.min(12, 2 + l);
+export const MULTI_DMG = -25;
+export const explodingDmg = (l: number) => 45 + (l - 1) * 20;
+export const guidedDmg = (l: number) => 50 + (l - 1) * 10;
+export const iceArrowDmg = (l: number) => 35 + (l - 1) * 12;
+export const iceArrowFreeze = (l: number) => Math.min(3, 1 + l * 0.1);
+export const strafeArrows = (l: number) => Math.min(10, 4 + Math.ceil(l / 2));
+export const strafeDmg = (l: number) => -20 + (l - 1) * 5;
+export const immolationDmg = (l: number) => 60 + (l - 1) * 20;
+export const immolationDps = (l: number) => 25 + (l - 1) * 8;
+export const immolationDur = (l: number) => 3 + l * 0.2;
+export const freezingDmg = (l: number) => 45 + (l - 1) * 15;
+export const freezingFreeze = (l: number) => Math.min(3, 1.4 + l * 0.08);
 
 export const SKILLS: SkillDef[] = [
   // ---------------- Combat Skills ----------------
@@ -271,6 +337,201 @@ export const SKILLS: SkillDef[] = [
     blurb: "Raise all your skills for a while (only skills you've put a point in). Also lengthens Shout and Battle Orders.",
     mana: () => 11,
     effect: (l) => `+${bcmdBonus(l)} to all skills for ${bcmdDur(l)}s`,
+  }),
+
+  // ================= v1.0 Amazon =================
+  // ---------------- Bow and Crossbow ----------------
+  S({
+    id: "magic_arrow", name: "Magic Arrow", tab: "bow", reqLvl: 1, row: 0, col: 0, glyph: "➶", implemented: true,
+    blurb: "A magical arrow that needs no ammunition and is hard to dodge. Needs a bow.",
+    mana: () => 1,
+    effect: (l) => `+${magicArrowDmg(l)}% damage, ignores defense, uses no arrows`,
+  }),
+  S({
+    id: "fire_arrow", name: "Fire Arrow", tab: "bow", reqLvl: 1, row: 0, col: 2, glyph: "✹", implemented: true,
+    blurb: "Shoots a burning arrow that adds fire damage. Needs a bow and arrows.",
+    mana: () => 2,
+    effect: (l) => `Adds fire damage equal to ${fireArrowDmg(l)}% of your hit`,
+  }),
+  S({
+    id: "cold_arrow", name: "Cold Arrow", tab: "bow", reqLvl: 6, row: 1, col: 1, glyph: "❄", implemented: true,
+    blurb: "An icy arrow that adds cold damage and slows the enemy.",
+    mana: () => 3,
+    effect: (l) => `Adds cold damage equal to ${coldArrowDmg(l)}% of your hit, slows for ${coldArrowChill(l).toFixed(1)}s`,
+  }),
+  S({
+    id: "multiple_shot", name: "Multiple Shot", tab: "bow", reqLvl: 6, row: 1, col: 0, glyph: "⋔", prereq: ["magic_arrow"], implemented: true,
+    blurb: "Splits one arrow into a fan of arrows (each deals 3/4 damage, like D2).",
+    mana: (l) => 4 + Math.floor(l / 2),
+    effect: (l) => `${multiShotArrows(l)} arrows, ${MULTI_DMG}% damage each`,
+  }),
+  S({
+    id: "exploding_arrow", name: "Exploding Arrow", tab: "bow", reqLvl: 12, row: 2, col: 2, glyph: "✸", prereq: ["multiple_shot", "fire_arrow"], implemented: true,
+    blurb: "An arrow that explodes on impact, burning everything nearby.",
+    mana: () => 5,
+    effect: (l) => `Explosion deals fire damage equal to ${explodingDmg(l)}% of your hit`,
+  }),
+  S({
+    id: "ice_arrow", name: "Ice Arrow", tab: "bow", reqLvl: 18, row: 3, col: 1, glyph: "❆", prereq: ["cold_arrow"], implemented: true,
+    blurb: "An arrow that freezes its target solid.",
+    mana: () => 4,
+    effect: (l) => `Adds cold damage equal to ${iceArrowDmg(l)}% of your hit, freezes for ${iceArrowFreeze(l).toFixed(1)}s`,
+  }),
+  S({
+    id: "guided_arrow", name: "Guided Arrow", tab: "bow", reqLvl: 18, row: 3, col: 0, glyph: "⇢", prereq: ["cold_arrow", "multiple_shot"], implemented: true,
+    blurb: "An arrow that seeks its target and always hits.",
+    mana: () => 6,
+    effect: (l) => `+${guidedDmg(l)}% damage, always hits, homes in`,
+  }),
+  S({
+    id: "strafe", name: "Strafe", tab: "bow", reqLvl: 24, row: 4, col: 0, glyph: "⋙", prereq: ["guided_arrow"], implemented: true,
+    blurb: "Rapidly shoots an arrow at each enemy in range, one after another.",
+    mana: () => 11,
+    effect: (l) => `Up to ${strafeArrows(l)} arrows, ${strafeDmg(l) >= 0 ? "+" : ""}${strafeDmg(l)}% damage`,
+  }),
+  S({
+    id: "immolation_arrow", name: "Immolation Arrow", tab: "bow", reqLvl: 24, row: 4, col: 2, glyph: "♨", prereq: ["exploding_arrow"], implemented: true,
+    blurb: "An explosive arrow that leaves the ground burning.",
+    mana: () => 6,
+    effect: (l) => `Explosion ${immolationDmg(l)}% of your hit as fire, then ${immolationDps(l)}%/s burning for ${immolationDur(l).toFixed(1)}s`,
+  }),
+  S({
+    id: "freezing_arrow", name: "Freezing Arrow", tab: "bow", reqLvl: 30, row: 5, col: 1, glyph: "✻", prereq: ["ice_arrow"], implemented: true,
+    blurb: "An arrow that bursts in a cold explosion, freezing every enemy around it.",
+    mana: () => 9,
+    effect: (l) => `Cold burst ${freezingDmg(l)}% of your hit, freezes for ${freezingFreeze(l).toFixed(1)}s`,
+  }),
+  // ---------------- Passive and Magic ----------------
+  S({
+    id: "inner_sight", name: "Inner Sight", tab: "passive", reqLvl: 1, row: 0, col: 0, glyph: "◉", implemented: true,
+    blurb: "Lights up nearby enemies, making them easier to hit.",
+    mana: () => 5,
+    effect: (l) => `Enemies within 9 yards: −${innerSightDef(l)}% defense for ${innerSightDur(l)}s`,
+  }),
+  S({
+    id: "critical_strike", name: "Critical Strike", tab: "passive", reqLvl: 1, row: 0, col: 2, glyph: "✦", kind: "passive", implemented: true,
+    blurb: "Chance for physical attacks (melee, thrown and arrows) to do double damage.",
+    effect: (l) => `${critStrike(l)}% chance of double damage`,
+  }),
+  S({
+    id: "dodge", name: "Dodge", tab: "passive", reqLvl: 6, row: 1, col: 1, glyph: "↶", kind: "passive", implemented: true,
+    blurb: "Chance to dodge melee attacks while standing still or attacking.",
+    effect: (l) => `${dodgeChance(l)}% chance to dodge melee hits`,
+  }),
+  S({
+    id: "slow_missiles", name: "Slow Missiles", tab: "passive", reqLvl: 12, row: 2, col: 0, glyph: "⌛", prereq: ["inner_sight"], implemented: true,
+    blurb: "Enemy missiles near you fly at a third of their speed.",
+    mana: () => 5,
+    effect: (l) => `Missiles within 10 yards at 1/3 speed for ${slowMissilesDur(l)}s`,
+  }),
+  S({
+    id: "avoid", name: "Avoid", tab: "passive", reqLvl: 12, row: 2, col: 1, glyph: "⤳", prereq: ["dodge"], kind: "passive", implemented: true,
+    blurb: "Chance to avoid enemy missiles.",
+    effect: (l) => `${avoidChance(l)}% chance to avoid missiles`,
+  }),
+  S({
+    id: "penetrate", name: "Penetrate", tab: "passive", reqLvl: 18, row: 3, col: 2, glyph: "⟶", prereq: ["critical_strike"], kind: "passive", implemented: true,
+    blurb: "Raises the attack rating of arrows and thrown weapons.",
+    effect: (l) => `+${penetrateAR(l)}% attack rating with bows and throws`,
+  }),
+  S({
+    id: "decoy", name: "Decoy", tab: "passive", reqLvl: 24, row: 4, col: 0, glyph: "☥", prereq: ["slow_missiles"], implemented: true,
+    blurb: "Creates a copy of you that draws nearby enemies' attacks.",
+    mana: () => 15,
+    effect: (l) => `Lasts ${decoyDur(l)}s or until destroyed`,
+  }),
+  S({
+    id: "evade", name: "Evade", tab: "passive", reqLvl: 24, row: 4, col: 1, glyph: "⇝", prereq: ["avoid"], kind: "passive", implemented: true,
+    blurb: "Chance to avoid any attack while moving.",
+    effect: (l) => `${evadeChance(l)}% chance to evade melee and missiles while moving`,
+  }),
+  S({
+    id: "valkyrie", name: "Valkyrie", tab: "passive", reqLvl: 30, row: 5, col: 0, glyph: "♆", prereq: ["decoy", "evade"], implemented: true,
+    blurb: "Summons a spectral Valkyrie who fights at your side until she falls.",
+    mana: () => 25,
+    effect: (l) => `+${valkDmg(l)}% spear damage, life ${valkLife(l)}% of yours`,
+  }),
+  S({
+    id: "pierce", name: "Pierce", tab: "passive", reqLvl: 30, row: 5, col: 2, glyph: "⇶", prereq: ["penetrate"], kind: "passive", implemented: true,
+    blurb: "Chance for arrows and thrown weapons to pass through enemies and hit more.",
+    effect: (l) => `${pierceChance(l)}% chance to pierce`,
+  }),
+  // ---------------- Javelin and Spear ----------------
+  S({
+    id: "jab", name: "Jab", tab: "javelin", reqLvl: 1, row: 0, col: 0, glyph: "⇡", implemented: true,
+    blurb: "Three rapid stabs. Needs a javelin or spear.",
+    mana: () => 2,
+    effect: (l) => `3 hits, ${jabDmg(l) >= 0 ? "+" : ""}${jabDmg(l)}% damage, +${jabAR(l)}% attack rating`,
+  }),
+  S({
+    id: "power_strike", name: "Power Strike", tab: "javelin", reqLvl: 6, row: 1, col: 1, glyph: "ϟ", prereq: ["jab"], implemented: true,
+    blurb: "A stab charged with lightning. Needs a javelin or spear.",
+    mana: () => 2,
+    effect: (l) => `Adds lightning damage equal to ${powerStrikeLight(l)}% of your hit`,
+  }),
+  S({
+    id: "poison_javelin", name: "Poison Javelin", tab: "javelin", reqLvl: 6, row: 1, col: 2, glyph: "☣", implemented: true,
+    blurb: "A thrown javelin that leaves a trail of poison gas. Needs throwing javelins.",
+    mana: () => 4,
+    effect: (l) => `Poison trail: ${poisonJavDps(l)}% of your hit per second`,
+  }),
+  S({
+    id: "impale", name: "Impale", tab: "javelin", reqLvl: 12, row: 2, col: 0, glyph: "⟟", prereq: ["jab"], implemented: true,
+    blurb: "A slow, devastating thrust. Needs a javelin or spear.",
+    mana: () => 3,
+    effect: (l) => `+${impaleDmg(l)}% damage, +${impaleAR(l)}% attack rating`,
+  }),
+  S({
+    id: "lightning_bolt", name: "Lightning Bolt", tab: "javelin", reqLvl: 12, row: 2, col: 2, glyph: "⚡", prereq: ["power_strike", "poison_javelin"], implemented: true,
+    blurb: "Throws a javelin that becomes a bolt of lightning, passing through every enemy in its path.",
+    mana: () => 6,
+    effect: (l) => `Lightning ${lightningBoltDmg(l)}% of your hit, never misses, pierces`,
+  }),
+  S({
+    id: "charged_strike", name: "Charged Strike", tab: "javelin", reqLvl: 18, row: 3, col: 1, glyph: "⌁", prereq: ["power_strike", "lightning_bolt"], implemented: true,
+    blurb: "A stab that releases crackling charged bolts.",
+    mana: () => 4,
+    effect: (l) => `${chargedStrikeBolts(l)} charged bolts, ${chargedStrikeDmg(l)}% of your hit each`,
+  }),
+  S({
+    id: "plague_javelin", name: "Plague Javelin", tab: "javelin", reqLvl: 18, row: 3, col: 2, glyph: "☠", prereq: ["lightning_bolt"], implemented: true,
+    blurb: "A thrown javelin that bursts into a spreading cloud of poison.",
+    mana: () => 7,
+    effect: (l) => `Poison cloud: ${plagueDps(l)}% of your hit per second for 3s`,
+  }),
+  S({
+    id: "fend", name: "Fend", tab: "javelin", reqLvl: 24, row: 4, col: 0, glyph: "⋀", prereq: ["impale"], implemented: true,
+    blurb: "Stabs every enemy within reach.",
+    mana: () => 5,
+    effect: (l) => `Hits every enemy in reach, +${fendDmg(l)}% damage, +${fendAR(l)}% attack rating`,
+  }),
+  S({
+    id: "lightning_strike", name: "Lightning Strike", tab: "javelin", reqLvl: 30, row: 5, col: 1, glyph: "⛓", prereq: ["charged_strike"], implemented: true,
+    blurb: "A stab that unleashes chain lightning, jumping from enemy to enemy.",
+    mana: () => 9,
+    effect: (l) => `Chains to ${lightningStrikeHits(l)} enemies, ${lightningStrikeDmg(l)}% of your hit each`,
+  }),
+  S({
+    id: "lightning_fury", name: "Lightning Fury", tab: "javelin", reqLvl: 30, row: 5, col: 2, glyph: "☈", prereq: ["plague_javelin"], implemented: true,
+    blurb: "A thrown javelin that bursts into lightning bolts on impact, striking enemies around it.",
+    mana: () => 10,
+    effect: (l) => `${furyBolts(l)} bolts, ${furyDmg(l)}% of your hit each`,
+  }),
+  // ================= v1.0 basic attacks (every class) =================
+  S({
+    id: "basic_attack", name: "Attack / Stab", tab: "basic", reqLvl: 1, row: 0, col: 0, glyph: "⚔", implemented: true,
+    blurb: "A normal melee attack with your weapon. With javelins, a forward stab from the overhead grip.",
+    effect: () => "Melee hit with your weapon",
+  }),
+  S({
+    id: "basic_throw", name: "Throw", tab: "basic", reqLvl: 1, row: 0, col: 1, glyph: "➹", implemented: true,
+    blurb: "Throw your throwing weapon (javelins, throwing axes or knives). Stacks refill in camp.",
+    effect: () => "Throws one weapon from the stack",
+  }),
+  S({
+    id: "basic_shoot", name: "Shoot", tab: "basic", reqLvl: 1, row: 0, col: 2, glyph: "↟", implemented: true,
+    blurb: "Shoot an arrow with your bow. Needs a quiver of arrows in the off-hand; it refills in camp.",
+    effect: () => "Shoots one arrow",
   }),
 ];
 

@@ -21,7 +21,7 @@ describe("skill tree matches Diablo II LoD 1.10+", () => {
     ["grim_ward", 24, ["find_item"], 4, 2], ["war_cry", 30, ["battle_cry", "battle_orders"], 5, 0], ["battle_command", 30, ["battle_orders"], 5, 1],
   ];
   it("has all 30 Barbarian skills with D2 levels, prerequisites and placement", () => {
-    expect(SKILLS.length).toBe(30);
+    expect(SKILLS.filter((s) => s.cls === "barbarian").length).toBe(30);
     for (const [id, lvl, pre, row, col] of D2) {
       const s = SKILL_BY_ID[id];
       expect(s, id).toBeTruthy();

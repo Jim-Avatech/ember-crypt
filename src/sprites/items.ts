@@ -98,11 +98,61 @@ function paint(baseId: string, cs: number, cw?: number, ch?: number): HTMLCanvas
       break;
     }
     case "spear": {
+      if (id !== "javelin") {
+        // v1.0 two-handed spear / pike: a long shaft corner to corner with a broad blade
+        const pike = id === "pike";
+        const x0 = W - 4 * u;
+        const y0 = H - 2 * u;
+        const x1 = 7 * u;
+        const y1 = 9 * u;
+        pb.part(M().capsule(x0, y0, x1, y1, 1 * u), pike ? WOOD : WOOD_L, { edge: true, pattern: (_x, y) => (y % 6 === 0 ? 0.85 : 1) });
+        const tx = 2.5 * u;
+        const ty = 1.5 * u;
+        part(M().poly([[tx, ty], [x1 + 3.2 * u, y1 - 3.6 * u], [x1 + 1 * u, y1 + 1 * u], [x1 - 3.4 * u, y1 - 1.6 * u]]), STEEL);
+        if (pike) part(M().rect(x1 - 1 * u, y1 - 0.2 * u, 3.5 * u, 2.2 * u), STEEL_D);
+        part(M().capsule(W * 0.62, H * 0.62, W * 0.54, H * 0.52, 1.3 * u), LEATHER);
+        break;
+      }
       // javelin: long shaft, leaf-shaped head, small fletching wrap
       part(M().rect(cx - 0.8 * u, 7 * u, 1.6 * u, H - 8 * u), WOOD_L, (_x, y) => (y % 5 === 0 ? 0.85 : 1));
       part(M().poly([[cx, 0.8 * u], [cx + 2.4 * u, 5 * u], [cx + 0.9 * u, 8.5 * u], [cx - 0.9 * u, 8.5 * u], [cx - 2.4 * u, 5 * u]]), STEEL);
       part(M().rect(cx - 1.3 * u, H * 0.55, 2.6 * u, 2.4 * u), LEATHER);
       part(M().rect(cx - 1.1 * u, H - 3 * u, 2.2 * u, 1.6 * u), STEEL_D);
+      break;
+    }
+    case "bow": {
+      // v1.0: a curved bow standing upright, string on the right
+      const battle = id.includes("battle");
+      const long = b.h >= 4;
+      const wood = battle ? hex("#5a3418") : WOOD_L;
+      const top = 1.5 * u;
+      const bot = H - 1.5 * u;
+      const sx = W - 8 * u;
+      const bulge = long ? 13 * u : 12 * u;
+      const N = 14;
+      const pts: [number, number][] = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const y = top + (bot - top) * t;
+        const x = sx - Math.sin(t * Math.PI) * bulge + (t < 0.12 || t > 0.88 ? 1.2 * u : 0);
+        pts.push([x, y]);
+      }
+      pb.part(M().rect(sx - 0.3 * u, top + 0.5 * u, 0.6 * u + 0.5, bot - top - 1 * u), hex("#e8e0c8"), { edge: false });
+      for (let i = 0; i < N; i++) pb.part(M().capsule(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], (i > 4 && i < 10 ? 1.5 : 1.1) * u), wood, { edge: true });
+      const mid = pts[N / 2];
+      part(M().rect(mid[0] - 1.8 * u, mid[1] - 3 * u, 3.6 * u, 6 * u), LEATHER, (_x, y) => (y % 2 ? 0.75 : 1));
+      if (battle) for (const q of [pts[0], pts[N]]) part(M().disc(q[0], q[1], 1.4 * u), STEEL_D);
+      break;
+    }
+    case "quiver": {
+      // v1.0: a leather quiver with fletched arrows sticking out
+      for (const [dx, c] of [[-3, hex("#e8e8e0")], [0, hex("#c83a2a")], [3, hex("#e8e8e0")]] as [number, RGB][]) {
+        pb.part(M().rect(cx + dx * u - 0.4 * u, 1.5 * u, 0.8 * u + 0.5, 10 * u), WOOD_L, { edge: false });
+        part(M().poly([[cx + dx * u - 1.6 * u, 2 * u], [cx + dx * u, 0.5 * u], [cx + dx * u + 1.6 * u, 2 * u], [cx + dx * u + 1.6 * u, 6 * u], [cx + dx * u - 1.6 * u, 6 * u]]), c);
+      }
+      part(M().rect(cx - 5.5 * u, 9 * u, 11 * u, H - 11 * u), LEATHER, (x, y) => ((x + y) % 7 === 0 ? 0.8 : 1));
+      part(M().rect(cx - 6 * u, 9 * u, 12 * u, 2.4 * u), hex("#5a3a20"));
+      part(M().rect(cx - 6 * u, H - 6 * u, 12 * u, 2 * u), hex("#5a3a20"));
       break;
     }
     case "staff": {

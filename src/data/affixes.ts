@@ -1,6 +1,6 @@
 /** Diablo II–style prefixes and suffixes. Each tier needs a minimum item level. */
 import { BASE_BY_ID, type Item, type Mod, type Quality, type StatKey, makeItem, rollBase } from "./items";
-import { SKILLS, SKILL_BY_ID } from "./skills";
+import { CLASS_NAME, SKILLS, SKILL_BY_ID } from "./skills";
 
 export type Cat = "weapon" | "armor" | "helm" | "shield" | "gloves" | "boots" | "belt" | "ring" | "amulet";
 type Range = [StatKey, number, number];
@@ -96,7 +96,8 @@ export const catOf = (baseId: string): Cat | null => {
 type Rng = () => number;
 const ri = (r: Rng, a: number, b: number) => a + Math.floor(r() * (b - a + 1));
 
-const SKILLABLE = () => SKILLS.filter((s) => s.implemented).map((s) => s.id);
+/** +skill rolls: any class skill (v1.0: Amazon skills too, so the loot pool stays the same for every class) */
+const SKILLABLE = () => SKILLS.filter((s) => s.implemented && s.cls !== "any").map((s) => s.id);
 
 interface Pick {
   key: string;
@@ -229,13 +230,16 @@ export function rollQuality(mlvl: number, mf: number, boss: boolean, r: Rng = Ma
 
 /** A random dropped item for a monster level. Rings and amulets are never plain. */
 export function rollDrop(mlvl: number, mf: number, boss: boolean, r: Rng = Math.random): Item {
-  const b = rollBase(r);
+  let b = rollBase(r);
   const ilvl = Math.max(1, mlvl + (boss ? 2 : 0));
-  const it = makeItem(b.id, ilvl);
   let q = rollQuality(mlvl, mf, boss, r);
+  // v1.0: arrows are never magic; a magic/rare roll that lands on them picks another class, so the quality mix is unchanged
+  for (let i = 0; i < 20 && q !== "normal" && !catHasAffixes(b.slot); i++) b = rollBase(r);
+  const it = makeItem(b.id, ilvl);
   if (q === "normal" && (b.slot === "ring" || b.slot === "amulet")) q = "magic";
   return enchant(it, q, r);
 }
+const catHasAffixes = (slot: string) => AFFIXES.some((a) => (a.cats as string[]).includes(slot));
 
 /** Tooltip text for one mod. */
 export function modText(m: Mod): string {
@@ -263,6 +267,9 @@ export function modText(m: Mod): string {
     case "def": return `+${m.v} Defense`;
     case "gf": return `${m.v}% Extra Gold from Monsters`;
     case "mf": return `${m.v}% Better Chance of Getting Magic Items`;
-    case "skill": return `+${m.v} to ${SKILL_BY_ID[m.sk ?? ""]?.name ?? "a skill"} (Barbarian Only)`;
+    case "skill": {
+      const sd = SKILL_BY_ID[m.sk ?? ""];
+      return `+${m.v} to ${sd?.name ?? "a skill"} (${sd && sd.cls !== "any" ? CLASS_NAME[sd.cls] : "Barbarian"} Only)`;
+    }
   }
 }

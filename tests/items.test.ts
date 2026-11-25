@@ -21,7 +21,7 @@ const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, le
 describe("item classes", () => {
   it("has one base per class", () => {
     const ids = ITEM_BASES.map((b) => b.id).sort();
-    expect(ids).toEqual(["amulet", "armor", "axe", "belt", "boots", "gloves", "great_sword", "helm", "hp_potion", "javelin", "mace", "mp_potion", "quarterstaff", "ring", "shield", "sword", "throwing_axe", "throwing_knife"]);
+    expect(ids).toEqual(["amulet", "armor", "arrows", "axe", "belt", "boots", "gloves", "great_sword", "helm", "hp_potion", "javelin", "long_bow", "mace", "mp_potion", "quarterstaff", "ring", "shield", "short_bow", "spear", "sword", "throwing_axe", "throwing_knife"]);
   });
 
   it("class sets spread and speed, level sets the numbers", () => {
@@ -86,7 +86,7 @@ describe("affix rolling", () => {
     const r = rng(4);
     for (let i = 0; i < 500; i++) {
       const ilvl = 1 + (i % 25);
-      const it = enchant(makeItem(ITEM_BASES.filter((b) => !b.potion)[i % 12].id, ilvl), i % 2 ? "rare" : "magic", r);
+      const it = enchant(makeItem(ITEM_BASES.filter((b) => !b.potion && b.slot !== "quiver")[i % 12].id, ilvl), i % 2 ? "rare" : "magic", r);
       for (const key of it.aff ?? []) {
         const def = AFFIX_BY_ID[key];
         expect(def, key).toBeTruthy();

@@ -147,7 +147,7 @@ describe("save v6 migration", () => {
   it("a v5 hero deep in the old endless crypt keeps everything and stays in Act I", () => {
     const d = migrateSave(JSON.parse(JSON.stringify(v5)))!;
     expect(d.v).toBe(SAVE_VERSION);
-    expect(SAVE_VERSION).toBe(6);
+    expect(SAVE_VERSION).toBe(7); // v1.0 added hero class + name
     expect(d.floor).toBe(8); // old levels 1-20 are Act I levels 1-20
     expect(d.maxFloor).toBe(9);
     expect(d.player.artifacts).toEqual([]);

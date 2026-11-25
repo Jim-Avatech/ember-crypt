@@ -62,6 +62,14 @@ export const LOOK_BASES: LookBase[] = [
   W("throwing_knife", "Throwing Knife", "knife", 1, 2, 4, 0, 12, 0.4, 1, 2),
   W("throwing_axe", "Throwing Axe", "axe", 1, 3, 5, 10, 10, 0.48, 1, 2),
   W("javelin", "Javelin", "spear", 1, 4, 7, 8, 14, 0.54, 1, 4),
+  // v1.0 classes (art only)
+  W("spear", "Spear", "spear", 1, 3, 15, 38, 25, 0.56, 2, 4, 2),
+  W("pike", "Pike", "spear", 12, 14, 63, 60, 45, 0.6, 2, 4, 2),
+  W("short_bow", "Short Bow", "bow", 1, 1, 4, 0, 15, 0.42, 2, 3, 2),
+  W("short_battle_bow", "Short Battle Bow", "bow", 12, 5, 11, 40, 50, 0.44, 2, 3, 2),
+  W("long_bow", "Long Bow", "bow", 1, 3, 10, 22, 19, 0.56, 2, 4, 2),
+  W("long_battle_bow", "Long Battle Bow", "bow", 12, 3, 18, 40, 50, 0.56, 2, 4, 2),
+  { id: "arrows", name: "Arrows", slot: "quiver", kind: "quiver", qlvl: 1, reqStr: 0, reqDex: 0, reqLvl: 0, w: 1, h: 3, price: 20, weight: 0 },
   // Swords
   W("short_sword", "Short Sword", "sword", 1, 2, 7, 0, 0, 0.48, 1, 3),
   W("scimitar", "Scimitar", "sword", 5, 2, 6, 0, 21, 0.42, 1, 3),

@@ -1,6 +1,6 @@
 import { enchant, rollDrop } from "./data/affixes";
 import {
-  BASE_BY_ID, type EquipSlot, ITEM_BASES, type Item, type Kind, type StatKey, beltSlotsOf, isTwoHanded, itemDamage,
+  BASE_BY_ID, type EquipSlot, ITEM_BASES, type Item, type Kind, type StatKey, beltSlotsOf, isTwoHanded, itemDamage, isBow, isQuiver, isSpearLike, offBlocked,
   isThrowing, itemDefense, itemName, itemPrice, itemReqs, makeItem, migrateItem, modTotal, QUALITY_COLOR, qtyMax, qualityOf, sellPrice,
 } from "./data/items";
 import {
@@ -16,6 +16,11 @@ import {
   stunAR, stunDur, skillCap,
   BC_DMG, BERSERK_DEF_T, SKILL_SLOTS, WW_DUR, WW_TICK, bcDef, bcDur, bcmdBonus, bcmdDur, berserkAR, berserkDmg, concAR, concDef, concDmg,
   findItemChance, grimDur, grimRadius, natRes, stamLife, stamRegen, tauntDmg, tauntDur, warCryDmg, warCryStun, wwAR, wwDmg,
+  type BasicId, type HeroClass, CLASS_NAME, isBasic, avoidChance, chargedStrikeBolts, chargedStrikeDmg, coldArrowChill, coldArrowDmg, critStrike, decoyDur,
+  dodgeChance, evadeChance, explodingDmg, fendAR, fendDmg, fireArrowDmg, freezingDmg, freezingFreeze, furyBolts, furyDmg, guidedDmg, iceArrowDmg,
+  iceArrowFreeze, immolationDmg, immolationDps, immolationDur, impaleAR, impaleDmg, innerSightDef, innerSightDur, jabAR, jabDmg, lightningBoltDmg,
+  lightningStrikeDmg, lightningStrikeHits, magicArrowDmg, MULTI_DMG, multiShotArrows, penetrateAR, pierceChance, plagueDps, poisonJavDps,
+  powerStrikeLight, slowMissilesDur, strafeArrows, strafeDmg, valkDmg, valkLife,
 } from "./data/skills";
 import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
 import { type Level, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
@@ -58,7 +63,9 @@ export type Action =
   | { type: "leap"; skill: string; t: number; dur: number; fx: number; fy: number; tx: number; ty: number; target: Monster | null }
   | { type: "cry"; t: number; dur: number }
   | { type: "whirl"; t: number; dur: number; dx: number; dy: number; tick: number; hand: number; spin: number }
-  | { type: "throw"; skill: string | null; t: number; dur: number; releaseAt: number[]; hands: number[]; done: number; target: Monster | null };
+  | { type: "throw"; skill: string | null; t: number; dur: number; releaseAt: number[]; hands: number[]; done: number; target: Monster | null }
+  /** v1.0: a bow shot (Strafe: one release per target) */
+  | { type: "shoot"; skill: string | null; t: number; dur: number; releaseAt: number[]; done: number; target: Monster | null; targets: Monster[] };
 
 /** A thrown weapon in flight. */
 export interface Projectile {
@@ -74,9 +81,60 @@ export interface Projectile {
   /** item class, for the sprite */
   cls: string;
   t: number;
+  /** v1.0: what flies (thrown weapon by default), its element color, monsters already hit (piercing) */
+  kind?: "weapon" | "arrow" | "bolt" | "cbolt";
+  elem?: Elem;
+  hits?: number[];
+  /** Guided Arrow: the monster it steers toward */
+  homing?: Monster | null;
+  /** Poison Javelin: distance since the last poison puff */
+  trail?: number;
+}
+
+/** v1.0: burning or poisoned ground (Immolation Arrow, Poison/Plague Javelin) that hurts monsters standing in it. */
+export interface Patch {
+  x: number;
+  y: number;
+  r: number;
+  t: number;
+  life: number;
+  /** damage per second */
+  dps: number;
+  elem: Elem;
+  tick: number;
+}
+
+/** v1.0: a lightning arc drawn for a moment (Lightning Strike, Lightning Fury). */
+export interface Zap {
+  pts: { x: number; y: number }[];
+  t: number;
+  life: number;
+}
+
+/** v1.0: Amazon Decoy and Valkyrie. */
+export interface Ally {
+  kind: "decoy" | "valkyrie";
+  x: number;
+  y: number;
+  fx: number;
+  fy: number;
+  hp: number;
+  maxHp: number;
+  t: number;
+  life: number;
+  atkT: number;
+  /** current swing (seconds left), for the animation */
+  swingT: number;
+  walkPhase: number;
+  moving: boolean;
 }
 
 export interface Player {
+  /** v1.0: hero class and name (old saves are Barbarians) */
+  cls: HeroClass;
+  name: string;
+  /** v1.0: the basic attack the main ⚔ button uses (null = automatic: shoot with a bow, throw a throwing weapon, else attack) */
+  mainAtk: BasicId | null;
   x: number;
   y: number;
   r: number;
@@ -104,7 +162,7 @@ export interface Player {
   walkPhase: number;
   moving: boolean;
   /** seconds left: shout, battle orders, concentrate (defense while swinging), berserk (defense 0), battle command */
-  buffs: { shout: number; bo: number; conc: number; bers: number; bcmd: number };
+  buffs: { shout: number; bo: number; conc: number; bers: number; bcmd: number; slowm?: number };
   flash: number;
   z: number;
   moveTarget: GroundItem | null;
@@ -176,6 +234,10 @@ export interface Monster {
   mods: EliteMod[];
   /** v0.9.4: seconds left in a boss's ground-slam windup (it stands still) */
   slamT?: number;
+  /** v1.0 Amazon effects: slowed (Cold Arrow), frozen (Ice/Freezing Arrow, drawn blue), Inner Sight defense cut */
+  chillT?: number;
+  frozenT?: number;
+  sight?: { t: number; def: number };
 }
 
 /** Seconds between two potions of the same kind (v0.8). */
@@ -301,6 +363,8 @@ export interface GameEvents {
 }
 
 export interface Hand {
+  /** v1.0: a bow shot or a throw (Penetrate, Pierce, Dexterity damage) */
+  missile?: boolean;
   slot: EquipSlot | null;
   min: number;
   max: number;
@@ -395,14 +459,20 @@ export const BASE_RUN = 4.6;
 
 export const BASE_POTS = 4;
 export const VENDOR_W = 10;
-export const VENDOR_H = 8;
+export const VENDOR_H = 10; // v1.0: room for bows, a spear and arrows
 export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
+/** v1.0: per-class starting attributes and life/mana growth (D2 numbers) */
+export const CLASS_DEF: Record<HeroClass, { stats: Stats; life: number; lifePerVit: number; mana: number; manaPerEne: number }> = {
+  barbarian: { stats: BASE_STATS, life: 55, lifePerVit: 4, mana: 10, manaPerEne: 1.5 },
+  amazon: { stats: { str: 20, dex: 25, vit: 20, ene: 15 }, life: 50, lifePerVit: 3, mana: 15, manaPerEne: 1.5 },
+};
+export const isHeroClass = (c: unknown): c is HeroClass => c === "barbarian" || c === "amazon";
 
 /** Total XP needed to reach level L+1 from level L. */
 export const xpForLevel = (L: number) => (L <= 1 ? 0 : Math.round(100 * Math.pow(L - 1, 1.9)));
 
 /** Current save schema. Bump it (and add a migration step) whenever the save shape changes. */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7; // v1.0: hero class + name (multiple heroes)
 
 export interface SaveData {
   /** schema version (SAVE_VERSION when written) */
@@ -414,7 +484,11 @@ export interface SaveData {
   seed: number;
   floor: number;
   maxFloor: number;
-  player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & { stash?: BagEntry[]; artifacts?: FoundArtifact[] };
+  player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & {
+    stash?: BagEntry[]; artifacts?: FoundArtifact[]; cls?: HeroClass; name?: string; mainAtk?: BasicId | null;
+  };
+  /** v1.0: when the (shared) stash last changed; the newest copy of the stash wins across heroes */
+  stashAt?: number;
   /** items that didn't fit when an old save was converted */
   migratedSold?: number;
   migratedFrom?: number;
@@ -433,7 +507,7 @@ export interface SaveData {
  * (level too low, a prerequisite with no points, or a skill that no longer exists).
  * Repeats until stable, since refunding one skill can break a later one. Also clears hotbar slots.
  */
-export function refundSkills(p: Pick<Player, "level" | "skills" | "slots" | "skillPoints">): { names: string[]; points: number } {
+export function refundSkills(p: Pick<Player, "level" | "skills" | "slots" | "skillPoints"> & { cls?: HeroClass }): { names: string[]; points: number } {
   const names: string[] = [];
   let points = 0;
   for (let changed = true; changed; ) {
@@ -441,7 +515,7 @@ export function refundSkills(p: Pick<Player, "level" | "skills" | "slots" | "ski
     for (const [id, pts] of Object.entries(p.skills)) {
       if (!pts) continue;
       const def = SKILL_BY_ID[id];
-      const ok = def && p.level >= def.reqLvl && (def.prereq ?? []).every((q) => (p.skills[q] ?? 0) > 0);
+      const ok = def && def.cls !== "any" && (def.cls === (p.cls ?? "barbarian")) && p.level >= def.reqLvl && (def.prereq ?? []).every((q) => (p.skills[q] ?? 0) > 0);
       if (ok) continue;
       points += pts;
       names.push(def ? def.name : id);
@@ -451,7 +525,7 @@ export function refundSkills(p: Pick<Player, "level" | "skills" | "slots" | "ski
   }
   if (points) {
     p.skillPoints += points;
-    p.slots = p.slots.map((s) => (s && p.skills[s] ? s : null));
+    p.slots = p.slots.map((s) => (s && (p.skills[s] || isBasic(s)) ? s : null));
   }
   return { names, points };
 }
@@ -482,7 +556,11 @@ const MASTERY_OF: Partial<Record<Kind | "fist", string>> = {
   sword: "sword_mastery", axe: "axe_mastery", mace: "mace_mastery", spear: "spear_mastery", staff: "polearm_mastery",
 };
 
-const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy", "concentrate", "berserk"]);
+const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy", "concentrate", "berserk", "jab", "power_strike", "impale", "charged_strike", "fend", "lightning_strike"]);
+/** v1.0 Amazon skill groups */
+const SPEAR_MELEE = new Set(["jab", "power_strike", "impale", "charged_strike", "fend", "lightning_strike"]);
+const JAV_THROWS = new Set(["poison_javelin", "lightning_bolt", "plague_javelin", "lightning_fury"]);
+const BOW_SKILLS = new Set(["magic_arrow", "fire_arrow", "cold_arrow", "multiple_shot", "exploding_arrow", "guided_arrow", "ice_arrow", "strafe", "immolation_arrow", "freezing_arrow"]);
 const TWO_HIT = new Set(["double_swing", "frenzy"]);
 
 /** Drop anything that would crash the game (unknown item classes, broken bag entries). */
@@ -516,12 +594,31 @@ export function migrateSave(raw: unknown): SaveData | null {
 function migrateSaveSteps(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== "object") return null;
   const d = raw as { v: number };
-  if (d.v === 6) return sanitizeV6(sanitizeV3(d as SaveData));
-  if (d.v === 5) return toV6(sanitizeV3(d as SaveData));
-  if (d.v === 4) return toV6(toV5(sanitizeV3(d as SaveData)));
+  if (d.v === 7) return sanitizeV7(sanitizeV6(sanitizeV3(d as SaveData)));
+  if (d.v === 6) return toV7(sanitizeV6(sanitizeV3(d as SaveData)));
+  if (d.v === 5) return toV7(toV6(sanitizeV3(d as SaveData)));
+  if (d.v === 4) return toV7(toV6(toV5(sanitizeV3(d as SaveData))));
   const v3 = d.v === 3 ? sanitizeV3(d as SaveData) : migrateToV3(raw);
   if (!v3) return null;
-  return toV6(toV5(toV4(v3)));
+  return toV7(toV6(toV5(toV4(v3))));
+}
+
+/** v7 (v1.0): every hero before multiple heroes was a Barbarian. Nothing else changes. */
+function toV7(d: SaveData): SaveData {
+  d.v = 7;
+  d.player.cls = "barbarian";
+  if (typeof d.player.name !== "string" || !d.player.name.trim()) d.player.name = "Barbarian";
+  return sanitizeV7(d);
+}
+function sanitizeV7(d: SaveData): SaveData {
+  const p = d.player;
+  if (!isHeroClass(p.cls)) p.cls = "barbarian";
+  if (typeof p.name !== "string" || !p.name.trim()) p.name = CLASS_NAME[p.cls];
+  p.name = p.name.slice(0, 16);
+  if (p.mainAtk !== null && p.mainAtk !== undefined && !isBasic(p.mainAtk)) p.mainAtk = null;
+  // a slot holding a skill of another class (hand-edited save) is cleared; basic attacks are fine
+  if (Array.isArray(p.slots)) p.slots = p.slots.map((s) => (s && (isBasic(s) || SKILL_BY_ID[s]?.cls === p.cls) ? s : null));
+  return d;
 }
 
 /** Keep only known, unique artifacts and floors inside the game. */
@@ -662,6 +759,12 @@ export class Game {
   victory = false;
   potCd = { hp: 0, mp: 0 };
   wards: Ward[] = [];
+  /** v1.0 Amazon effects */
+  patches: Patch[] = [];
+  zaps: Zap[] = [];
+  allies: Ally[] = [];
+  /** v1.0: when the stash last changed (ms), so the newest copy of the shared stash wins */
+  stashAt = 0;
   private flow = new Uint16Array(60 * 60);
   private flowFrom = -1;
   private nextId = 1;
@@ -682,12 +785,14 @@ export class Game {
   /** world-space joystick direction from last frame (used by Leap) */
   moveDir = { x: 0, y: 0, active: false };
 
-  constructor(events: GameEvents, save?: SaveData | null, seed?: number) {
+  constructor(events: GameEvents, save?: SaveData | null, seed?: number, hero?: { cls: HeroClass; name?: string }) {
     this.events = events;
     this.seed = save?.seed ?? seed ?? (Math.random() * 1e9) | 0;
+    const cls: HeroClass = hero?.cls ?? "barbarian";
     this.player = {
+      cls, name: (hero?.name ?? "").trim().slice(0, 16) || CLASS_NAME[cls], mainAtk: null,
       x: 0, y: 0, r: 0.28, fx: 1, fy: 1, hp: 1, mana: 1, level: 1, xp: 0,
-      base: { ...BASE_STATS }, statPoints: 0, skillPoints: 1, skills: {}, slots: Array(SKILL_SLOTS).fill(null),
+      base: { ...CLASS_DEF[cls].stats }, statPoints: 0, skillPoints: 1, skills: {}, slots: Array(SKILL_SLOTS).fill(null),
       bag: [], stash: [], equip: {}, nextHand: 0, frenzy: { stacks: 0, t: 0, decay: 0 }, gold: 0, hpPots: 3, mpPots: 1,
       action: null, walkPhase: 0, moving: false, buffs: { shout: 0, bo: 0, conc: 0, bers: 0, bcmd: 0 }, flash: 0, z: 0,
       moveTarget: null, dead: false, healLeft: 0, manaLeft: 0, kills: 0, artifacts: [], chillT: 0, poison: { t: 0, dps: 0 },
@@ -702,8 +807,20 @@ export class Game {
       while (this.player.slots.length < SKILL_SLOTS) this.player.slots.push(null);
       this.player.chillT = 0;
       this.player.poison = { t: 0, dps: 0 };
+      if (!isHeroClass(this.player.cls)) this.player.cls = "barbarian";
+      if (!this.player.name) this.player.name = CLASS_NAME[this.player.cls];
+      if (!isBasic(this.player.mainAtk)) this.player.mainAtk = null;
+      this.stashAt = save.stashAt ?? 0;
       this.floor = save.floor;
       this.maxFloor = Math.max(save.maxFloor ?? save.floor, save.floor);
+    } else if (cls === "amazon") {
+      // D2 Amazon: javelins and a buckler; a short bow and a quiver wait in the bag
+      this.player.equip.main = makeItem("javelin", 1);
+      this.player.equip.off = makeItem("shield", 1);
+      this.player.equip.chest = makeItem("armor", 1);
+      this.player.equip.belt = makeItem("belt", 1);
+      addItem(this.player.bag, makeItem("short_bow", 1));
+      addItem(this.player.bag, makeItem("arrows", 1));
     } else {
       this.player.equip.main = makeItem("axe", 1);
       this.player.equip.chest = makeItem("armor", 1);
@@ -719,8 +836,9 @@ export class Game {
   toSave(): SaveData {
     const p = this.player;
     return {
-      v: SAVE_VERSION, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor,
+      v: SAVE_VERSION, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor, stashAt: this.stashAt,
       player: {
+        cls: p.cls, name: p.name, mainAtk: p.mainAtk,
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
         skills: p.skills, slots: p.slots.slice(0, SKILL_SLOTS), bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold,
         hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills, artifacts: p.artifacts,
@@ -749,8 +867,11 @@ export class Game {
     p.action = null;
     p.moveTarget = null;
     p.dead = false;
-    p.buffs = { shout: 0, bo: 0, conc: 0, bers: 0, bcmd: 0 };
+    p.buffs = { shout: 0, bo: 0, conc: 0, bers: 0, bcmd: 0, slowm: 0 };
     p.frenzy = { stacks: 0, t: 0, decay: 0 };
+    this.patches = [];
+    this.zaps = [];
+    this.allies = [];
     p.chillT = 0;
     p.poison = { t: 0, dps: 0 };
     const d = this.derived();
@@ -761,15 +882,15 @@ export class Game {
     this.novas = [];
     this.wards = [];
     this.restock();
-    // throwing weapons refill for free in camp
+    // throwing weapons (v1.0: and quivers) refill for free in camp
     let refilled = 0;
     for (const it of [...Object.values(p.equip), ...p.bag.map((e) => e.item)]) {
-      if (it && isThrowing(it) && (it.qty ?? 0) < qtyMax(it)) {
+      if (it && qtyMax(it) > 0 && (it.qty ?? 0) < qtyMax(it)) {
         it.qty = qtyMax(it);
         refilled++;
       }
     }
-    if (refilled) setTimeout(() => this.events.toast("Hilde restocked your throwing weapons"), silent ? 900 : 1600);
+    if (refilled) setTimeout(() => this.events.toast(p.cls === "amazon" ? "Hilde restocked your javelins and arrows" : "Hilde restocked your throwing weapons"), silent ? 900 : 1600);
     if (!silent) {
       this.events.sound("stairs");
       this.events.toast("Ember Camp — you're safe here");
@@ -799,7 +920,7 @@ export class Game {
     add(makeItem("hp_potion"));
     add(makeItem("mp_potion"));
     // plain gear of every class near your level
-    for (const id of ["sword", "axe", "mace", "great_sword", "quarterstaff", "throwing_knife", "throwing_axe", "javelin", "armor", "helm", "shield", "gloves", "boots", "belt"]) add(makeItem(id, Math.max(1, lvl - 1 + Math.floor(r() * 3))));
+    for (const id of ["sword", "axe", "mace", "great_sword", "quarterstaff", "throwing_knife", "throwing_axe", "javelin", "spear", "short_bow", "long_bow", "arrows", "armor", "helm", "shield", "gloves", "boots", "belt"]) add(makeItem(id, Math.max(1, lvl - 1 + Math.floor(r() * 3))));
     // a few magic pieces (Hilde never sells rares)
     const n = 2 + Math.floor(r() * 3);
     for (let i = 0; i < n; i++) {
@@ -825,6 +946,9 @@ export class Game {
     this.shots = [];
     this.novas = [];
     this.wards = [];
+    this.patches = [];
+    this.zaps = [];
+    this.allies = [];
     this.stairs = null;
     this.flowFrom = -1;
     const rng = new Rng(this.seed + floor * 104729);
@@ -984,18 +1108,26 @@ export class Game {
     const it = slot ? p.equip[slot] : undefined;
     const b = it ? BASE_BY_ID[it.baseId] : null;
     const kind: Kind | "fist" = b ? b.kind : "fist";
+    const bow = kind === "bow";
+    const missile = thrown || bow;
     const mastery = thrown ? "throwing_mastery" : MASTERY_OF[kind] ?? null;
     const ml = mastery ? this.skillLevel(mastery) : 0;
-    const arPct = ml ? masteryAR(ml) : 0;
+    // v1.0 Amazon: Penetrate raises missile attack rating; Critical Strike stacks with mastery crits
+    const arPct = (ml ? masteryAR(ml) : 0) + (missile ? (this.skillLevel("penetrate") ? penetrateAR(this.skillLevel("penetrate")) : 0) : 0);
     const arFlat = this.gear("ar");
     const [min, max] = it && b ? itemDamage(it) : [1, 2];
+    const cs = critStrike(this.skillLevel("critical_strike"));
+    const mc = masteryCrit(ml);
+    // D2: bows get their damage bonus from Dexterity, thrown weapons from both, melee from Strength
+    const statPct = bow ? s.dex : thrown ? Math.round(0.75 * (s.str + s.dex)) : s.str;
     return {
       slot,
+      missile,
       min,
       max,
-      dmgPct: s.str + (ml ? masteryDmg(ml) : 0),
+      dmgPct: statPct + (ml ? masteryDmg(ml) : 0),
       ar: Math.round((s.dex * 5 + 20 + p.level * 5 + arFlat) * (1 + arPct / 100)),
-      crit: masteryCrit(ml),
+      crit: cs ? Math.round(100 * (1 - (1 - mc / 100) * (1 - cs / 100))) : mc,
       speed: b ? b.speed! : 0.42,
       kind,
       twoHanded: !!b && b.hands === 2,
@@ -1020,8 +1152,9 @@ export class Game {
     if (p.buffs.conc > 0) defPct += concDef(this.skillLevel("concentrate") || 1);
     const stam = stamLife(this.skillLevel("increased_stamina"));
     const boMul = p.buffs.bo > 0 ? 1 + boPct(this.skillLevel("battle_orders") || 1) / 100 : 1;
-    const maxHp = Math.round((55 + (s.vit - 25) * 4 + (p.level - 1) * 2 + g("life")) * boMul * (1 + stam / 100));
-    const maxMana = Math.round((10 + (s.ene - 10) * 1.5 + (p.level - 1) * 1.5 + g("mana")) * boMul);
+    const cd = CLASS_DEF[p.cls] ?? CLASS_DEF.barbarian;
+    const maxHp = Math.round((cd.life + (s.vit - cd.stats.vit) * cd.lifePerVit + (p.level - 1) * 2 + g("life")) * boMul * (1 + stam / 100));
+    const maxMana = Math.round((cd.mana + (s.ene - cd.stats.ene) * cd.manaPerEne + (p.level - 1) * 1.5 + g("mana")) * boMul);
     const fl = this.skillLevel("frenzy");
     const gearIas = Math.min(60, g("ias"));
     const ias = (fl ? (p.frenzy.stacks * frenzyIas(fl)) / 100 : 0) + gearIas / 100;
@@ -1078,7 +1211,7 @@ export class Game {
       return out;
     };
     const p = this.player;
-    const gone = [p.equip[slot], slot === "main" && isTwoHanded(it) ? p.equip.off : undefined];
+    const gone = [p.equip[slot], slot === "main" && offBlocked(it, p.equip.off) ? p.equip.off : undefined];
     const before: Record<string, number> = {};
     for (const x of gone) for (const [k, v] of Object.entries(skillsOf(x))) before[k] = (before[k] ?? 0) + v;
     const after = skillsOf(it);
@@ -1101,7 +1234,7 @@ export class Game {
     const p = this.player;
     const saved = { ...p.equip };
     p.equip[slot] = it;
-    if (slot === "main" && isTwoHanded(it)) delete p.equip.off;
+    if (slot === "main" && offBlocked(it, p.equip.off)) delete p.equip.off;
     const d = this.derived();
     p.equip = saved;
     return d;
@@ -1152,6 +1285,8 @@ export class Game {
     this.updateMonsters(dt, d);
     this.updateFx(dt);
     this.updateProjectiles(dt);
+    this.updatePatches(dt);
+    if (this.allies.length) this.updateAllies(dt);
     this.updateShots(dt, d);
     this.updateNovas(dt, d);
     for (const w of this.wards) w.t += dt;
@@ -1189,6 +1324,10 @@ export class Game {
     }
     if (p.buffs.shout > 0) p.buffs.shout = Math.max(0, p.buffs.shout - dt);
     p.buffs.conc = Math.max(0, p.buffs.conc - dt);
+    if (p.buffs.slowm) {
+      p.buffs.slowm = Math.max(0, p.buffs.slowm - dt);
+      if (p.buffs.slowm === 0) this.events.changed();
+    }
     p.buffs.bers = Math.max(0, p.buffs.bers - dt);
     if (p.buffs.bcmd > 0) {
       p.buffs.bcmd = Math.max(0, p.buffs.bcmd - dt);
@@ -1240,7 +1379,7 @@ export class Game {
         }
       }
     }
-    if (!p.action && input.attack) this.startSwing(null, d);
+    if (!p.action && input.attack) this.mainAttack(d);
 
     // run current action
     p.moving = false;
@@ -1324,6 +1463,8 @@ export class Game {
     const s = SKILL_BY_ID[id];
     const p = this.player;
     if (!s) return { ok: false, why: "Unknown skill" };
+    if (s.cls === "any") return { ok: false, why: "Always available" };
+    if (s.cls !== p.cls) return { ok: false, why: `${CLASS_NAME[s.cls]} only` };
     const lvl = this.hardLevel(id);
     if (!s.implemented) return { ok: false, why: "Coming soon" };
     if (lvl >= MAX_SKILL_LVL) return { ok: false, why: "Maxed" };
@@ -1354,6 +1495,7 @@ export class Game {
   assignSlot(slot: number, id: string | null) {
     if (!Number.isInteger(slot) || slot < 0 || slot >= SKILL_SLOTS) return; // v0.9.3: buttons 1-3 only
     const p = this.player;
+    if (id && !isBasic(id) && SKILL_BY_ID[id]?.cls !== p.cls) return; // v1.0: only your own class's skills
     if (id) {
       const prev = p.slots.indexOf(id);
       if (prev >= 0) p.slots[prev] = null;
@@ -1464,11 +1606,14 @@ export class Game {
       const sn = Math.sin(ang);
       [ax, ay] = [ax * c - ay * sn, ax * sn + ay * c];
     }
-    const speed = b.kind === "spear" ? 15 : 13;
+    const speed = a.skill === "lightning_bolt" ? 20 : b.kind === "spear" ? 15 : 13;
     this.projectiles.push({
-      x: p.x + ax * 0.4, y: p.y + ay * 0.4, vx: ax * speed, vy: ay * speed, dist: 0, range: b.thrown!.range + 1,
-      hand: this.handFor(slot, true), handIdx, skill: a.skill, cls: it.baseId, t: 0,
+      x: p.x + ax * 0.4, y: p.y + ay * 0.4, vx: ax * speed, vy: ay * speed, dist: 0, range: b.thrown!.range + (a.skill === "lightning_bolt" ? 4 : 1),
+      hand: this.handFor(slot, true), handIdx, skill: a.skill, cls: a.skill === "lightning_bolt" ? "lbolt" : it.baseId, t: 0,
+      kind: a.skill === "lightning_bolt" ? "bolt" : "weapon", elem: a.skill === "lightning_bolt" ? "light" : a.skill === "poison_javelin" || a.skill === "plague_javelin" ? "poison" : undefined,
+      hits: [], trail: 0,
     });
+    if (a.skill === "lightning_bolt") this.events.sound("bolt");
     this.hitLog.push({ hand: handIdx, skill: a.skill ?? "throw", t: this.time });
     if (it.qty === 0) this.events.toast(`Out of ${b.name}s: they refill in camp (you can still fight with it)`);
     this.events.changed();
@@ -1478,23 +1623,60 @@ export class Game {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const q = this.projectiles[i];
       q.t += dt;
+      // Guided Arrow steers toward its target; charged bolts wander
+      if (q.homing) {
+        if (q.homing.state === "dead") q.homing = null;
+        else {
+          const sp = Math.hypot(q.vx, q.vy);
+          const dx = q.homing.x - q.x;
+          const dy = q.homing.y - q.y;
+          const l = Math.hypot(dx, dy) || 1;
+          q.vx = (dx / l) * sp;
+          q.vy = (dy / l) * sp;
+          q.range = Math.max(q.range, q.dist + 2);
+        }
+      } else if (q.kind === "cbolt" && Math.random() < dt * 8) {
+        const an = Math.atan2(q.vy, q.vx) + rand(-0.9, 0.9);
+        const sp = Math.hypot(q.vx, q.vy);
+        q.vx = Math.cos(an) * sp;
+        q.vy = Math.sin(an) * sp;
+      }
       const steps = 3;
       let gone = false;
       for (let k = 0; k < steps && !gone; k++) {
+        const stepLen = (Math.hypot(q.vx, q.vy) * dt) / steps;
         q.x += (q.vx * dt) / steps;
         q.y += (q.vy * dt) / steps;
-        q.dist += (Math.hypot(q.vx, q.vy) * dt) / steps;
+        q.dist += stepLen;
+        if (q.skill === "poison_javelin") {
+          q.trail = (q.trail ?? 0) + stepLen;
+          if (q.trail > 0.8) {
+            q.trail = 0;
+            const lvl = this.skillLevel("poison_javelin");
+            this.addPatch(q.x, q.y, 0.9, 1.8, this.avgHit(q.hand) * (poisonJavDps(lvl) / 100), "poison");
+          }
+        }
         if (this.blocked(q.x, q.y, 0.05) || q.dist > q.range) {
           gone = true;
+          if (q.skill === "plague_javelin") this.plague(q.x - q.vx * 0.02, q.y - q.vy * 0.02, this.skillLevel("plague_javelin"), this.avgHit(q.hand));
+          if (q.kind === "arrow" && (q.skill === "exploding_arrow" || q.skill === "immolation_arrow" || q.skill === "freezing_arrow") && !this.blocked(q.x, q.y, 0.05)) {
+            // arrows that run out of range still go off where they land
+            const lvl = this.skillLevel(q.skill);
+            const avg = this.avgHit(q.hand);
+            if (q.skill === "freezing_arrow") this.burst(q.x, q.y, 2, avg * (freezingDmg(lvl) / 100), "cold", { freeze: freezingFreeze(lvl) });
+            else this.burst(q.x, q.y, 1.6, avg * ((q.skill === "exploding_arrow" ? explodingDmg(lvl) : immolationDmg(lvl)) / 100), "fire");
+            if (q.skill === "immolation_arrow") this.addPatch(q.x, q.y, 1.5, immolationDur(lvl), avg * (immolationDps(lvl) / 100), "fire");
+          }
           break;
         }
         for (const m of this.monsters) {
-          if (m.state === "dead") continue;
+          if (m.state === "dead" || q.hits?.includes(m.id)) continue;
           if (Math.hypot(m.x - q.x, m.y - q.y) < m.def.radius + 0.22) {
-            const lvl = q.skill === "double_throw" ? this.skillLevel("double_throw") : 0;
-            this.playerHit(m, q.hand, { arPct: lvl ? doubleThrowAR(lvl) : 0, knock: 1.2 });
-            gone = true;
-            break;
+            (q.hits ??= []).push(m.id);
+            if (!this.projHit(q, m)) {
+              gone = true;
+              break;
+            }
           }
         }
       }
@@ -1502,11 +1684,61 @@ export class Game {
     }
   }
 
-  private startSwing(skill: string | null, d: Derived) {
+  /** v1.0: the main ⚔ button: the chosen basic attack, or automatic (shoot with a bow, throw a throwing weapon, else attack). */
+  mainBasic(): BasicId {
     const p = this.player;
-    const th = this.throwHands(skill, d);
+    if (p.mainAtk) return p.mainAtk;
+    if (isBow(p.equip.main)) return "basic_shoot";
+    return "basic_attack"; // "attack" still throws a throwing weapon automatically, like before v1.0
+  }
+  private mainAttack(d: Derived) {
+    const p = this.player;
+    const id = p.mainAtk;
+    if (!id) {
+      if (isBow(p.equip.main)) this.castBasic("basic_shoot", d);
+      else this.startSwing(null, d); // auto: throws a throwing weapon with a stack, else melee
+      return;
+    }
+    if (!this.castBasic(id, d) && id !== "basic_attack") this.startSwing(null, d, true);
+  }
+  /** v1.0: basic attacks (no mana, no points). Returns false when it can't be used right now. */
+  castBasic(id: BasicId, d: Derived): boolean {
+    const p = this.player;
+    if (id === "basic_shoot" || (id === "basic_attack" && isBow(p.equip.main))) {
+      if (!isBow(p.equip.main)) {
+        this.hint("Needs a bow");
+        return false;
+      }
+      if (!this.hasArrows()) {
+        this.hint("No arrows: equip a quiver (refills in camp)");
+        return false;
+      }
+      this.startShoot(null, d);
+      return true;
+    }
+    if (id === "basic_throw") {
+      const th = this.throwHands(null, d);
+      if (!th) {
+        const w = p.equip.main ?? p.equip.off;
+        this.hint(isThrowing(w) ? `Out of ${BASE_BY_ID[w!.baseId].name}s (refill in camp)` : "Needs a throwing weapon");
+        return false;
+      }
+      this.startThrow(null, th, d);
+      return true;
+    }
+    this.startSwing(null, d, true);
+    return true;
+  }
+  hasArrows(): boolean {
+    const q = this.player.equip.off;
+    return isQuiver(q) && (q!.qty ?? 0) > 0;
+  }
+
+  private startSwing(skill: string | null, d: Derived, melee = false) {
+    const p = this.player;
+    const th = melee || (skill && SPEAR_MELEE.has(skill)) ? null : this.throwHands(skill, d);
     if (th) return this.startThrow(skill, th, d);
-    const target = this.nearestMonster(2.4);
+    const target = this.nearestMonster(2.4 + this.reachBonus());
     if (target) {
       const dx = target.x - p.x;
       const dy = target.y - p.y;
@@ -1519,7 +1751,17 @@ export class Game {
     }
     let hands: number[];
     let dur: number;
-    if (skill && TWO_HIT.has(skill)) {
+    let hitAt: number[] | null = null;
+    if (skill === "jab") {
+      // three quick stabs
+      hands = [0, 0, 0];
+      dur = d.hands[0].speed * 1.2;
+      hitAt = [0.25, 0.52, 0.8];
+    } else if (skill === "impale") {
+      hands = [0];
+      dur = d.hands[0].speed * 1.5;
+      hitAt = [0.62];
+    } else if (skill && TWO_HIT.has(skill)) {
       // one hit with each weapon when dual wielding, otherwise two with the main hand
       hands = d.dual ? [0, 1] : [0, 0];
       dur = ((d.hands[hands[0]].speed + d.hands[hands[1]].speed) / 2) * (skill === "frenzy" ? 0.9 : 1.05);
@@ -1530,16 +1772,356 @@ export class Game {
       if (d.dual) p.nextHand = 1 - h;
     }
     dur /= 1 + d.ias;
-    p.action = { type: "swing", skill, t: 0, dur, hitAt: hands.length === 2 ? [0.32, 0.72] : [0.5], hands, hitsDone: 0, target };
+    p.action = { type: "swing", skill, t: 0, dur, hitAt: hitAt ?? (hands.length === 2 ? [0.32, 0.72] : [0.5]), hands, hitsDone: 0, target };
     p.moveTarget = null;
     this.events.sound("swing");
   }
 
+  // ------------------------------------------------------------------ v1.0 bows and Amazon effects
+  /** Extra melee reach: spears reach further, javelins a little. */
+  reachBonus(): number {
+    const it = this.player.equip.main;
+    const b = it ? BASE_BY_ID[it.baseId] : null;
+    return b?.reach ?? (b?.kind === "spear" ? 0.2 : 0);
+  }
+  private bowRange(): number {
+    const it = this.player.equip.main;
+    return (it && BASE_BY_ID[it.baseId].range) || 11;
+  }
+  /** Strafe: the monsters in range and in sight, nearest first. */
+  strafeTargets(lvl: number): Monster[] {
+    const p = this.player;
+    const R = this.bowRange();
+    const list = this.monsters
+      .filter((m) => m.state !== "dead" && Math.hypot(m.x - p.x, m.y - p.y) < R && lineOfSight(this.level, p.x, p.y, m.x, m.y))
+      .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y));
+    return list.slice(0, strafeArrows(lvl));
+  }
+  /** Draw and shoot (Strafe: one arrow per target in quick succession). */
+  startShoot(skill: string | null, d: Derived) {
+    const p = this.player;
+    const h = d.hands[0];
+    let dur = h.speed / (1 + d.ias);
+    let releaseAt = [0.62];
+    let targets: Monster[] = [];
+    let target: Monster | null = null;
+    if (skill === "strafe") {
+      const lvl = this.skillLevel("strafe");
+      targets = this.strafeTargets(lvl);
+      const n = strafeArrows(lvl);
+      dur = (h.speed * (0.5 + 0.28 * n)) / (1 + d.ias);
+      releaseAt = Array.from({ length: n }, (_, i) => 0.15 + (0.78 * i) / (n - 1));
+      target = targets[0] ?? null;
+    } else target = this.nearestMonster(this.bowRange());
+    if (target) {
+      const dx = target.x - p.x;
+      const dy = target.y - p.y;
+      const l = Math.hypot(dx, dy) || 1;
+      p.fx = dx / l;
+      p.fy = dy / l;
+    } else if (this.moveDir.active) {
+      p.fx = this.moveDir.x;
+      p.fy = this.moveDir.y;
+    }
+    p.action = { type: "shoot", skill, t: 0, dur, releaseAt, done: 0, target, targets };
+    p.moveTarget = null;
+  }
+  /** Let an arrow (or a fan of them) fly. */
+  private releaseArrow(a: Extract<Action, { type: "shoot" }>, i: number) {
+    const p = this.player;
+    const q = p.equip.off;
+    const free = a.skill === "magic_arrow";
+    if (!free) {
+      if (!isQuiver(q) || (q!.qty ?? 0) <= 0) return;
+      q!.qty = (q!.qty ?? 0) - 1;
+    }
+    let t: Monster | null = a.skill === "strafe" && a.targets.length ? a.targets[i % a.targets.length] : a.target;
+    if (t && t.state === "dead") t = a.skill === "strafe" ? a.targets.find((m) => m.state !== "dead") ?? null : null;
+    let ang = Math.atan2(p.fy, p.fx);
+    if (t) {
+      ang = Math.atan2(t.y - p.y, t.x - p.x);
+      p.fx = Math.cos(ang);
+      p.fy = Math.sin(ang);
+    }
+    const hand = this.handFor("main");
+    const lvl = a.skill ? this.skillLevel(a.skill) : 0;
+    const n = a.skill === "multiple_shot" ? multiShotArrows(lvl) : 1;
+    const spread = n > 1 ? Math.min(1.1, 0.11 * (n - 1)) : 0;
+    const elem: Elem | undefined =
+      a.skill === "fire_arrow" || a.skill === "exploding_arrow" || a.skill === "immolation_arrow" ? "fire"
+      : a.skill === "cold_arrow" || a.skill === "ice_arrow" || a.skill === "freezing_arrow" ? "cold"
+      : undefined;
+    for (let k = 0; k < n; k++) {
+      const an = ang + (n > 1 ? -spread / 2 + (spread * k) / (n - 1) : 0);
+      const sp = 17;
+      this.projectiles.push({
+        x: p.x + Math.cos(an) * 0.4, y: p.y + Math.sin(an) * 0.4, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp, dist: 0, range: this.bowRange() + 1,
+        hand, handIdx: 0, skill: a.skill, cls: a.skill === "magic_arrow" ? "magic_arrow" : "arrow", t: 0, kind: "arrow", elem, hits: [],
+        homing: a.skill === "guided_arrow" ? t : null,
+      });
+    }
+    this.hitLog.push({ hand: 0, skill: a.skill ?? "shoot", t: this.time });
+    if (this.hitLog.length > 40) this.hitLog.shift();
+    this.events.sound("shoot");
+    if (!free && q!.qty === 0) this.events.toast("Out of arrows: your quiver refills in camp");
+    this.events.changed();
+  }
+  /** Average hit of a hand, for the elemental parts of Amazon skills (they scale with the weapon). */
+  private avgHit(h: Hand) {
+    return ((h.min + h.max) / 2) * (1 + h.dmgPct / 100);
+  }
+  /** Elemental (non-weapon) damage: always hits; cold can slow or freeze. */
+  elemHit(m: Monster, dmg: number, elem: Elem, o: { chill?: number; freeze?: number; quiet?: boolean } = {}) {
+    if (m.state === "dead") return;
+    if (m.state === "idle") this.aggroPack(m);
+    const n = Math.max(1, Math.round(dmg));
+    m.hp -= n;
+    m.flash = 1;
+    m.lastHurt = this.time;
+    this.chillOrFreeze(m, o.chill, o.freeze);
+    this.floatAt(m.x, m.y, `${n}`, ELEM_COLOR[elem], o.quiet ? 11 : 14);
+    if (!o.quiet) for (let i = 0; i < 4; i++) this.spark(m.x, m.y, ELEM_COLOR[elem], 2.5);
+    if (m.hp <= 0) this.kill(m);
+  }
+  private chillOrFreeze(m: Monster, chill?: number, freeze?: number) {
+    const k = m.def.rank === "final" ? 1 / 3 : m.def.rank === "boss" ? 1 / 2 : 1;
+    if (chill) m.chillT = Math.max(m.chillT ?? 0, chill * (k < 1 ? 0.6 : 1));
+    if (freeze) {
+      m.stunT = Math.max(m.stunT, freeze * k);
+      m.frozenT = Math.max(m.frozenT ?? 0, freeze * k);
+      m.chillT = Math.max(m.chillT ?? 0, freeze * k + 1);
+      if (m.state === "attack") m.state = "chase";
+    }
+  }
+  /** Fire/cold burst around a point (Exploding, Immolation, Freezing Arrow). */
+  private burst(x: number, y: number, r: number, dmg: number, elem: Elem, o: { freeze?: number } = {}) {
+    this.rings.push({ x, y, t: 0, life: 0.45, radius: r, color: elem === "cold" ? "rgba(150,210,255," : "rgba(255,140,50," });
+    for (let k = 0; k < 18; k++) this.spark(x + rand(-r, r) * 0.6, y + rand(-r, r) * 0.6, ELEM_COLOR[elem], 3);
+    for (const m of [...this.monsters]) if (m.state !== "dead" && Math.hypot(m.x - x, m.y - y) < r + m.def.radius) this.elemHit(m, dmg * rand(0.85, 1.15), elem, o);
+    this.events.sound(elem === "cold" ? "chill" : "nova");
+  }
+  /** Chain or fan out lightning to nearby monsters (Lightning Strike, Lightning Fury). */
+  private chain(from: Monster | { x: number; y: number }, count: number, dmg: number, radius: number, fan: boolean) {
+    const hit = new Set<Monster>();
+    if ("id" in from) hit.add(from);
+    let cur = { x: from.x, y: from.y };
+    for (let i = 0; i < count; i++) {
+      let best: Monster | null = null;
+      let bd = radius;
+      const at = fan ? { x: from.x, y: from.y } : cur;
+      for (const m of this.monsters) {
+        if (m.state === "dead" || hit.has(m)) continue;
+        const dd = Math.hypot(m.x - at.x, m.y - at.y);
+        if (dd < bd) {
+          bd = dd;
+          best = m;
+        }
+      }
+      if (!best) break;
+      hit.add(best);
+      this.zap(at.x, at.y, best.x, best.y);
+      this.elemHit(best, dmg * rand(0.85, 1.15), "light");
+      cur = { x: best.x, y: best.y };
+    }
+    this.events.sound("bolt");
+  }
+  private zap(x1: number, y1: number, x2: number, y2: number) {
+    const pts = [{ x: x1, y: y1 }];
+    const n = Math.max(3, Math.round(Math.hypot(x2 - x1, y2 - y1) * 2));
+    for (let i = 1; i < n; i++) pts.push({ x: x1 + ((x2 - x1) * i) / n + rand(-0.25, 0.25), y: y1 + ((y2 - y1) * i) / n + rand(-0.25, 0.25) });
+    pts.push({ x: x2, y: y2 });
+    this.zaps.push({ pts, t: 0, life: 0.28 });
+  }
+  /** Charged Strike: small bolts that wander outward. */
+  private chargedBolts(x: number, y: number, n: number, hand: Hand, skill: string) {
+    const base = Math.atan2(this.player.fy, this.player.fx);
+    for (let i = 0; i < n; i++) {
+      const a = base + (i - (n - 1) / 2) * 0.55 + rand(-0.2, 0.2);
+      this.projectiles.push({ x, y, vx: Math.cos(a) * 6, vy: Math.sin(a) * 6, dist: 0, range: 6, hand, handIdx: 0, skill, cls: "cbolt", t: 0, kind: "cbolt", elem: "light", hits: [] });
+    }
+  }
+  private addPatch(x: number, y: number, r: number, life: number, dps: number, elem: Elem) {
+    this.patches.push({ x, y, r, t: 0, life, dps, elem, tick: 0 });
+  }
+  private updatePatches(dt: number) {
+    for (let i = this.patches.length - 1; i >= 0; i--) {
+      const pa = this.patches[i];
+      pa.t += dt;
+      pa.tick -= dt;
+      if (pa.tick <= 0) {
+        pa.tick += 0.5;
+        for (const m of [...this.monsters]) if (m.state !== "dead" && Math.hypot(m.x - pa.x, m.y - pa.y) < pa.r + m.def.radius) this.elemHit(m, pa.dps * 0.5, pa.elem, { quiet: true });
+      }
+      if (Math.random() < dt * 10) this.spark(pa.x + rand(-pa.r, pa.r) * 0.7, pa.y + rand(-pa.r, pa.r) * 0.7, ELEM_COLOR[pa.elem], 1.5);
+      if (pa.t >= pa.life) this.patches.splice(i, 1);
+    }
+    for (const z of this.zaps) z.t += dt;
+    if (this.zaps.length) this.zaps = this.zaps.filter((z) => z.t < z.life);
+  }
+  /** What a projectile does when it reaches a monster. Returns true if it keeps flying. */
+  private projHit(q: Projectile, m: Monster): boolean {
+    const sk = q.skill;
+    const lvl = sk ? this.skillLevel(sk) : 0;
+    const avg = this.avgHit(q.hand);
+    const pierce = () => chance(pierceChance(this.skillLevel("pierce")) / 100);
+    if (q.kind === "cbolt") {
+      this.elemHit(m, avg * (chargedStrikeDmg(lvl) / 100), "light");
+      return false;
+    }
+    if (q.kind === "bolt") {
+      this.elemHit(m, avg * (lightningBoltDmg(lvl) / 100), "light");
+      return true; // Lightning Bolt passes through everything
+    }
+    if (q.kind === "arrow") {
+      switch (sk) {
+        case "magic_arrow": this.playerHit(m, q.hand, { dmgPct: magicArrowDmg(lvl), magic: true, knock: 1 }); break;
+        case "fire_arrow": this.playerHit(m, q.hand, { elem: { e: "fire", pct: fireArrowDmg(lvl) }, knock: 1 }); break;
+        case "cold_arrow": this.playerHit(m, q.hand, { elem: { e: "cold", pct: coldArrowDmg(lvl) }, chill: coldArrowChill(lvl), knock: 1 }); break;
+        case "ice_arrow": this.playerHit(m, q.hand, { elem: { e: "cold", pct: iceArrowDmg(lvl) }, freeze: iceArrowFreeze(lvl), knock: 1 }); break;
+        case "multiple_shot": this.playerHit(m, q.hand, { dmgPct: MULTI_DMG, knock: 1 }); break;
+        case "guided_arrow": this.playerHit(m, q.hand, { dmgPct: guidedDmg(lvl), sure: true, knock: 1.5 }); break;
+        case "strafe": this.playerHit(m, q.hand, { dmgPct: strafeDmg(lvl), knock: 1 }); break;
+        case "exploding_arrow":
+          this.playerHit(m, q.hand, { knock: 1 });
+          this.burst(q.x, q.y, 1.6, avg * (explodingDmg(lvl) / 100), "fire");
+          return false;
+        case "immolation_arrow":
+          this.playerHit(m, q.hand, { knock: 1 });
+          this.burst(q.x, q.y, 1.6, avg * (immolationDmg(lvl) / 100), "fire");
+          this.addPatch(q.x, q.y, 1.5, immolationDur(lvl), avg * (immolationDps(lvl) / 100), "fire");
+          return false;
+        case "freezing_arrow":
+          this.playerHit(m, q.hand, { knock: 1 });
+          this.burst(q.x, q.y, 2, avg * (freezingDmg(lvl) / 100), "cold", { freeze: freezingFreeze(lvl) });
+          return false;
+        default: this.playerHit(m, q.hand, { knock: 1.2 });
+      }
+      return sk !== "guided_arrow" && pierce();
+    }
+    // thrown weapons
+    const dtl = sk === "double_throw" ? this.skillLevel("double_throw") : 0;
+    if (sk === "plague_javelin") {
+      this.playerHit(m, q.hand, { knock: 1 });
+      this.plague(q.x, q.y, lvl, avg);
+      return false;
+    }
+    if (sk === "lightning_fury") {
+      this.playerHit(m, q.hand, { knock: 1 });
+      this.chain({ x: q.x, y: q.y }, furyBolts(lvl), avg * (furyDmg(lvl) / 100), 6, true);
+      return false;
+    }
+    this.playerHit(m, q.hand, { arPct: dtl ? doubleThrowAR(dtl) : 0, knock: 1.2 });
+    return pierce();
+  }
+  private plague(x: number, y: number, lvl: number, avg: number) {
+    this.addPatch(x, y, 2.2, 3, avg * (plagueDps(lvl) / 100), "poison");
+    this.rings.push({ x, y, t: 0, life: 0.6, radius: 2.2, color: "rgba(140,224,74," });
+    this.events.sound("poison");
+  }
+  /** Decoy and Valkyrie. */
+  private updateAllies(dt: number) {
+    const p = this.player;
+    for (let i = this.allies.length - 1; i >= 0; i--) {
+      const a = this.allies[i];
+      a.t += dt;
+      a.swingT = Math.max(0, a.swingT - dt);
+      a.moving = false;
+      if (a.hp <= 0 || a.t >= a.life) {
+        for (let k = 0; k < 14; k++) this.spark(a.x, a.y, a.kind === "valkyrie" ? "#bcd8ff" : "#ffe8c0", 2.5);
+        if (a.hp <= 0) this.floatAt(a.x, a.y, a.kind === "valkyrie" ? "The Valkyrie falls" : "Decoy destroyed", "#bcd8ff", 12);
+        this.allies.splice(i, 1);
+        continue;
+      }
+      if (a.kind !== "valkyrie") continue;
+      // the Valkyrie fights the nearest monster near her (or near you), else follows you
+      let tgt: Monster | null = null;
+      let bd = 7;
+      for (const m of this.monsters) {
+        if (m.state === "dead") continue;
+        const dd = Math.min(Math.hypot(m.x - a.x, m.y - a.y), Math.hypot(m.x - p.x, m.y - p.y) + 1);
+        if (dd < bd) {
+          bd = dd;
+          tgt = m;
+        }
+      }
+      const goTo = (x: number, y: number, stop: number) => {
+        const dx = x - a.x;
+        const dy = y - a.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > stop) {
+          const sp = 4.6 * dt;
+          this.moveEntity(a, (dx / dist) * Math.min(sp, dist - stop), (dy / dist) * Math.min(sp, dist - stop), 0.25);
+          a.fx = dx / dist;
+          a.fy = dy / dist;
+          a.moving = true;
+          a.walkPhase += dt * 4.6 * 3.2;
+        }
+        return dist;
+      };
+      if (tgt) {
+        const dist = goTo(tgt.x, tgt.y, tgt.def.radius + 0.75);
+        a.atkT -= dt;
+        if (dist <= tgt.def.radius + 0.95 && a.atkT <= 0) {
+          a.atkT = 0.9;
+          a.swingT = 0.4;
+          const fx = tgt.x - a.x;
+          const fy = tgt.y - a.y;
+          const l = Math.hypot(fx, fy) || 1;
+          a.fx = fx / l;
+          a.fy = fy / l;
+          const lvl = this.skillLevel("valkyrie") || 1;
+          const [mn, mx] = itemDamage(makeItem("spear", p.level));
+          const h = { ...this.handFor("main"), min: mn, max: mx, dmgPct: valkDmg(lvl) + p.level * 2, kind: "spear" as const, missile: false, crit: 0 };
+          this.playerHit(tgt, h, { knock: 1.5, noLeech: true });
+        }
+      } else goTo(p.x - p.fx * 1.2, p.y - p.fy * 1.2, 0.6);
+    }
+  }
+  /** v1.0: a Decoy pulls nearby normal monsters; the Valkyrie holds the monsters right next to her. */
+  private lureFor(m: Monster): Ally | null {
+    if (!this.allies.length) return null;
+    const p = this.player;
+    for (const a of this.allies) {
+      const da = Math.hypot(m.x - a.x, m.y - a.y);
+      if (a.kind === "decoy" && m.def.rank === "normal" && da < 8 && da < Math.hypot(m.x - p.x, m.y - p.y) + 2) return a;
+      if (a.kind === "valkyrie" && m.def.rank !== "final" && da < 1.6 + m.def.radius) return a;
+    }
+    return null;
+  }
+
+  /** A short message over the hero, at most every 0.8 s (so a held button doesn't spam it). */
+  private hintT = -99;
+  hint(text: string) {
+    if (this.time - this.hintT < 0.8) return;
+    this.hintT = this.time;
+    this.floatAt(this.player.x, this.player.y, text, "#ccc", 12);
+  }
+
   castSkill(id: string, d: Derived): boolean {
     const p = this.player;
+    if (isBasic(id)) return this.castBasic(id, d);
     const s = SKILL_BY_ID[id];
     const lvl = this.skillLevel(id);
     if (!s || !lvl || !s.implemented || s.kind !== "active") return false;
+    // v1.0 Amazon weapon requirements (checked before mana, like D2's greyed-out skills)
+    if (SPEAR_MELEE.has(id) && !isSpearLike(p.equip.main)) {
+      this.hint("Needs a javelin or spear");
+      return false;
+    }
+    if (JAV_THROWS.has(id) && !(isThrowing(p.equip.main) && isSpearLike(p.equip.main) && (p.equip.main!.qty ?? 0) > 0)) {
+      this.hint(isThrowing(p.equip.main) && isSpearLike(p.equip.main) ? "Out of javelins (refill in camp)" : "Needs throwing javelins");
+      return false;
+    }
+    if (BOW_SKILLS.has(id)) {
+      if (!isBow(p.equip.main)) {
+        this.hint("Needs a bow");
+        return false;
+      }
+      if (id !== "magic_arrow" && !this.hasArrows()) {
+        this.hint("No arrows: equip a quiver (refills in camp)");
+        return false;
+      }
+    }
     const cost = s.mana ? s.mana(lvl) : 0;
     if (p.mana < cost) {
       this.floatAt(p.x, p.y, "Not enough mana", "#6aa6ff", 13);
@@ -1557,11 +2139,29 @@ export class Game {
         }
       }
       // fall back to a normal attack for melee skills so holding the button still swings
-      if (MELEE_SKILLS.has(id) || id === "double_throw") {
+      if (MELEE_SKILLS.has(id) || id === "double_throw" || JAV_THROWS.has(id)) {
         this.startSwing(null, d);
         return true;
       }
+      if (BOW_SKILLS.has(id) && this.hasArrows()) {
+        this.startShoot(null, d);
+        return true;
+      }
       return false;
+    }
+    if (JAV_THROWS.has(id)) {
+      p.mana -= cost;
+      this.startThrow(id, [0], d);
+      return true;
+    }
+    if (BOW_SKILLS.has(id)) {
+      if (id === "strafe" && !this.strafeTargets(lvl).length) {
+        this.hint("No target");
+        return false;
+      }
+      p.mana -= cost;
+      this.startShoot(id, d);
+      return true;
     }
     if (id === "double_throw") {
       const hands = this.throwHands(id, d);
@@ -1582,6 +2182,50 @@ export class Game {
       return true;
     }
     switch (id) {
+      case "inner_sight": {
+        p.mana -= cost;
+        let n = 0;
+        for (const m of this.monsters) {
+          if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > 9) continue;
+          m.sight = { t: innerSightDur(lvl), def: innerSightDef(lvl) };
+          n++;
+        }
+        this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.7, radius: 9, color: "rgba(255,240,160," });
+        p.action = { type: "cry", t: 0, dur: 0.4 };
+        this.floatAt(p.x, p.y, n ? `Inner Sight ×${n}` : "Inner Sight", "#fff0a0", 13);
+        this.events.sound("shout");
+        return true;
+      }
+      case "slow_missiles": {
+        p.mana -= cost;
+        p.buffs.slowm = slowMissilesDur(lvl);
+        this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.7, radius: 10, color: "rgba(160,200,255," });
+        p.action = { type: "cry", t: 0, dur: 0.4 };
+        this.floatAt(p.x, p.y, "Slow Missiles", "#a0c8ff", 13);
+        this.events.sound("shout");
+        this.events.changed();
+        return true;
+      }
+      case "decoy":
+      case "valkyrie": {
+        p.mana -= cost;
+        const kind = id;
+        this.allies = this.allies.filter((a) => a.kind !== kind); // one of each, like D2
+        const ang = Math.atan2(p.fy, p.fx);
+        let x = p.x + Math.cos(ang) * 1.4;
+        let y = p.y + Math.sin(ang) * 1.4;
+        if (this.blocked(x, y, 0.25)) {
+          x = p.x;
+          y = p.y;
+        }
+        const maxHp = Math.round(d.maxHp * (kind === "valkyrie" ? valkLife(lvl) / 100 : 0.6 + lvl * 0.1));
+        this.allies.push({ kind, x, y, fx: p.fx, fy: p.fy, hp: maxHp, maxHp, t: 0, life: kind === "decoy" ? decoyDur(lvl) : Infinity, atkT: 0.5, swingT: 0, walkPhase: 0, moving: false });
+        this.rings.push({ x, y, t: 0, life: 0.6, radius: 1.6, color: kind === "valkyrie" ? "rgba(170,210,255," : "rgba(255,230,180," });
+        for (let i = 0; i < 14; i++) this.spark(x, y, kind === "valkyrie" ? "#bcd8ff" : "#ffe8c0", 2.5);
+        p.action = { type: "cry", t: 0, dur: 0.45 };
+        this.events.sound("summon");
+        return true;
+      }
       case "leap":
       case "leap_attack": {
         let tx: number;
@@ -1853,12 +2497,19 @@ export class Game {
         this.release(a, h);
       }
       if (a.t >= a.dur) p.action = null;
+    } else if (a.type === "shoot") {
+      while (a.done < a.releaseAt.length && a.t >= a.releaseAt[a.done] * a.dur) {
+        const i = a.done;
+        a.done++;
+        this.releaseArrow(a, i);
+      }
+      if (a.t >= a.dur) p.action = null;
     }
   }
 
   private resolveMelee(skill: string | null, preferred: Monster | null, d: Derived, hand = 0) {
     const p = this.player;
-    const reach = 0.95;
+    const reach = 0.95 + this.reachBonus();
     let target: Monster | null = null;
     const inReach = (m: Monster) => {
       if (m.state === "dead") return false;
@@ -1883,10 +2534,35 @@ export class Game {
     }
     this.hitLog.push({ hand, skill, t: this.time });
     if (this.hitLog.length > 40) this.hitLog.shift();
-    if (!target) return;
     const lvl = skill ? this.skillLevel(skill) : 0;
     const h = d.hands[hand] ?? d.hands[0];
-    if (skill === "bash") this.playerHit(target, h, { dmgPct: bashDmg(lvl), arPct: bashAR(lvl), knock: 6 });
+    if (skill === "fend") {
+      // every monster in reach, all around
+      let any = false;
+      for (const m of [...this.monsters]) {
+        if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > reach + m.def.radius + p.r) continue;
+        this.playerHit(m, h, { dmgPct: fendDmg(lvl), arPct: fendAR(lvl), knock: 2 });
+        any = true;
+      }
+      if (any) this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.3, radius: reach + 0.6, color: "rgba(230,230,240," });
+      return;
+    }
+    if (!target) return;
+    const avg = this.avgHit(h);
+    if (skill === "jab") this.playerHit(target, h, { dmgPct: jabDmg(lvl), arPct: jabAR(lvl), knock: 0.8 });
+    else if (skill === "power_strike") this.playerHit(target, h, { elem: { e: "light", pct: powerStrikeLight(lvl) }, knock: 2 });
+    else if (skill === "impale") this.playerHit(target, h, { dmgPct: impaleDmg(lvl), arPct: impaleAR(lvl), knock: 4 });
+    else if (skill === "charged_strike") {
+      this.playerHit(target, h, { knock: 1.5 });
+      this.chargedBolts(target.x, target.y, chargedStrikeBolts(lvl), h, "charged_strike");
+      this.events.sound("bolt");
+    } else if (skill === "lightning_strike") {
+      if (this.playerHit(target, h, { knock: 1.5 })) {
+        this.zap(p.x, p.y, target.x, target.y);
+        this.elemHit(target, avg * (lightningStrikeDmg(lvl) / 100), "light");
+        this.chain(target, lightningStrikeHits(lvl), avg * (lightningStrikeDmg(lvl) / 100), 3.5, false);
+      }
+    } else if (skill === "bash") this.playerHit(target, h, { dmgPct: bashDmg(lvl), arPct: bashAR(lvl), knock: 6 });
     else if (skill === "stun") this.playerHit(target, h, { arPct: stunAR(lvl), stun: stunDur(lvl), knock: 1.5 });
     else if (skill === "double_swing") this.playerHit(target, h, { arPct: doubleSwingAR(lvl), knock: 1.5 });
     else if (skill === "concentrate") this.playerHit(target, h, { dmgPct: concDmg(lvl), arPct: concAR(lvl), knock: 2 });
@@ -1901,14 +2577,17 @@ export class Game {
     } else this.playerHit(target, h, { knock: 1.8 });
   }
 
-  private playerHit(m: Monster, d: Hand, o: { dmgPct?: number; arPct?: number; knock?: number; stun?: number; magic?: boolean }): boolean {
+  private playerHit(
+    m: Monster, d: Hand,
+    o: { dmgPct?: number; arPct?: number; knock?: number; stun?: number; magic?: boolean; elem?: { e: Elem; pct: number }; sure?: boolean; chill?: number; freeze?: number; noLeech?: boolean },
+  ): boolean {
     const p = this.player;
     const ar = d.ar * (1 + (o.arPct ?? 0) / 100);
-    // Battle Cry lowers defense; Berserk (magic) ignores it
-    const def = o.magic ? 0 : m.defense * (m.bcry.t > 0 ? 1 - m.bcry.def / 100 : 1);
+    // Battle Cry and Inner Sight lower defense; Berserk and Magic Arrow (magic) ignore it
+    const def = o.magic ? 0 : m.defense * (m.bcry.t > 0 ? 1 - m.bcry.def / 100 : 1) * (m.sight && m.sight.t > 0 ? 1 - m.sight.def / 100 : 1);
     const hitChance = Math.max(0.05, Math.min(0.95, 2 * (ar / (ar + def)) * (p.level / (p.level + m.mlvl))));
     if (m.state === "idle") this.aggroPack(m);
-    if (!chance(hitChance)) {
+    if (!o.sure && !chance(hitChance)) {
       this.floatAt(m.x, m.y, "Miss", "#b8b8b8", 13);
       this.events.sound("miss");
       return false;
@@ -1916,14 +2595,17 @@ export class Game {
     let dmg = randInt(d.min, d.max) * (1 + (d.dmgPct + (o.dmgPct ?? 0)) / 100);
     const crit = d.crit > 0 && chance(d.crit / 100);
     if (crit) dmg *= 2;
-    dmg = Math.max(1, Math.round(dmg));
+    // v1.0: elemental part (Fire/Cold/Ice Arrow, Power Strike): a share of the weapon's average hit, never doubled by crits
+    const extra = o.elem ? Math.max(1, Math.round(((d.min + d.max) / 2) * (1 + d.dmgPct / 100) * (o.elem.pct / 100) * rand(0.85, 1.15))) : 0;
+    dmg = Math.max(1, Math.round(dmg)) + extra;
     m.hp -= dmg;
     m.flash = 1;
     m.lastHurt = this.time;
+    if (o.chill || o.freeze) this.chillOrFreeze(m, o.chill, o.freeze);
     // life / mana leech from gear
     const dv = this.derived();
-    if (dv.ll > 0) p.hp = Math.min(dv.maxHp, p.hp + (dmg * dv.ll) / 100);
-    if (dv.ml > 0) p.mana = Math.min(dv.maxMana, p.mana + (dmg * dv.ml) / 100);
+    if (dv.ll > 0 && !o.noLeech) p.hp = Math.min(dv.maxHp, p.hp + (dmg * dv.ll) / 100);
+    if (dv.ml > 0 && !o.noLeech) p.mana = Math.min(dv.maxMana, p.mana + (dmg * dv.ml) / 100);
     const dx = m.x - p.x;
     const dy = m.y - p.y;
     const l = Math.hypot(dx, dy) || 1;
@@ -1935,7 +2617,7 @@ export class Game {
       m.state = "chase";
       m.atkT = Math.max(m.atkT, 0.4);
     }
-    this.floatAt(m.x, m.y, crit ? `${dmg}!` : `${dmg}`, crit ? "#ffd84a" : o.magic ? "#c89aff" : "#fff", crit ? 20 : 15);
+    this.floatAt(m.x, m.y, crit ? `${dmg}!` : `${dmg}`, crit ? "#ffd84a" : o.elem ? ELEM_COLOR[o.elem.e] : o.magic ? "#c89aff" : "#fff", crit ? 20 : 15);
     for (let i = 0; i < (crit ? 12 : 7); i++) this.spark(m.x, m.y, m.def.blood, 3);
     this.events.sound(crit ? "crit" : "hit");
     if (crit || o.stun) this.events.shake(crit ? 4 : 2);
@@ -2053,23 +2735,28 @@ export class Game {
       this.flowFrom = pi;
     }
     for (const m of this.monsters) {
-      m.flash = Math.max(0, m.flash - dt * 5);
+      // v1.0: Cold Arrow slows a monster to half speed (all its timers too); freezes and Inner Sight wear off
+      const mdt = m.chillT && m.chillT > 0 ? dt * 0.5 : dt;
+      if (m.chillT) m.chillT = Math.max(0, m.chillT - dt);
+      if (m.frozenT) m.frozenT = Math.max(0, m.frozenT - dt);
+      if (m.sight && m.sight.t > 0) m.sight.t -= dt;
+      m.flash = Math.max(0, m.flash - mdt * 5);
       if (m.state === "dead") {
-        m.deadT += dt;
+        m.deadT += mdt;
         if (Math.abs(m.kx) + Math.abs(m.ky) > 0.05) {
-          this.moveEntity(m, m.kx * dt, m.ky * dt, m.def.radius * 0.6);
-          m.kx *= Math.exp(-8 * dt);
-          m.ky *= Math.exp(-8 * dt);
+          this.moveEntity(m, m.kx * mdt, m.ky * mdt, m.def.radius * 0.6);
+          m.kx *= Math.exp(-8 * mdt);
+          m.ky *= Math.exp(-8 * mdt);
         }
         continue;
       }
       // knockback
       if (Math.abs(m.kx) + Math.abs(m.ky) > 0.05) {
-        this.moveEntity(m, m.kx * dt, m.ky * dt, m.def.radius);
-        m.kx *= Math.exp(-9 * dt);
-        m.ky *= Math.exp(-9 * dt);
+        this.moveEntity(m, m.kx * mdt, m.ky * mdt, m.def.radius);
+        m.kx *= Math.exp(-9 * mdt);
+        m.ky *= Math.exp(-9 * mdt);
       }
-      m.atkT = Math.max(0, m.atkT - dt);
+      m.atkT = Math.max(0, m.atkT - mdt);
       if (m.stunT > 0) {
         m.stunT -= dt;
         if (m.state === "attack") m.state = "chase";
@@ -2081,8 +2768,8 @@ export class Game {
       if (p.dead) {
         if (m.state !== "idle") m.state = "idle";
       }
-      if (m.taunt.t > 0) m.taunt.t -= dt;
-      if (m.bcry.t > 0) m.bcry.t -= dt;
+      if (m.taunt.t > 0) m.taunt.t -= mdt;
+      if (m.bcry.t > 0) m.bcry.t -= mdt;
       // Grim Ward: monsters near a totem are frightened away from it (bosses ignore it)
       if (this.wards.length && m.def.rank === "normal") {
         for (const w of this.wards) {
@@ -2093,18 +2780,39 @@ export class Game {
         }
       }
       if (m.fearT > 0) {
-        m.fearT -= dt;
+        m.fearT -= mdt;
         const fx = m.x - (m.flee ? m.flee.x : p.x);
         const fy = m.y - (m.flee ? m.flee.y : p.y);
         const fd = Math.hypot(fx, fy);
         if (fd > 0.01) {
-          this.moveEntity(m, (fx / fd) * m.def.speed * 1.1 * dt, (fy / fd) * m.def.speed * 1.1 * dt, m.def.radius);
+          this.moveEntity(m, (fx / fd) * m.def.speed * 1.1 * mdt, (fy / fd) * m.def.speed * 1.1 * mdt, m.def.radius);
           m.fx = fx / fd;
           m.fy = fy / fd;
-          m.walkPhase += dt * m.def.speed * 4;
+          m.walkPhase += mdt * m.def.speed * 4;
         }
         if (m.state === "attack") m.state = "chase";
         if (m.fearT <= 0) m.flee = null;
+        continue;
+      }
+      // v1.0: Decoy / Valkyrie draw this monster's attacks
+      const lure = !p.dead ? this.lureFor(m) : null;
+      if (lure) {
+        if (m.state === "idle") this.aggroPack(m);
+        m.state = "chase";
+        const lx = lure.x - m.x;
+        const ly = lure.y - m.y;
+        const ld = Math.hypot(lx, ly) || 1;
+        const lreach = (m.def.behavior === "ranged" ? Math.min(m.def.reach, 5) : m.def.reach + m.def.radius + 0.3);
+        m.fx = lx / ld;
+        m.fy = ly / ld;
+        if (ld > lreach) {
+          this.moveEntity(m, (lx / ld) * m.def.speed * mdt, (ly / ld) * m.def.speed * mdt, m.def.radius);
+          m.walkPhase += mdt * m.def.speed * 4;
+        } else if (m.atkT <= 0) {
+          m.atkT = m.def.atkInterval;
+          lure.hp -= rand(m.dmgMin, m.dmgMax) * this.weaken(m);
+          for (let k = 0; k < 3; k++) this.spark(lure.x, lure.y, lure.kind === "valkyrie" ? "#bcd8ff" : "#ffe8c0", 2);
+        }
         continue;
       }
       if (m.state === "idle") {
@@ -2113,7 +2821,7 @@ export class Game {
           if (m.def.rank !== "normal") this.events.sound("boss_aggro");
         } else {
           // wander near home
-          m.wanderT -= dt;
+          m.wanderT -= mdt;
           if (m.wanderT <= 0) {
             m.wanderT = rand(2, 5);
             const nx = m.homeX + rand(-1.5, 1.5);
@@ -2128,10 +2836,10 @@ export class Game {
           const wd = Math.hypot(wdx, wdy);
           if (wd > 0.15) {
             const s = m.def.speed * 0.4;
-            this.moveEntity(m, (wdx / wd) * s * dt, (wdy / wd) * s * dt, m.def.radius);
+            this.moveEntity(m, (wdx / wd) * s * mdt, (wdy / wd) * s * mdt, m.def.radius);
             m.fx = wdx / wd;
             m.fy = wdy / wd;
-            m.walkPhase += dt * s * 4;
+            m.walkPhase += mdt * s * 4;
           }
           continue;
         }
@@ -2144,26 +2852,26 @@ export class Game {
       }
       const ranged = m.def.behavior === "ranged";
       const reach = ranged ? m.def.reach : m.def.reach + m.def.radius + p.r;
-      m.cd = Math.max(0, m.cd - dt);
+      m.cd = Math.max(0, m.cd - mdt);
       if (m.slamT && m.slamT > 0) {
-        m.slamT -= dt;
+        m.slamT -= mdt;
         continue;
       }
       // exploder: lit fuse, then burst
       if (m.fuse >= 0) {
-        m.fuse -= dt;
+        m.fuse -= mdt;
         m.flash = 0.6 + 0.4 * Math.sin(this.time * 40);
         if (m.fuse <= 0) this.explode(m);
         continue;
       }
       // charging (chargers and some final bosses)
       if (m.charging > 0) {
-        m.charging -= dt;
+        m.charging -= mdt;
         const sp = m.def.speed * (m.def.rank === "final" ? 4 : 3.2);
         const ox = m.x;
         const oy = m.y;
-        this.moveEntity(m, m.cdx * sp * dt, m.cdy * sp * dt, m.def.radius);
-        m.walkPhase += dt * sp * 4;
+        this.moveEntity(m, m.cdx * sp * mdt, m.cdy * sp * mdt, m.def.radius);
+        m.walkPhase += mdt * sp * 4;
         if (Math.random() < 0.6) this.spark(m.x, m.y, "#c8b080", 1.5);
         const hitR = m.def.reach + m.def.radius + p.r;
         if (dist <= hitR && !p.dead) {
@@ -2172,7 +2880,7 @@ export class Game {
           this.monsterHit(m, d, 1.3);
           const l = dist || 1;
           this.moveEntity(p, (dx / l) * 0.6, (dy / l) * 0.6, p.r);
-        } else if (Math.hypot(m.x - ox, m.y - oy) < sp * dt * 0.3) m.charging = 0;
+        } else if (Math.hypot(m.x - ox, m.y - oy) < sp * mdt * 0.3) m.charging = 0;
         continue;
       }
       if (m.state !== "attack" && !p.dead) {
@@ -2198,7 +2906,7 @@ export class Game {
         }
       }
       if (m.state === "attack") {
-        m.windT -= dt;
+        m.windT -= mdt;
         if (dist > 0.01) {
           m.fx = dx / dist;
           m.fy = dy / dist;
@@ -2215,10 +2923,10 @@ export class Game {
       // ranged: back off when you get close, shoot when in range and in sight
       if (ranged && dist < 3 && m.atkT > 0.3 && lineOfSight(this.level, m.x, m.y, p.x, p.y)) {
         const sp = m.def.speed * 0.85;
-        this.moveEntity(m, (-dx / dist) * sp * dt, (-dy / dist) * sp * dt, m.def.radius);
+        this.moveEntity(m, (-dx / dist) * sp * mdt, (-dy / dist) * sp * mdt, m.def.radius);
         m.fx = dx / dist;
         m.fy = dy / dist;
-        m.walkPhase += dt * sp * 4;
+        m.walkPhase += mdt * sp * 4;
         continue;
       }
       if (ranged && dist <= reach && !lineOfSight(this.level, m.x, m.y, p.x, p.y)) {
@@ -2284,10 +2992,10 @@ export class Game {
       }
       const ml = Math.hypot(mx, my) || 1;
       const sp = m.def.speed;
-      this.moveEntity(m, (mx / ml) * sp * dt, (my / ml) * sp * dt, m.def.radius);
+      this.moveEntity(m, (mx / ml) * sp * mdt, (my / ml) * sp * mdt, m.def.radius);
       m.fx = mx / ml;
       m.fy = my / ml;
-      m.walkPhase += dt * sp * 4;
+      m.walkPhase += mdt * sp * 4;
     }
   }
 
@@ -2316,9 +3024,23 @@ export class Game {
    * Damage the player. Physical damage rolls to hit against defense; elemental damage is cut by the
    * matching resist. Cold chills (slower movement), poison deals part of the damage over time.
    */
-  hurtPlayer(src: { ar: number; mlvl: number; dmgMin: number; dmgMax: number; elem: Elem; big: boolean }, d: Derived, roll: boolean) {
+  hurtPlayer(src: { ar: number; mlvl: number; dmgMin: number; dmgMax: number; elem: Elem; big: boolean }, d: Derived, roll: boolean, how: "melee" | "missile" | "area" = "melee") {
     const p = this.player;
     if (p.dead || p.action?.type === "leap") return;
+    // v1.0 Amazon: Dodge (melee, standing or attacking), Avoid (missiles), Evade (anything while moving)
+    if (how !== "area") {
+      const moving = p.moving;
+      const word =
+        how === "melee" && !moving && chance(dodgeChance(this.skillLevel("dodge")) / 100) ? "Dodge"
+        : how === "missile" && chance(avoidChance(this.skillLevel("avoid")) / 100) ? "Avoid"
+        : moving && chance(evadeChance(this.skillLevel("evade")) / 100) ? "Evade"
+        : null;
+      if (word) {
+        this.floatAt(p.x, p.y, word, "#d8e8ff", 13);
+        this.events.sound("whiff");
+        return;
+      }
+    }
     if (roll) {
       // v0.9.4: bosses (big hits) aim with 3x attack rating and don't lose accuracy when you out-level them
       const hc = src.big
@@ -2379,13 +3101,15 @@ export class Game {
     const p = this.player;
     for (let i = this.shots.length - 1; i >= 0; i--) {
       const s = this.shots[i];
-      s.t += dt;
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      s.dist += Math.hypot(s.vx, s.vy) * dt;
+      // v1.0 Slow Missiles: a third of the speed near the hero
+      const k = p.buffs.slowm && Math.hypot(s.x - p.x, s.y - p.y) < 10 ? 1 / 3 : 1;
+      s.t += dt * k;
+      s.x += s.vx * dt * k;
+      s.y += s.vy * dt * k;
+      s.dist += Math.hypot(s.vx, s.vy) * dt * k;
       let gone = s.dist > s.range || !isFloor(this.level, Math.floor(s.x), Math.floor(s.y));
       if (!gone && !p.dead && Math.hypot(s.x - p.x, s.y - p.y) < p.r + 0.22) {
-        this.hurtPlayer(s, d, true);
+        this.hurtPlayer(s, d, true, "missile");
         gone = true;
       }
       if (gone) {
@@ -2406,7 +3130,7 @@ export class Game {
         for (let k = 0; k < 24; k++) this.spark(n.x + rand(-n.radius, n.radius) * 0.7, n.y + rand(-n.radius, n.radius) * 0.7, ELEM_COLOR[n.elem], 2.5);
         this.events.sound("nova");
         this.events.shake(5);
-        if (!p.dead && Math.hypot(p.x - n.x, p.y - n.y) <= n.radius + p.r) this.hurtPlayer({ ar: 0, mlvl: 1, dmgMin: n.dmgMin, dmgMax: n.dmgMax, elem: n.elem, big: true }, d, false);
+        if (!p.dead && Math.hypot(p.x - n.x, p.y - n.y) <= n.radius + p.r) this.hurtPlayer({ ar: 0, mlvl: 1, dmgMin: n.dmgMin, dmgMax: n.dmgMax, elem: n.elem, big: true }, d, false, "area");
       }
       if (n.t > n.warn + 0.5) this.novas.splice(i, 1);
     }
@@ -2583,6 +3307,7 @@ export class Game {
       case "weapon":
         return b.hands === 2 ? ["main"] : ["main", "off"];
       case "shield":
+      case "quiver":
         return ["off"];
       case "armor":
         return ["chest"];
@@ -2601,7 +3326,7 @@ export class Game {
   equipError(it: Item, slot: EquipSlot): string | null {
     if (!this.slotsFor(it).includes(slot)) return "That doesn't go there";
     if (!this.meetsReq(it)) return "You don't meet the requirements";
-    if (slot === "off" && isTwoHanded(this.player.equip.main)) return "Your two-handed weapon needs both hands";
+    if (slot === "off" && offBlocked(this.player.equip.main, it)) return isBow(this.player.equip.main) ? "Your bow takes both hands (a quiver fits)" : "Your two-handed weapon needs both hands";
     return null;
   }
 
@@ -2631,7 +3356,7 @@ export class Game {
     if (err) return err;
     const displaced: Item[] = [];
     if (p.equip[target]) displaced.push(p.equip[target]!);
-    if (target === "main" && isTwoHanded(it) && p.equip.off) displaced.push(p.equip.off);
+    if (target === "main" && offBlocked(it, p.equip.off) && p.equip.off) displaced.push(p.equip.off);
     const bag = p.bag.filter((e) => e !== entry);
     const placed: BagEntry[] = [];
     for (const d of displaced) {
@@ -2642,7 +3367,7 @@ export class Game {
     }
     p.bag = [...bag, ...placed];
     p.equip[target] = it;
-    if (target === "main" && isTwoHanded(it)) delete p.equip.off;
+    if (target === "main" && offBlocked(it, p.equip.off)) delete p.equip.off;
     p.nextHand = 0;
     this.events.sound("equip");
     this.clampVitals();
@@ -2779,6 +3504,7 @@ export class Game {
     if (!spot) return x === undefined ? "Your stash is full" : "It doesn't fit there";
     p.bag = p.bag.filter((q) => q !== e);
     p.stash.push({ item: e.item, ...spot });
+    this.stashAt = Date.now();
     this.events.sound("equip");
     this.events.changed();
     return null;
@@ -2796,6 +3522,7 @@ export class Game {
     if (!spot) return x === undefined ? "Your backpack is full" : "It doesn't fit there";
     p.stash = p.stash.filter((q) => q !== e);
     p.bag.push({ item: e.item, ...spot });
+    this.stashAt = Date.now();
     this.events.sound("equip");
     this.events.changed();
     return null;
@@ -2805,6 +3532,7 @@ export class Game {
     if (!this.inTown) return false;
     const ok = moveItem(this.player.stash, uid, x, y, STASH_W, STASH_H);
     if (ok) {
+      this.stashAt = Date.now();
       this.events.sound("equip");
       this.events.changed();
     }
