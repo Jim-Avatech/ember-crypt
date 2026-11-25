@@ -496,8 +496,9 @@ function javArms(sk: Skel, d: Dims, anim: Anim, f: number, walkPh: number) {
   const S = sk.sh[1];
   const sd = sk.side;
   const at = (fw: number, out: number, up: number): V => add(S, add(scl(X, fw), add(scl(sd, out), scl(UP, up))));
-  const restW = norm([1, 0, -0.12]);
-  const rest = at(0.6 + 0.25 * Math.sin(walkPh), 1.1, 3.4);
+  const restW = norm([1, 0, -0.1]);
+  // hand up beside the head (about the top of the head), shaft level above the shoulder, point forward
+  const rest = at(0.4 + 0.25 * Math.sin(walkPh), 1.6, 7.4);
   let T = rest;
   let w = restW;
   const n = FRAMES[anim];
@@ -505,16 +506,16 @@ function javArms(sk: Skel, d: Dims, anim: Anim, f: number, walkPh: number) {
   if (anim === "atk0") {
     [T, w] = keyedIK([
       [0, rest, restW],
-      [0.28, at(-0.9, 1.1, 3.9), norm([1, 0, -0.05])],
-      [0.5, at(d.upper + d.fore - 1.4, 0.3, 2.4), norm([1, 0, -0.1])],
-      [0.72, at(d.upper + d.fore - 2.4, 0.4, 2.6), norm([1, 0, -0.1])],
+      [0.28, at(-1.2, 1.5, 7.6), norm([1, 0, -0.06])],
+      [0.5, at(d.upper + d.fore - 2.4, 0.6, 4.6), norm([1, 0, -0.16])],
+      [0.72, at(d.upper + d.fore - 3.2, 0.7, 4.8), norm([1, 0, -0.14])],
       [1, rest, restW],
     ], t);
   } else if (anim === "thr0") {
     [T, w] = keyedIK([
       [0, rest, restW],
-      [0.35, at(-2.6, 1.3, 3.6), norm([1, 0, 0.2])],
-      [0.55, at(6, 0.4, 3.0), norm([1, 0, -0.05])],
+      [0.35, at(-2.8, 1.6, 7.0), norm([1, 0, 0.22])],
+      [0.55, at(5.6, 0.5, 5.2), norm([1, 0, -0.05])],
       [0.78, at(5, 0.2, -1.5), norm([1, 0, -0.6])],
       [1, rest, restW],
     ], t);

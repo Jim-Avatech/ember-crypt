@@ -1,14 +1,17 @@
 import { SKILLS } from "./data/skills";
 import "./styles.css";
 import { AFFIXES, enchant, rollDrop } from "./data/affixes";
-import { ITEM_BASES, makeItem, migrateItem } from "./data/items";
+import { ITEM_BASES, lookOf, makeItem, migrateItem } from "./data/items";
+import type { HeroClass } from "./data/skills";
+import { HeroSelect, type HeroCard } from "./heroes";
 import { Sfx } from "./audio";
-import { Game, type GameEvents, type SaveData } from "./game";
+import { Game, type GameEvents, type SaveData, isHeroClass } from "./game";
 import { Input } from "./input";
 import { LOW_LIFE, Renderer } from "./render";
 import {
   canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings, cleanSettings,
   keepDamaged, pauseSaving, requestPersist, saveGame, saveSettings, lastFileBackup, markFileBackup, backupFileName, takeBackupReminder,
+  setSlot, lastSlot, currentSlot, listHeroes, readSlot, freeSlot, loadSharedStash, saveSharedStash, parseSave,
 } from "./save";
 import { Cloud, cloudConfig } from "./cloud";
 import { Ui } from "./ui";
@@ -52,6 +55,8 @@ const params = new URLSearchParams(location.search);
 // test/debug switches only work in dev builds or with ?debug
 const DEBUG = import.meta.env.DEV || params.has("debug");
 const fresh = DEBUG && params.has("new");
+// v1.0: open the hero played last (slot 1 = the original hero, so an existing save is simply hero #1)
+setSlot(DEBUG && params.has("slot") ? Number(params.get("slot")) : lastSlot());
 if (fresh) clearGame();
 type BootShell = { ok(): void; show(title: string, detail?: string): void; done: boolean; after?: boolean };
 const boot = (window as unknown as { __ecBoot?: BootShell }).__ecBoot;
@@ -84,7 +89,9 @@ function startGame(): Game {
 }
 const cloudCfg = cloudConfig(import.meta.env as Record<string, string | undefined>, location.search);
 const cloud = cloudCfg ? new Cloud(cloudCfg) : null;
+cloud?.setSlot(currentSlot());
 let game = startGame();
+syncStash();
 
 const ui = new Ui(app, () => game, input, settings, {
   settingsChanged: () => {
@@ -96,25 +103,29 @@ const ui = new Ui(app, () => game, input, settings, {
     ui.updateJoystick();
   },
   newGame: () => {
+    // start THIS hero over (same slot and class); the old one goes into this slot's backups
+    const hero = { cls: game.player.cls, name: game.player.name };
     clearGame();
-    game = new Game(events, null);
+    game = new Game(events, null, undefined, hero);
+    syncStash();
     applyAuto();
     doSave();
     ui.refresh();
-    ui.toast("A new Barbarian enters the Ember Crypt (your old hero is in the backups)");
+    ui.toast(`A new ${hero.name} enters the Ember Crypt (your old hero is in the backups)`);
   },
+  heroes: () => heroSelect.show({ closable: true }),
   save: {
     lastSaved: () => lastSavedAt(),
     canSave: () => canSave(),
     exportCode: () => exportCode(withSettings()),
-    exportJson: () => JSON.stringify(withSettings(), null, 1),
+    exportJson: () => JSON.stringify(bundle(), null, 1),
     importCode: (text: string) => importCode(text),
     backups: () => listBackups(),
     loadBackup: (key: string) => loadBackup(key),
     replace: (d: SaveData) => replaceGame(d),
     lastFileBackup: () => lastFileBackup(),
     markFileBackup: () => markFileBackup(),
-    fileName: () => backupFileName(game.player.level),
+    fileName: () => backupFileName(game.player.level, new Date(), game.player.cls),
     cloud: cloud ? cloudHooks(cloud) : undefined,
   },
   click: () => sfx.play("click"),
@@ -147,6 +158,99 @@ applyAuto();
 if (game.inTown && game.maxFloor <= 1 && game.player.kills === 0)
   setTimeout(() => game.inTown && game.maxFloor <= 1 && ui.toast("Walk to the glowing waypoint ✦ to enter the crypt", 6000), 1800);
 
+// ---- v1.0: heroes (slots) and the shared stash
+/** Newest stash wins: take the shared copy if it changed after this hero's, else publish this hero's. */
+function syncStash() {
+  const sh = loadSharedStash();
+  if (sh && sh.at > game.stashAt) {
+    const mine = new Set<number>();
+    for (const e of game.player.bag) mine.add(e.item.uid);
+    for (const it of Object.values(game.player.equip)) if (it) mine.add(it.uid);
+    const items = (sh.items as typeof game.player.stash).filter((e) => e && e.item && typeof e.item.baseId === "string" && ITEM_BASES.some((b) => b.id === e.item.baseId));
+    for (const e of items) if (mine.has(e.item.uid)) e.item = { ...e.item, uid: e.item.uid + 7 + Math.floor(Math.random() * 1e6) };
+    game.player.stash = items;
+    game.stashAt = sh.at;
+  } else if (!sh || game.stashAt > sh.at) saveSharedStash(game.stashAt || Date.now(), game.player.stash);
+}
+function lookOfSave(d: SaveData) {
+  const e = d.player.equip as Record<string, { baseId: string } | undefined>;
+  const L = (k: string) => lookOf(e[k] as Parameters<typeof lookOf>[0]);
+  return { main: L("main"), off: L("off"), head: L("head"), chest: L("chest"), gloves: L("gloves"), boots: L("boots") };
+}
+function heroCards(): HeroCard[] {
+  return listHeroes().map((h) => {
+    const d = readSlot(h.slot);
+    return { ...h, cls: (isHeroClass(h.cls) ? h.cls : "barbarian") as HeroClass, look: d ? lookOfSave(d) : {} };
+  });
+}
+/** Save the current hero, then load (or create) another one. */
+function switchHero(n: number, hero?: { cls: HeroClass; name: string }) {
+  if (canSave()) doSave();
+  setSlot(n);
+  cloud?.setSlot(n);
+  const r = hero ? null : loadGame();
+  let g: Game;
+  try {
+    g = r?.data ? new Game(events, r.data) : new Game(events, null, undefined, hero ?? { cls: "barbarian", name: "" });
+  } catch (err) {
+    console.error("Ember Crypt: hero failed to load", err);
+    keepDamaged();
+    pauseSaving();
+    ui.toast("That hero couldn't be opened by this version. It is kept untouched.", 6000);
+    g = new Game(events, null, undefined, { cls: "barbarian", name: "" });
+  }
+  game = g;
+  saved = r?.data ?? null;
+  syncStash();
+  applyAuto();
+  input.reset();
+  ui.close();
+  if (!r?.data && canSave()) doSave(true);
+  ui.refresh();
+  lastTown = game.inTown;
+  ui.toast(hero ? `${game.player.name} the ${hero.cls === "amazon" ? "Amazon" : "Barbarian"} arrives at Ember Camp` : `Playing ${game.player.name} · level ${game.player.level}`, 3500);
+  if (cloud) setTimeout(() => void cloudSync(), 1500);
+}
+const heroSelect = new HeroSelect(app, {
+  heroes: heroCards,
+  current: () => currentSlot(),
+  canCreate: () => freeSlot() !== null,
+  pick: (n) => {
+    if (n !== currentSlot()) switchHero(n);
+  },
+  create: (cls, name) => {
+    const n = freeSlot();
+    if (n !== null) switchHero(n, { cls, name });
+  },
+  click: () => sfx.play("click"),
+});
+/** v1.0 Files backup: the current hero plus every other hero on this device and the shared stash. */
+function bundle() {
+  const heroes = listHeroes()
+    .filter((h) => h.slot !== currentSlot())
+    .map((h) => ({ slot: h.slot, data: readSlot(h.slot) }))
+    .filter((h) => h.data);
+  return { ...withSettings(), slot: currentSlot(), heroes, sharedStash: loadSharedStash() };
+}
+/** Restore the other heroes of a Files backup into their slots when those are empty or older (never overwrites newer). */
+function restoreBundle(d: SaveData): number {
+  const extra = (d as unknown as { heroes?: { slot: number; data: unknown }[] }).heroes;
+  if (!Array.isArray(extra)) return 0;
+  let n = 0;
+  const cur = currentSlot();
+  for (const h of extra) {
+    if (!h || typeof h.slot !== "number" || h.slot === cur || h.slot < 1 || h.slot > 8) continue;
+    const hd = parseSave(JSON.stringify(h.data)).data;
+    if (!hd) continue;
+    const have = readSlot(h.slot);
+    if (have && (have.savedAt ?? 0) >= (hd.savedAt ?? 0)) continue;
+    setSlot(h.slot);
+    if (saveGame(hd, { force: true })) n++;
+    setSlot(cur);
+  }
+  return n;
+}
+
 // ---- v0.9: cloud save (off unless the build has a free Supabase project configured and VITE_CLOUD=1, or ?cloud)
 function cloudHooks(c: Cloud) {
   return {
@@ -173,6 +277,7 @@ async function cloudSync(manual = false): Promise<string> {
       ui.toast(`Cloud save: loaded your level ${r.data.player.level} hero from your other device. This device's hero is in Backups.`, 6000);
       return "Loaded the newer hero from the cloud.";
     }
+    await pullOtherHeroes();
     if (r.kind === "pushed") return manual ? "Saved to the cloud." : "";
     if (r.kind === "none") return manual ? "Already in sync." : "";
     if (r.kind === "offline") return "Offline: will sync when you're back online.";
@@ -180,6 +285,27 @@ async function cloudSync(manual = false): Promise<string> {
     return `Sync failed: ${r.message ?? "unknown error"}`;
   } finally {
     cloudBusy = false;
+  }
+}
+/** v1.0: heroes that exist only in the cloud (made on another device) are copied into their empty slots here. */
+async function pullOtherHeroes() {
+  if (!cloud) return;
+  try {
+    const rows = await cloud.pullAll();
+    for (const row of rows) {
+      const n = row.slot ?? 1;
+      if (n === currentSlot() || n < 1 || n > 8 || readSlot(n)) continue;
+      const d = parseSave(JSON.stringify({ ...row.data, savedAt: row.saved_at })).data;
+      if (!d) continue;
+      const cur = currentSlot();
+      setSlot(n);
+      const ok = saveGame(d, { force: true });
+      const at = d.savedAt ?? 0;
+      setSlot(cur);
+      if (ok) cloud.markSynced(n, row.saved_at, at);
+    }
+  } catch {
+    /* next time */
   }
 }
 if (cloud) {
@@ -204,6 +330,8 @@ function doSave(backup = false) {
   dirty = false;
   saveT = 0;
   if (saveGame(withSettings(), { backup })) ui.savedChanged();
+  const sh = loadSharedStash();
+  if (!sh || game.stashAt > sh.at) saveSharedStash(game.stashAt || Date.now(), game.player.stash);
 }
 let saveTimer = 0;
 function scheduleSave() {
@@ -217,7 +345,10 @@ function scheduleSave() {
 function replaceGame(d: SaveData) {
   // v0.8.3: the current hero always goes into the backups first
   saveGame(withSettings(), { force: true });
+  const others = restoreBundle(d);
   game = new Game(events, d);
+  syncStash();
+  if (others) setTimeout(() => ui.toast(`Also restored ${others} other hero${others === 1 ? "" : "es"} from the backup (Settings → Change hero).`, 6000), 2500);
   if (d.settings) {
     Object.assign(settings, cleanSettings(d.settings, settings));
     saveSettings(settings);
@@ -246,6 +377,8 @@ if (loaded?.recovered) {
   });
 }
 input.onJoyChange = () => ui.updateJoystick();
+// v1.0: the game opens on the hero select (test runs with ?debug skip it unless ?select is given)
+if (!DEBUG || params.has("select")) heroSelect.show({ closable: false });
 
 let tutorial = !settings.tutorialSeen;
 let tutorialT = 0;
@@ -289,7 +422,7 @@ document.addEventListener(
   (e) => {
     const t = e.target as HTMLElement;
     // v0.8.2: the compare sheet's cards scroll by touch too
-    if (!t.closest?.(".pbody, .ccard")) e.preventDefault();
+    if (!t.closest?.(".pbody, .ccard, .hbox")) e.preventDefault();
   },
   { passive: false },
 );
@@ -357,7 +490,7 @@ function step(now: number) {
     fpsAcc = 0;
     fpsN = 0;
   }
-  const paused = portrait || ui.openTab !== null || document.hidden;
+  const paused = portrait || ui.openTab !== null || document.hidden || heroSelect.open;
   if (!paused) {
     // taps on the world: pick up items
     for (const t of input.taps) {

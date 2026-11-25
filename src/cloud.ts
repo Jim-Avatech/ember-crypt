@@ -2,7 +2,8 @@
  * Cloud save (behind a flag; off until a free Supabase project is configured).
  *
  * - Sign-in: email + 6-digit code (Supabase Auth OTP). No password, no redirect: works inside the Home Screen app.
- * - One row per player in `public.saves`; row-level security so a player only sees their own row.
+ * - One row per player and hero slot in `public.saves` (v1.0: primary key user_id + slot; slot 1 is the original
+ *   hero); row-level security so a player only sees their own rows.
  * - Writes go through `put_save()` (supabase/schema.sql): a compare-and-swap that only overwrites when the
  *   cloud copy is the one this device last saw, or older. The copy being replaced is kept in `prev_data`.
  * - Conflicts: newest wins, and the other copy is kept as a backup (local backups on this device, or `prev_data`
@@ -34,6 +35,7 @@ export interface Session {
   email: string;
 }
 export interface CloudRow {
+  slot?: number;
   data: SaveData;
   saved_at: number;
   level: number;
@@ -77,6 +79,8 @@ const SKEY = "ember-crypt-cloud-session";
 const LKEY = "ember-crypt-cloud-last";
 const DKEY = "ember-crypt-device";
 const LLKEY = "ember-crypt-cloud-last-local";
+/** v1.0: per-slot bookkeeping keys (slot 1 keeps the original names). */
+const sk = (k: string, n: number) => (n === 1 ? k : `${k}#${n}`);
 
 export class Cloud {
   session: Session | null = null;
@@ -84,6 +88,8 @@ export class Cloud {
   lastLocal = 0;
   lastSyncAt = 0;
   status = "";
+  /** v1.0: which hero slot this client syncs */
+  slot = 1;
   constructor(
     private cfg: CloudConfig,
     private f: Fetch = (...a) => fetch(...a),
@@ -91,11 +97,28 @@ export class Cloud {
   ) {
     try {
       this.session = JSON.parse(this.store?.getItem(SKEY) ?? "null");
-      this.lastSynced = Number(this.store?.getItem(LKEY) ?? 0) || 0;
-      this.lastLocal = Number(this.store?.getItem(LLKEY) ?? 0) || this.lastSynced;
+      this.loadLast();
     } catch {
       this.session = null;
     }
+  }
+  private loadLast() {
+    this.lastSynced = Number(this.store?.getItem(sk(LKEY, this.slot)) ?? 0) || 0;
+    this.lastLocal = Number(this.store?.getItem(sk(LLKEY, this.slot)) ?? 0) || this.lastSynced;
+  }
+  /** v1.0: sync another hero slot from now on. */
+  setSlot(n: number) {
+    this.slot = n;
+    this.loadLast();
+  }
+  /** Forget what every slot last synced (sign-in on a new account / sign-out). */
+  private resetAll() {
+    for (let n = 1; n <= 8; n++) {
+      this.store?.removeItem(sk(LKEY, n));
+      this.store?.removeItem(sk(LLKEY, n));
+    }
+    this.lastSynced = 0;
+    this.lastLocal = 0;
   }
   get signedIn() {
     return !!this.session;
@@ -123,8 +146,14 @@ export class Cloud {
   private setLast(v: number, local = v) {
     this.lastSynced = v;
     this.lastLocal = local;
-    this.store?.setItem(LKEY, String(v));
-    this.store?.setItem(LLKEY, String(local));
+    this.store?.setItem(sk(LKEY, this.slot), String(v));
+    this.store?.setItem(sk(LLKEY, this.slot), String(local));
+  }
+  /** Mark another slot as in step with a cloud row (after copying a cloud-only hero onto this device). */
+  markSynced(n: number, savedAt: number, localSavedAt = savedAt) {
+    this.store?.setItem(sk(LKEY, n), String(savedAt));
+    this.store?.setItem(sk(LLKEY, n), String(localSavedAt));
+    if (n === this.slot) this.loadLast();
   }
   /** After applying a pulled copy, tell the client the local savedAt it was stored under. */
   adopted(localSavedAt: number) {
@@ -141,12 +170,12 @@ export class Cloud {
     const r = await this.f(`${this.cfg.url}/auth/v1/verify`, { method: "POST", headers: this.headers(false), body: JSON.stringify({ type: "email", email, token: code.trim() }) });
     if (!r.ok) return await errText(r);
     this.keep(toSession(await r.json()));
-    this.setLast(0); // first sync on this device is the careful one
+    this.resetAll(); // first sync on this device is the careful one
     return null;
   }
   signOut() {
     this.keep(null);
-    this.setLast(0);
+    this.resetAll();
   }
   private async fresh(): Promise<boolean> {
     const s = this.session;
@@ -161,17 +190,24 @@ export class Cloud {
     return true;
   }
   async pull(): Promise<CloudRow | null> {
-    const r = await this.f(`${this.cfg.url}/rest/v1/saves?select=data,saved_at,level,device&user_id=eq.${this.session!.userId}`, { headers: this.headers() });
+    const r = await this.f(`${this.cfg.url}/rest/v1/saves?select=data,saved_at,level,device&user_id=eq.${this.session!.userId}&slot=eq.${this.slot}`, { headers: this.headers() });
     if (!r.ok) throw new Error(await errText(r));
     const rows = (await r.json()) as CloudRow[];
     return rows[0] ?? null;
+  }
+  /** v1.0: every hero in the cloud (so a hero made on another device shows up here too). */
+  async pullAll(): Promise<CloudRow[]> {
+    if (!this.session || !(await this.fresh())) return [];
+    const r = await this.f(`${this.cfg.url}/rest/v1/saves?select=slot,data,saved_at,level,device&user_id=eq.${this.session!.userId}`, { headers: this.headers() });
+    if (!r.ok) throw new Error(await errText(r));
+    return (await r.json()) as CloudRow[];
   }
   /** Compare-and-swap write. Returns the cloud row that won if someone else wrote a newer copy first. */
   async push(d: SaveData, expected: number): Promise<CloudRow | null> {
     const r = await this.f(`${this.cfg.url}/rest/v1/rpc/put_save`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ p_data: d, p_saved_at: d.savedAt ?? Date.now(), p_level: d.player.level, p_device: this.device(), p_expected: expected }),
+      body: JSON.stringify({ p_slot: this.slot, p_data: d, p_saved_at: d.savedAt ?? Date.now(), p_level: d.player.level, p_device: this.device(), p_expected: expected }),
     });
     if (!r.ok) throw new Error(await errText(r));
     const res = (await r.json()) as { ok: boolean; current?: CloudRow | null };

@@ -1,10 +1,10 @@
 import { modText } from "./data/affixes";
 import {
   BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, QUALITY_LABEL, SLOT_LABEL, baseDamage, baseDefense, beltSlotsOf, ilvlOf,
-  isTwoHanded, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
+  isBow, offBlocked, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
 } from "./data/items";
 import type { SaveData } from "./game";
-import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES } from "./data/skills";
+import { type BasicId, CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
 import { type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
@@ -106,6 +106,8 @@ export interface SaveTools {
 export interface UiHooks {
   settingsChanged(): void;
   newGame(): void;
+  /** v1.0: open the hero select (change hero / new hero) */
+  heroes(): void;
   click(): void;
   /** plays a chime (inside the tap) and returns the audio state */
   testSound(): string;
@@ -308,7 +310,7 @@ export class Ui {
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
       Math.ceil(p.buffs.shout), Math.ceil(p.buffs.bo), Math.ceil(p.buffs.bcmd), p.buffs.conc > 0, p.buffs.bers > 0, p.frenzy.stacks, Math.ceil(p.frenzy.t), g.maxFloor,
       g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
-      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
+      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, p.equip.off?.baseId, p.mainAtk, p.cls, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
     ].join("|");
     if (key === this.lastHud) return;
     this.lastHud = key;
@@ -321,9 +323,12 @@ export class Ui {
     // throwing: the attack button shows a throw icon and how many are left
     const thr = BASE_BY_ID[p.equip.main?.baseId ?? ""]?.thrown ? p.equip.main! : null;
     const ab = $(r, "#btn-attack");
-    ab.classList.toggle("throw", !!thr && (thr.qty ?? 0) > 0);
-    $(ab, "span").textContent = thr && (thr.qty ?? 0) > 0 ? "➶" : "⚔";
-    $(ab, ".ammo").textContent = thr ? `${(thr.qty ?? 0) + (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.thrown ? p.equip.off!.qty ?? 0 : 0)}` : "";
+    const mb = g.mainBasic();
+    const bowArrows = BASE_BY_ID[p.equip.main?.baseId ?? ""]?.kind === "bow" ? (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.kind === "quiver" ? p.equip.off!.qty ?? 0 : 0) : -1;
+    const throwing = !!thr && (thr.qty ?? 0) > 0 && (mb === "basic_throw" || (!p.mainAtk && mb === "basic_attack"));
+    ab.classList.toggle("throw", throwing || (mb === "basic_shoot" && bowArrows > 0));
+    $(ab, "span").textContent = mb === "basic_shoot" ? "↟" : throwing ? "➶" : "⚔";
+    $(ab, ".ammo").textContent = mb === "basic_shoot" && bowArrows >= 0 ? `${bowArrows}` : thr && mb !== "basic_attack" ? `${(thr.qty ?? 0) + (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.thrown ? p.equip.off!.qty ?? 0 : 0)}` : thr && !p.mainAtk ? `${(thr.qty ?? 0) + (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.thrown ? p.equip.off!.qty ?? 0 : 0)}` : "";
     $(r, "#btn-hp b").textContent = `${p.hpPots}`;
     $(r, "#btn-mp b").textContent = `${p.mpPots}`;
     $(r, "#btn-hp").classList.toggle("empty", p.hpPots === 0);
@@ -332,7 +337,7 @@ export class Ui {
     $(r, "#btn-mp").classList.toggle("cool", g.potionWait("mp") > 0);
     // v0.9.2: no top-left text (floor and portal info come as toasts; ⌂ Town is top right). The same line is kept
     // off-screen as the HUD's accessible name (screen readers, tests).
-    $(r, "#hud").setAttribute("aria-label", `${g.inTown ? "Ember Camp" : `Act ${actDef(g.floor).roman} · ${floorLabel(g.floor)}`}   ·   Lv ${p.level} Barbarian`);
+    $(r, "#hud").setAttribute("aria-label", `${g.inTown ? "Ember Camp" : `Act ${actDef(g.floor).roman} · ${floorLabel(g.floor)}`}   ·   Lv ${p.level} ${CLASS_NAME[p.cls]}`);
     $(r, "#dot-char").textContent = p.statPoints ? `${p.statPoints}` : "";
     $(r, "#dot-skills").textContent = p.skillPoints ? `${p.skillPoints}` : "";
     for (let i = 0; i < SKILL_SLOTS; i++) {
@@ -592,6 +597,9 @@ export class Ui {
         this.skillTab = el.dataset.tree as Tab;
         this.selSkill = SKILLS.find((s) => s.tab === this.skillTab)!.id;
         break;
+      case "mainatk":
+        g.setMainAtk((el.dataset.id || null) as BasicId | null);
+        break;
       case "skill":
         this.selSkill = el.dataset.id!;
         break;
@@ -664,6 +672,10 @@ export class Ui {
         this.hooks.settingsChanged();
         break;
       }
+      case "heroes":
+        this.close();
+        this.hooks.heroes();
+        return;
       case "reset":
         if (!this.confirmReset) this.confirmReset = true;
         else {
@@ -1037,8 +1049,13 @@ export class Ui {
         lines.push(`Quantity: <b class="${(it.qty ?? 0) === 0 ? "bad" : ""}">${it.qty ?? 0} of ${b.thrown.max}</b> · refills in camp`);
         lines.push(`Throw range: ${b.thrown.range} · Throwing Mastery`);
       }
+      if (b.kind === "bow") lines.push(`Shoots arrows from a quiver in the off-hand · range ${b.range ?? 11} · damage grows with Dexterity`);
+      if (b.reach) lines.push(`Long reach · two-handed thrust · Spear Mastery`);
       lines.push(`Speed: ${b.speedLabel}${b.hands === 1 ? " · can dual wield" : ""}`);
       if (b.kind === "staff") lines.push(`Uses Pole Arm Mastery`);
+    } else if (b.ammo) {
+      lines.push(`Quantity: <b class="${(it.qty ?? 0) === 0 ? "bad" : ""}">${it.qty ?? 0} of ${b.ammo}</b> arrows · refills in camp`);
+      lines.push(`Off-hand, with a bow`);
     } else if (b.potion) {
       lines.push(b.potion === "hp" ? "Restores 45% life over a few seconds" : "Restores 60% mana over a few seconds");
     } else if (b.defMul) {
@@ -1061,7 +1078,7 @@ export class Ui {
     const sel = this.sel && this.sel.src === src && this.sel.uid === it.uid;
     const bad = src !== "vendor" && !b.potion && !this.game().meetsReq(it);
     return `<div class="gi q-${qualityOf(it)} ${sel ? "sel" : ""} ${bad ? "bad" : ""}" data-src="${src}" data-uid="${it.uid}" data-q="${qualityOf(it)}" style="left:${x * C}px;top:${y * C}px;width:${b.w * C}px;height:${b.h * C}px" ${extra}>
-      <img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false"/>${b.thrown ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
+      <img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false"/>${b.thrown || b.ammo ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
   }
 
   private bagGrid() {
@@ -1079,13 +1096,13 @@ export class Ui {
       .map((s) => {
         const [x, y, w, h] = DOLL[s];
         const it = p.equip[s];
-        const blocked = s === "off" && isTwoHanded(p.equip.main);
+        const blocked = s === "off" && offBlocked(p.equip.main, null) && !isBow(p.equip.main);
         const sel = this.sel?.src === "eq" && this.sel.slot === s;
         let inner = `<em>${EQUIP_LABEL[s]}</em>`;
         if (it) {
           const b = BASE_BY_ID[it.baseId];
           const k = Math.min(1, w / b.w, h / b.h);
-          inner = `<div class="eqi q-${qualityOf(it)}" data-src="eq" data-eq="${s}"><img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false" style="width:${b.w * U * k}px;height:${b.h * U * k}px"/>${b.thrown ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
+          inner = `<div class="eqi q-${qualityOf(it)}" data-src="eq" data-eq="${s}"><img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false" style="width:${b.w * U * k}px;height:${b.h * U * k}px"/>${b.thrown || b.ammo ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
         } else if (blocked && p.equip.main) {
           const b = BASE_BY_ID[p.equip.main.baseId];
           inner = `<img class="ghost2h" src="${itemIconUrl(p.equip.main)}" alt="" draggable="false" style="width:${b.w * U * 0.9}px;height:${b.h * U * 0.9}px"/><em>2-handed</em>`;
@@ -1194,7 +1211,7 @@ export class Ui {
       const cur = p.equip[sl];
       const label = `Equipped · ${sl === "ring1" ? "Left ring" : sl === "ring2" ? "Right ring" : EQUIP_LABEL[sl]}`;
       if (cur) return card(cur, label, "eqc");
-      if (sl === "off" && isTwoHanded(p.equip.main)) return `<div class="ccard eqc empty"><div class="chead">${label}</div><div class="hint">Blocked by your two-handed weapon</div></div>`;
+      if (sl === "off" && offBlocked(p.equip.main, it)) return `<div class="ccard eqc empty"><div class="chead">${label}</div><div class="hint">Blocked by your two-handed weapon</div></div>`;
       return `<div class="ccard eqc empty"><div class="chead">${label}</div><div class="hint">Nothing equipped</div></div>`;
     });
     const { btns, price } = this.actionsFor(this.openTab === "shop");
@@ -1311,7 +1328,14 @@ export class Ui {
   private skillsHtml() {
     const g = this.game();
     const p = g.player;
-    const tabs = (Object.keys(TAB_NAMES) as Tab[])
+    // v1.0: your class's three trees plus the basic attacks
+    const myTabs = CLASS_TABS[p.cls];
+    if (!myTabs.includes(this.skillTab)) {
+      this.skillTab = myTabs[0];
+      this.selSkill = SKILLS.find((s) => s.tab === this.skillTab)!.id;
+    }
+    if (this.selSkill && SKILL_BY_ID[this.selSkill]?.tab !== this.skillTab) this.selSkill = SKILLS.find((s) => s.tab === this.skillTab)!.id;
+    const tabs = myTabs
       .map((t) => `<button class="stab ${t === this.skillTab ? "on" : ""}" data-act="stree" data-tree="${t}">${TAB_NAMES[t]}</button>`)
       .join("");
     const list = SKILLS.filter((s) => s.tab === this.skillTab);
@@ -1349,7 +1373,7 @@ export class Ui {
         const cls = [
           "snode",
           s.id === this.selSkill ? "sel" : "",
-          lvl ? "learned" : "",
+          lvl || isBasic(s.id) ? "learned" : "",
           !s.implemented ? "soon" : "",
           can.ok ? "can" : "",
           p.level < s.reqLvl ? "locked" : "",
@@ -1366,8 +1390,9 @@ export class Ui {
       const lvl = g.skillLevel(s.id);
       const can = g.canLearn(s.id);
       const pre = s.prereq.length ? `Requires: ${s.prereq.map((q) => SKILL_BY_ID[q].name).join(", ")}` : "";
+      const basic = isBasic(s.id);
       const slotBtns =
-        s.kind === "active" && s.implemented && lvl
+        s.kind === "active" && s.implemented && (lvl || basic)
           ? `<div class="assign"><span>Skill button:</span>${Array.from({ length: SKILL_SLOTS }, (_, i) => i)
               .map((i) =>
                 p.slots[i] === s.id
@@ -1376,6 +1401,23 @@ export class Ui {
               )
               .join("")}</div>`
           : "";
+      if (basic) {
+        const main = g.mainBasic();
+        const auto = !p.mainAtk;
+        const mw = p.equip.main ? BASE_BY_ID[p.equip.main.baseId] : null;
+        const autoText = mw?.kind === "bow" ? "shoots with your bow" : mw?.thrown && (p.equip.main!.qty ?? 0) > 0 ? `throws your ${mw.name.toLowerCase()}s (stabs when out)` : "attacks in melee";
+        detail = `
+        <div class="iname">${s.glyph} ${esc(s.name)}</div>
+        <div class="itype">Basic attack · no mana, no skill points</div>
+        <div class="sblurb">${esc(s.blurb)}</div>
+        ${s.effect ? `<div class="seff">${esc(s.effect(1))}</div>` : ""}
+        <div class="assign mainatk"><span>Main ⚔ button:</span>
+          <button class="slotb wide ${auto ? "on" : ""}" data-act="mainatk" data-id="">Auto${auto ? " ✓" : ""}</button>
+          <button class="slotb wide ${p.mainAtk === s.id ? "on" : ""}" data-act="mainatk" data-id="${s.id}">${esc(s.name)}${p.mainAtk === s.id ? " ✓" : ""}</button>
+        </div>
+        <div class="hint">Now ⚔ ${auto ? `is on Auto: ${esc(autoText)}` : `uses ${esc(SKILL_BY_ID[main].name)}`}.</div>
+        ${slotBtns}`;
+      } else
       detail = `
         <div class="iname">${s.glyph} ${esc(s.name)}</div>
         <div class="itype">${s.kind === "passive" ? "Passive" : "Active"} · Level ${lvl}/${MAX_SKILL_LVL}${p.level >= s.reqLvl && Math.min(MAX_SKILL_LVL, 1 + p.level - s.reqLvl) < MAX_SKILL_LVL ? ` (cap ${1 + p.level - s.reqLvl} at your level)` : ""}${s.mana && s.implemented ? ` · Mana ${s.mana(Math.max(1, lvl))}` : ""}</div>
@@ -1464,7 +1506,8 @@ export class Ui {
         <div class="sndrow"><button class="gbtn" data-act="testsnd">🔊 Test sound</button><small id="sndstate">${this.soundText(this.hooks.soundState())}</small></div>
         ${t("shake", "Screen shake", "Shake on big hits")}
         ${t("labels", "Item labels", "Show item names on the ground")}
-        <button class="gbtn danger" data-act="reset">${this.confirmReset ? "Tap again to start over (old hero goes to backups)" : "Start a new character"}</button>
+        <button class="gbtn hot" data-act="heroes">👥 Change hero / New hero</button>
+        <button class="gbtn danger" data-act="reset">${this.confirmReset ? "Tap again to start this hero over (old hero goes to backups)" : "Start this hero over"}</button>
       </div>
       <div class="set-col help">
         ${saveBox}
@@ -1476,7 +1519,7 @@ export class Ui {
         <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.9.4 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v1.0 · all art made in code for this game</p>
       </div>`;
   }
 

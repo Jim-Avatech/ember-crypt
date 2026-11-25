@@ -10,7 +10,7 @@ import {
 import { ACTS, ARTIFACT_COLOR, LEVELS_PER_ACT, XP_RATE, firstFloorOf, mlvlOf } from "./data/acts";
 import { ELEM_COLOR, ELEM_NAME, ELITE_MODS, MONSTERS, type MonsterDef, scaleDmg, scaleHp, scaleXp } from "./data/monsters";
 import { artifactIcon } from "./sprites/artifacts";
-import { MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, TAB_NAMES } from "./data/skills";
+import { CLASS_NAME, type HeroClass, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, TAB_NAMES } from "./data/skills";
 import { itemIconUrl } from "./sprites/items";
 
 export type GuideSec = "classes" | "levels" | "affixes" | "rarity" | "acts" | "monsters" | "skills";
@@ -41,9 +41,12 @@ function classesHtml(): string {
       const [lo, hi] = b.spread!;
       facts.push(`Damage spread ${lo}–${hi}× average`, `Damage ×${b.dmgMul} vs base`);
       if (b.thrown) facts.push(`Throws: stack of ${b.thrown.max}, range ${b.thrown.range}`);
+      if (b.kind === "bow") facts.push(`Shoots arrows (quiver in the off-hand), range ${b.range ?? 11}`, "Damage grows with Dexterity");
+      if (b.reach) facts.push("Long reach");
       const mast = b.thrown ? "Throwing Mastery" : ({ sword: "Sword", axe: "Axe", mace: "Mace", staff: "Pole Arm", spear: "Spear" } as Record<string, string>)[b.kind];
       if (mast) facts.push(b.thrown ? `${mast}${b.kind === "axe" ? " (Axe Mastery in melee)" : b.kind === "spear" ? " (Spear Mastery in melee)" : ""}` : `${mast} Mastery`);
     } else if (b.defMul) facts.push(`Defense ×${b.defMul}`);
+    if (b.ammo) facts.push(`Quiver of ${b.ammo} arrows, refills in camp`, "Off-hand, with a bow");
     if (b.kind === "belt") facts.push("+1 to +4 potion slots");
     const req = [reqText(b.str, "Str"), reqText(b.dex, "Dex")].filter(Boolean).join(", ");
     if (!b.potion) facts.push(req ? `Needs ${req}` : "No stat requirement");
@@ -133,13 +136,14 @@ function monstersHtml(): string {
 
 function skillsHtml(): string {
   const tabs = [...new Set(SKILLS.map((s) => s.tab))];
-  return `<p class="gnote">Each level gives 1 skill point. As in Diablo II, a skill's hard points are capped at 1 + (your level − the skill's level), up to ${MAX_SKILL_LVL}; +skills on gear go on top. Every Barbarian skill is playable. Put up to three on the skill buttons: open Skills, pick one, tap 1–3. Passives (Masteries, Increased Speed and Stamina, Iron Skin, Natural Resistance) work on their own. Synergies: each hard point in Howl, Taunt, Battle Cry or Battle Orders adds 6% War Cry damage; Shout and Battle Orders lengthen each other (+5 s per point).</p>${tabs
+  return `<p class="gnote">Each level gives 1 skill point. As in Diablo II, a skill's hard points are capped at 1 + (your level − the skill's level), up to ${MAX_SKILL_LVL}; +skills on gear go on top. Every Barbarian and Amazon skill is playable. Put up to three on the skill buttons: open Skills, pick one, tap 1–3; the Basic tab puts Attack / Stab, Throw or Shoot on a button too, and picks what the main ⚔ button does. Passives work on their own. Barbarian synergies: each hard point in Howl, Taunt, Battle Cry or Battle Orders adds 6% War Cry damage; Shout and Battle Orders lengthen each other (+5 s per point). Amazon: fire, cold, lightning and poison damage scales with your weapon's damage; her skills have no synergies yet.</p>${tabs
     .map((t) => {
       const rows = SKILLS.filter((s) => s.tab === t)
         .sort((a, b) => a.reqLvl - b.reqLvl || a.row - b.row)
         .map((s) => `<tr><td>${s.glyph} ${esc(s.name)}${s.implemented ? "" : " <small>(soon)</small>"}</td><td>${s.reqLvl}</td><td>${s.prereq.map((q) => esc(SKILL_BY_ID[q].name)).join(", ") || "—"}</td><td>${esc(s.blurb)}</td></tr>`)
         .join("");
-      return `<h4>${esc(TAB_NAMES[t])}</h4><div class="gtable"><table><tr><th>Skill</th><th>Lvl</th><th>Needs</th><th>What it does</th></tr>${rows}</table></div>`;
+      const owner = t === "basic" ? "Everyone" : CLASS_NAME[SKILLS.find((s) => s.tab === t)!.cls as HeroClass];
+      return `<h4>${esc(owner)} · ${esc(TAB_NAMES[t])}</h4><div class="gtable"><table><tr><th>Skill</th><th>Lvl</th><th>Needs</th><th>What it does</th></tr>${rows}</table></div>`;
     })
     .join("")}`;
 }

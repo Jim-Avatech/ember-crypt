@@ -696,7 +696,7 @@ await wait(200);
     const back = JSON.parse(decodeURIComponent(escape(atob(code.slice("EMBERCRYPT1:".length)))));
     return { v: raw.v, stash: raw.player.stash.map((e) => e.item.uid).sort(), exp: (back.player.stash || []).length };
   });
-  check("The stash is saved with the hero (v6) and included in the export code", saved.v === 6 && saved.stash.join() === "7002,7003" && saved.exp === 2, JSON.stringify(saved));
+  check("The stash is saved with the hero (v6) and included in the export code", saved.v >= 6 && saved.stash.join() === "7002,7003" && saved.exp === 2, JSON.stringify(saved));
   // town only
   await ev(() => __ec.game.goDungeon(1));
   await wait(200);
@@ -1130,7 +1130,7 @@ await ev(() => __ec.ui.close());
     const back = JSON.parse(decodeURIComponent(escape(atob(code.slice("EMBERCRYPT1:".length)))));
     return { v: back.v, arts: (back.player.artifacts || []).map((a) => a.id) };
   });
-  check("Artifacts are saved in the export code (save v6)", sv.v === 6 && sv.arts.join() === "ember_heart", JSON.stringify(sv));
+  check("Artifacts are saved in the export code (save v6)", sv.v >= 6 && sv.arts.join() === "ember_heart", JSON.stringify(sv));
   await page.locator(".pclose").tap();
   await wait(200);
 }
@@ -1209,7 +1209,7 @@ await page.close();
     const saved = JSON.parse(localStorage.getItem("ember-crypt-save-v1"));
     return { lvl: g.player.level, gold: g.player.gold, max: g.maxFloor, bag: g.player.bag.map((e) => `${e.x},${e.y}`).join(), stash: g.player.stash.length, arts: g.player.artifacts.length, v: saved.v };
   });
-  check("A v0.7 save deep in the old crypt migrates to v6 and keeps its progress in Act I", m5.lvl === 15 && m5.gold === 4321 && m5.max === 9 && m5.bag === "2,6" && m5.stash === 1 && m5.arts === 0 && m5.v === 6, JSON.stringify(m5));
+  check("A v0.7 save deep in the old crypt migrates to v6 and keeps its progress in Act I", m5.lvl === 15 && m5.gold === 4321 && m5.max === 9 && m5.bag === "2,6" && m5.stash === 1 && m5.arts === 0 && m5.v >= 6, JSON.stringify(m5));
   check("No page errors after v6 migration", errs5.length === 0, errs5.join(" | "));
   await ctx5.close();
 }

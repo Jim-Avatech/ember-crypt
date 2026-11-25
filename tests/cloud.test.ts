@@ -38,7 +38,19 @@ describe("decide (newest wins, careful first sync)", () => {
 
 /** A tiny fake Supabase: auth + the saves table + put_save with the same CAS rule as supabase/schema.sql. */
 function fakeSupabase() {
-  const db: { row: (CloudRow & { prev?: SaveData }) | null } = { row: null };
+  // v1.0: one row per hero slot; db.row is slot 1 (the original hero)
+  type Row = CloudRow & { prev?: SaveData };
+  const rows = new Map<number, Row>();
+  const db = {
+    rows,
+    get row(): Row | null {
+      return rows.get(1) ?? null;
+    },
+    set row(v: Row | null) {
+      if (v) rows.set(1, v);
+      else rows.delete(1);
+    },
+  };
   const calls: string[] = [];
   const f = (async (url: string, init?: RequestInit) => {
     const u = new URL(url);
@@ -50,11 +62,17 @@ function fakeSupabase() {
       return body.token === "123456" ? json({ access_token: "A", refresh_token: "R", expires_in: 3600, user: { id: "u1", email: body.email } }) : json({ msg: "Token has expired or is invalid" }, 403);
     const auth = (init?.headers as Record<string, string>)?.Authorization;
     if (auth !== "Bearer A") return json({ message: "JWT" }, 401);
-    if (u.pathname === "/rest/v1/saves") return json(db.row ? [{ data: db.row.data, saved_at: db.row.saved_at, level: db.row.level, device: db.row.device }] : []);
+    if (u.pathname === "/rest/v1/saves") {
+      const want = u.searchParams.get("slot")?.replace("eq.", "");
+      const list = [...rows.entries()].filter(([n]) => !want || String(n) === want);
+      return json(list.map(([n, r]) => ({ slot: n, data: r.data, saved_at: r.saved_at, level: r.level, device: r.device })));
+    }
     if (u.pathname === "/rest/v1/rpc/put_save") {
-      const cur = db.row;
+      const slot = body.p_slot;
+      if (typeof slot !== "number" || slot < 1 || slot > 8) return json({ message: "bad slot" }, 400);
+      const cur = rows.get(slot);
       if (!cur || cur.saved_at === body.p_expected || cur.saved_at < body.p_saved_at) {
-        db.row = { data: body.p_data, saved_at: body.p_saved_at, level: body.p_level, device: body.p_device, prev: cur?.data };
+        rows.set(slot, { data: body.p_data, saved_at: body.p_saved_at, level: body.p_level, device: body.p_device, prev: cur?.data });
         return json({ ok: true });
       }
       return json({ ok: false, current: { data: cur.data, saved_at: cur.saved_at, level: cur.level, device: cur.device } });
@@ -154,5 +172,31 @@ describe("Cloud client against a fake Supabase", () => {
     a.signOut();
     expect(a.signedIn).toBe(false);
     expect((await a.sync(save(1, 1))).kind).toBe("signed-out");
+  });
+
+  it("v1.0: each hero slot syncs on its own row; a hero made on another device is listed", async () => {
+    const sb = fakeSupabase();
+    const store = mem();
+    const a = new Cloud(cfg, sb.f, store);
+    await a.verify("j@x.y", "123456");
+    expect((await a.sync(save(60, 100))).kind).toBe("pushed"); // the Barbarian, slot 1
+    a.setSlot(2);
+    expect(a.lastSynced).toBe(0);
+    expect((await a.sync(save(3, 200))).kind).toBe("pushed"); // the Amazon, slot 2
+    expect(sb.db.rows.get(1)?.level).toBe(60);
+    expect(sb.db.rows.get(2)?.level).toBe(3);
+    // switching back keeps slot 1's bookkeeping (no careful first sync again)
+    a.setSlot(1);
+    expect(a.lastSynced).toBe(100);
+    expect((await a.sync(save(60, 100))).kind).toBe("none");
+    // a second device sees both heroes
+    const b = new Cloud(cfg, sb.f, mem());
+    await b.verify("j@x.y", "123456");
+    const all = await b.pullAll();
+    expect(all.map((r) => r.slot).sort()).toEqual([1, 2]);
+    b.markSynced(2, 200, 250);
+    b.setSlot(2);
+    expect(b.lastSynced).toBe(200);
+    expect((await b.sync(save(3, 250))).kind).toBe("none");
   });
 });

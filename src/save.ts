@@ -8,9 +8,112 @@
 import { type SaveData, SAVE_VERSION, migrateSave } from "./game";
 
 export const KEY = "ember-crypt-save-v1"; // name kept from v0.1 so old saves are found
-const TMP = "ember-crypt-save-tmp";
-const BAK = ["ember-crypt-save-bak1", "ember-crypt-save-bak2", "ember-crypt-save-bak3"];
-const BAD = "ember-crypt-save-damaged";
+const TMP0 = "ember-crypt-save-tmp";
+const BAK0 = ["ember-crypt-save-bak1", "ember-crypt-save-bak2", "ember-crypt-save-bak3"];
+const BAD0 = "ember-crypt-save-damaged";
+
+// ------------------------------------------------------------------ v1.0: hero slots
+/**
+ * Up to MAX_HEROES heroes. Slot 1 keeps the original key names (so the existing hero IS slot 1, nothing moves);
+ * slot n > 1 uses the same names with a "#n" suffix. Every slot has its own temp key, 3 rotating backups,
+ * damaged copy and IndexedDB mirror.
+ */
+export const MAX_HEROES = 8;
+const LAST = "ember-crypt-last-slot";
+let slot = 1;
+export const slotKey = (base: string, n = slot) => (n === 1 ? base : `${base}#${n}`);
+const MAIN = () => slotKey(KEY);
+const TMP = () => slotKey(TMP0);
+const BAK = () => BAK0.map((b) => slotKey(b));
+const BAD = () => slotKey(BAD0);
+export const currentSlot = () => slot;
+/** Switch which hero the save functions read and write. */
+export function setSlot(n: number) {
+  slot = Math.max(1, Math.min(MAX_HEROES, Math.floor(n) || 1));
+  writable = true;
+  lastSaved = 0;
+  try {
+    ls()?.setItem(LAST, String(slot));
+  } catch {
+    /* full */
+  }
+}
+/** The hero played last (1 when there has only ever been one). */
+export function lastSlot(): number {
+  const n = Number(ls()?.getItem(LAST) ?? 1);
+  return n >= 1 && n <= MAX_HEROES ? Math.floor(n) : 1;
+}
+export interface HeroInfo {
+  slot: number;
+  cls: string;
+  name: string;
+  level: number;
+  maxFloor: number;
+  savedAt: number;
+}
+/** The newest readable copy of a slot (main, temp, then backups). */
+export function readSlot(n: number): SaveData | null {
+  const s = ls();
+  if (!s) return null;
+  for (const k of [KEY, TMP0, ...BAK0]) {
+    const d = parseSave(s.getItem(slotKey(k, n))).data;
+    if (d) return d;
+  }
+  return null;
+}
+/** Any key at all in use by a slot (a damaged or newer-version save still occupies it). */
+function slotUsed(n: number): boolean {
+  const s = ls();
+  if (!s) return false;
+  return [KEY, TMP0, ...BAK0, BAD0].some((k) => s.getItem(slotKey(k, n)) !== null);
+}
+/** Heroes on this device, last played first. */
+export function listHeroes(): HeroInfo[] {
+  const out: HeroInfo[] = [];
+  for (let n = 1; n <= MAX_HEROES; n++) {
+    const d = readSlot(n);
+    if (!d) continue;
+    const p = d.player;
+    out.push({ slot: n, cls: p.cls ?? "barbarian", name: p.name ?? "Barbarian", level: p.level, maxFloor: d.maxFloor, savedAt: d.savedAt ?? 0 });
+  }
+  const last = lastSlot();
+  return out.sort((a, b) => (a.slot === last ? -1 : b.slot === last ? 1 : b.savedAt - a.savedAt));
+}
+/** First slot with nothing in it (null = all full). */
+export function freeSlot(): number | null {
+  for (let n = 1; n <= MAX_HEROES; n++) if (!slotUsed(n)) return n;
+  return null;
+}
+
+// ------------------------------------------------------------------ v1.0: shared stash
+/**
+ * The stash chest is shared by all heroes on the device (like D2R's shared stash tab). Each hero's save also
+ * carries a copy (player.stash + stashAt); whichever copy was changed last wins. A shared copy written by a
+ * different save version is ignored (the per-hero copies were migrated with their saves), so nothing is lost.
+ */
+const SHARED = "ember-crypt-stash-shared";
+export interface SharedStash {
+  v: number;
+  at: number;
+  items: unknown[];
+}
+export function loadSharedStash(): SharedStash | null {
+  try {
+    const o = JSON.parse(ls()?.getItem(SHARED) ?? "null");
+    if (!o || o.v !== SAVE_VERSION || !Array.isArray(o.items) || !num(o.at)) return null;
+    return o as SharedStash;
+  } catch {
+    return null;
+  }
+}
+export function saveSharedStash(at: number, items: unknown[]) {
+  try {
+    ls()?.setItem(SHARED, JSON.stringify({ v: SAVE_VERSION, at, items }));
+  } catch {
+    /* full: each hero still has its own copy */
+  }
+}
+
 const SKEY = "ember-crypt-settings-v1";
 /** backups rotate at most this often (ms), so they hold genuinely older states */
 const BAK_EVERY = 3 * 60 * 1000;
@@ -87,7 +190,7 @@ export function loadGame(): LoadResult {
   const s = ls();
   writable = true;
   if (!s) return { data: null, source: "none", recovered: false, newer: false };
-  const main = s.getItem(KEY);
+  const main = s.getItem(MAIN());
   const m = parseSave(main);
   if (m.newer) {
     writable = false;
@@ -100,12 +203,13 @@ export function loadGame(): LoadResult {
   // main missing or damaged: keep the damaged copy, then try the others
   if (main) {
     try {
-      s.setItem(BAD, main);
+      s.setItem(BAD(), main);
     } catch {
       /* full */
     }
   }
-  const order: [LoadResult["source"], string][] = [["tmp", TMP], ["bak1", BAK[0]], ["bak2", BAK[1]], ["bak3", BAK[2]]];
+  const B = BAK();
+  const order: [LoadResult["source"], string][] = [["tmp", TMP()], ["bak1", B[0]], ["bak2", B[1]], ["bak3", B[2]]];
   for (const [src, k] of order) {
     const r = parseSave(s.getItem(k));
     if (r.newer) {
@@ -128,9 +232,11 @@ export function saveGame(d: SaveData, opts: { backup?: boolean; force?: boolean 
     const now = Date.now();
     d.savedAt = now;
     const json = JSON.stringify(d);
-    s.setItem(TMP, json);
-    if (s.getItem(TMP) !== json) return false;
-    const prev = s.getItem(KEY);
+    const BAK = BAK0.map((b) => slotKey(b));
+    const TMPK = TMP();
+    s.setItem(TMPK, json);
+    if (s.getItem(TMPK) !== json) return false;
+    const prev = s.getItem(MAIN());
     const prevOk = parseSave(prev).data;
     if (prev && prevOk) {
       const b1 = parseSave(s.getItem(BAK[0])).data;
@@ -143,8 +249,8 @@ export function saveGame(d: SaveData, opts: { backup?: boolean; force?: boolean 
         s.setItem(BAK[0], prev);
       }
     }
-    s.setItem(KEY, json);
-    s.removeItem(TMP);
+    s.setItem(MAIN(), json);
+    s.removeItem(TMPK);
     lastSaved = now;
     mirrorToIdb(json);
     return true;
@@ -158,8 +264,8 @@ export function keepDamaged() {
   const s = ls();
   if (!s) return;
   try {
-    const cur = s.getItem(KEY);
-    if (cur) s.setItem(BAD, cur);
+    const cur = s.getItem(MAIN());
+    if (cur) s.setItem(BAD(), cur);
   } catch {
     /* full */
   }
@@ -174,8 +280,9 @@ export function pauseSaving() {
 export function clearGame() {
   const s = ls();
   if (!s) return;
+  const BAK = BAK0.map((b) => slotKey(b));
   try {
-    const cur = s.getItem(KEY);
+    const cur = s.getItem(MAIN());
     if (cur && parseSave(cur).data) {
       for (let i = BAK.length - 1; i > 0; i--) {
         const v = s.getItem(BAK[i - 1]);
@@ -183,8 +290,8 @@ export function clearGame() {
       }
       s.setItem(BAK[0], cur);
     }
-    s.removeItem(KEY);
-    s.removeItem(TMP);
+    s.removeItem(MAIN());
+    s.removeItem(TMP());
   } catch {
     /* ignore */
   }
@@ -195,7 +302,7 @@ export function clearGame() {
 export function listBackups(): { key: string; level: number; savedAt: number }[] {
   const s = ls();
   if (!s) return [];
-  return BAK.map((k) => ({ k, d: parseSave(s.getItem(k)).data }))
+  return BAK().map((k) => ({ k, d: parseSave(s.getItem(k)).data }))
     .filter((x) => x.d)
     .map((x) => ({ key: x.k, level: x.d!.player.level, savedAt: x.d!.savedAt ?? 0 }));
 }
@@ -281,23 +388,25 @@ function idb(): Promise<IDBDatabase | null> {
   });
 }
 
-let idbPending: string | null | undefined;
+/** v1.0: slot 1 mirrors to "main" (as before), slot n to "main#n". */
+const idbKey = (n = slot) => slotKey("main", n);
+const idbPending = new Map<string, string | null>();
 let idbBusy = false;
 function mirrorToIdb(json: string | null) {
-  idbPending = json;
+  idbPending.set(idbKey(), json);
   if (idbBusy) return;
   idbBusy = true;
   void (async () => {
-    while (idbPending !== undefined) {
-      const v = idbPending;
-      idbPending = undefined;
+    while (idbPending.size) {
+      const [key, v] = idbPending.entries().next().value as [string, string | null];
+      idbPending.delete(key);
       const db = await idb();
       if (!db) break;
       await new Promise<void>((res) => {
         try {
           const tx = db.transaction(STORE, "readwrite");
-          if (v === null) tx.objectStore(STORE).delete("main");
-          else tx.objectStore(STORE).put(v, "main");
+          if (v === null) tx.objectStore(STORE).delete(key);
+          else tx.objectStore(STORE).put(v, key);
           tx.oncomplete = tx.onerror = tx.onabort = () => res();
         } catch {
           res();
@@ -310,12 +419,12 @@ function mirrorToIdb(json: string | null) {
 }
 
 /** The IndexedDB copy (used when localStorage has nothing readable, e.g. after Safari cleared it). */
-export async function loadFromIdb(): Promise<SaveData | null> {
+export async function loadFromIdb(n = slot): Promise<SaveData | null> {
   const db = await idb();
   if (!db) return null;
   const raw = await new Promise<string | null>((res) => {
     try {
-      const rq = db.transaction(STORE, "readonly").objectStore(STORE).get("main");
+      const rq = db.transaction(STORE, "readonly").objectStore(STORE).get(idbKey(n));
       rq.onsuccess = () => res((rq.result as string) ?? null);
       rq.onerror = () => res(null);
     } catch {
@@ -354,9 +463,9 @@ export function markFileBackup(at = Date.now()) {
   }
 }
 /** File name for a backup, e.g. ember-crypt-lv24-2026-11-25.embercrypt */
-export function backupFileName(level: number, now = new Date()): string {
+export function backupFileName(level: number, now = new Date(), cls?: string): string {
   const d = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  return `ember-crypt-lv${level}-${d}${FILE_EXT}`;
+  return `ember-crypt-${cls ? `${cls}-` : ""}lv${level}-${d}${FILE_EXT}`;
 }
 /**
  * Should we nudge the player to back up? Only for a hero worth keeping (level 3+), when the last file

@@ -3,6 +3,35 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.0: the Amazon, hero slots, bows, spears and javelin stab/throw
+
+- **Heroes.** The game opens on a hero select. Your existing Barbarian is hero #1 (his save keys are unchanged, so
+  nothing moves); up to 8 heroes, each with its own save, 3 rotating backups and IndexedDB copy. New hero →
+  Barbarian or Amazon, with a name. Settings → 👥 Change hero switches any time. "Start this hero over" replaces
+  only the current hero (the old one goes to that hero's backups). Heroes can't be deleted yet.
+- **Shared stash.** The camp stash chest is shared by all heroes on the device (newest change wins; every hero's save
+  also keeps a copy). 📁 Back up to Files now writes every hero plus the shared stash into one file; Restore puts
+  the other heroes back into their slots when those are empty or older. Cloud save (still off) syncs one row per hero
+  slot (`supabase/schema.sql` has the new table and an upgrade note).
+- **The Amazon.** Dex-focused (Str 20, Dex 25, Vit 20, Energy 15; 3 life per Vitality), starts with a javelin and a
+  buckler, a short bow and a quiver in her bag. All 30 Diablo II skills in Bow & Crossbow, Passive & Magic and
+  Javelin & Spear, with D2's levels (1/6/12/18/24/30), prerequisites and the 1-point-per-level cap. Her own look:
+  slimmer, blonde ponytail, and the same armor items drawn as leather and bronze scale instead of steel plate; light
+  headgear keeps the hair showing.
+- **New weapons** (same itemization rules, same loot pool for every class): Short Bow (fast), Long Bow (hits
+  harder), Arrows (an off-hand quiver of 600 that refills in camp, never magic), Spear (two-handed, long reach).
+- **Basic attacks.** Skills → Basic: Attack / Stab, Throw and Shoot. Any of them can go on a skill button, and the main
+  ⚔ button can be set to one (Auto = shoot with a bow, throw a throwing weapon, else attack). So a javelin can stab
+  or be thrown before any skills. Works for the Barbarian too. Attacking stays manual.
+- **Javelins are held overhead** (D2 style) when idle and walking, for both classes, in all 8 directions; the stab
+  thrusts forward from that grip and the throw releases from it. Javelin item art is unchanged.
+- **Drop weights** (items on normal kills still ~4.1–4.2%, normal/magic/rare ~35/51/14%; weapons+arrows are 51.3% of
+  drops, was 51.2%): sword, axe, mace 0.85 each (were 1.2) · great sword 0.5 (0.7) · quarterstaff 0.4 (0.6) ·
+  throwing knife, throwing axe, javelin 0.35 each (0.5) · spear 0.45 · short bow 0.45 · long bow 0.4 · arrows 0.25.
+- **Simplifications.** Elemental damage (fire/cold/lightning/poison arrows and javelins) is a % of the weapon's average
+  hit so it keeps pace with your gear; no Amazon synergies yet; Valkyrie and Decoy last until killed or until you
+  change level; one Valkyrie and one Decoy at a time; no crossbows (the tab keeps D2's name).
+
 ## v0.9.4: life ring under the hero (HUD option C), bosses that hit like bosses
 
 - **Life and mana where your eyes already are:** a red life arc and a blue mana arc curve under the hero's feet, with the life number beside them. The bottom-corner orbs are gone (the left thumb used to cover the life orb, and the right thumb the mana orb). They stay only for screen readers.

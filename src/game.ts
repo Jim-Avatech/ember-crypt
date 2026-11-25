@@ -616,6 +616,15 @@ function sanitizeV7(d: SaveData): SaveData {
   if (typeof p.name !== "string" || !p.name.trim()) p.name = CLASS_NAME[p.cls];
   p.name = p.name.slice(0, 16);
   if (p.mainAtk !== null && p.mainAtk !== undefined && !isBasic(p.mainAtk)) p.mainAtk = null;
+  // points in another class's skills (hand-edited or mixed-up save) go back to the pool, never lost
+  if (p.skills && typeof p.skills === "object")
+    for (const [id, n] of Object.entries(p.skills)) {
+      const def = SKILL_BY_ID[id];
+      if (def && def.cls !== p.cls && def.cls !== "any") {
+        p.skillPoints = (Number(p.skillPoints) || 0) + (Number(n) || 0);
+        delete p.skills[id];
+      }
+    }
   // a slot holding a skill of another class (hand-edited save) is cleared; basic attacks are fine
   if (Array.isArray(p.slots)) p.slots = p.slots.map((s) => (s && (isBasic(s) || SKILL_BY_ID[s]?.cls === p.cls) ? s : null));
   return d;
@@ -1501,6 +1510,12 @@ export class Game {
       if (prev >= 0) p.slots[prev] = null;
     }
     p.slots[slot] = id;
+    this.events.changed();
+  }
+
+  /** v1.0: which basic attack the main ⚔ button uses (null = automatic). */
+  setMainAtk(id: BasicId | null) {
+    this.player.mainAtk = id && isBasic(id) ? id : null;
     this.events.changed();
   }
 

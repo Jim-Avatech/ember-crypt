@@ -28,10 +28,10 @@ export const TAB_NAMES: Record<Tab, string> = {
   combat: "Combat Skills",
   masteries: "Combat Masteries",
   warcries: "Warcries",
-  bow: "Bow and Crossbow",
-  passive: "Passive and Magic",
-  javelin: "Javelin and Spear",
-  basic: "Basic Attacks",
+  bow: "Bow & Crossbow",
+  passive: "Passive & Magic",
+  javelin: "Javelin & Spear",
+  basic: "Basic",
 };
 /** v1.0: skill tabs per class, in D2 order, then the basic attacks everyone has */
 export const CLASS_TABS: Record<HeroClass, Tab[]> = {

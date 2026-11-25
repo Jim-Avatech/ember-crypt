@@ -39,7 +39,7 @@ const openSettings = async (page) => { await page.locator('.mbtn[data-tab="setti
   await page.waitForTimeout(400);
   const shared = await page.evaluate(() => window.__shared);
   const f = shared?.[0];
-  check("share sheet got one .embercrypt file", shared.length === 1 && /^ember-crypt-lv21-\d{4}-\d\d-\d\d\.embercrypt$/.test(f.name), f?.name);
+  check("share sheet got one .embercrypt file", shared.length === 1 && /^ember-crypt-(barbarian-)?lv21-\d{4}-\d\d-\d\d\.embercrypt$/.test(f.name), f?.name);
   let parsed = null;
   try { parsed = JSON.parse(f.text); } catch {}
   check("file is the real save JSON", parsed?.player?.level === 21 && parsed?.player?.gold === 9876);
