@@ -209,7 +209,8 @@ document.addEventListener(
   "touchmove",
   (e) => {
     const t = e.target as HTMLElement;
-    if (!t.closest?.(".pbody")) e.preventDefault();
+    // v0.8.2: the compare sheet's cards scroll by touch too
+    if (!t.closest?.(".pbody, .ccard")) e.preventDefault();
   },
   { passive: false },
 );

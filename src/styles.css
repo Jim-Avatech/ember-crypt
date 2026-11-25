@@ -1288,15 +1288,22 @@ body.portrait #rotate {
 .wpnext { font-size: 11.5px; color: #8a7a5a; padding: 2px 4px; }
 /* v0.8 side-by-side compare sheet */
 .pbox { position: relative; }
-.cmpsheet { position: absolute; left: 6px; right: 6px; top: 50px; bottom: 6px; z-index: 5; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(12, 9, 6, 0.97); border: 1px solid #5a4428; border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7); }
-.ccards { flex: 1; min-height: 0; display: flex; gap: 8px; overflow-y: auto; touch-action: pan-y; }
-.ccard { flex: 1 1 0; min-width: 0; padding: 6px 10px; border: 1px solid #3a2e1e; border-radius: 5px; background: rgba(0, 0, 0, 0.35); font-size: 13px; line-height: 1.5; color: #d8ccb0; }
+.cmpsheet { position: absolute; left: 4px; right: 4px; top: 46px; bottom: 4px; z-index: 5; display: flex; flex-direction: column; gap: 4px; padding: 5px; background: rgba(12, 9, 6, 0.97); border: 1px solid #5a4428; border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7); }
+.ccards { flex: 1; min-height: 0; display: flex; gap: 5px; }
+/* v0.8.2: each card scrolls on its own (touch), with a fade + arrow while there's more below */
+.ccard { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain;
+  padding: 4px 8px 6px; border: 1px solid #3a2e1e; border-radius: 5px; background: rgba(0, 0, 0, 0.35); font-size: 12.5px; line-height: 1.32; color: #d8ccb0; }
+.ccard::after { content: ""; position: sticky; display: block; bottom: -6px; height: 0; margin: 0 -8px; pointer-events: none; }
+.ccard.more::after { content: "▾ more"; height: 26px; margin-top: -26px; padding-top: 10px; box-sizing: border-box; text-align: center; font-size: 11px; color: var(--gold);
+  background: linear-gradient(rgba(10, 8, 5, 0), rgba(10, 8, 5, 0.95) 60%); }
 .ccard.selc { border-color: #c7a050; }
-.ccard .iname { font-size: 15px; }
-.ccard.empty .hint { margin-top: 8px; }
-.chead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #a08c64; margin-bottom: 2px; }
+.ccard .iname { font-size: 14px; line-height: 1.2; }
+.ccard .itype { font-size: 11px; margin-bottom: 2px; }
+.ccard .clines > div { padding: 0.5px 0; }
+.ccard.empty .hint { margin-top: 6px; }
+.chead { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #a08c64; margin-bottom: 1px; }
 .ccard.selc .chead { color: var(--gold2); }
-.cfoot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cfoot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cfoot .ibtns { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; }
 .cfoot .price { margin: 0; }
 

@@ -214,6 +214,14 @@ export class Ui {
       this.onDown(e);
     });
     this.panel.addEventListener("pointermove", (e) => this.onMove(e));
+    this.panel.addEventListener(
+      "scroll",
+      (e) => {
+        const t = e.target as HTMLElement;
+        if (t.classList?.contains("ccard")) Ui.markMore(t);
+      },
+      true,
+    );
     this.panel.addEventListener("pointerup", (e) => {
       const bt = this.btnTap;
       if (bt && bt.id === e.pointerId) {
@@ -461,6 +469,12 @@ export class Ui {
         <div class="pbody pbody-${tab}">${body}</div>
         ${this.sheetHtml()}
       </div>`;
+    this.panel.querySelectorAll<HTMLElement>(".ccard").forEach((c) => Ui.markMore(c));
+  }
+
+  /** v0.8.2: show the "▾ more" fade on a compare card while there's more to scroll to. */
+  static markMore(c: HTMLElement) {
+    c.classList.toggle("more", c.scrollHeight - c.clientHeight - c.scrollTop > 4);
   }
 
   /** Nearest panel button within `r` px of a point (for taps that land just outside a button). */
@@ -1408,7 +1422,7 @@ export class Ui {
         <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.8.1 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.8.2 · all art made in code for this game</p>
       </div>`;
   }
 

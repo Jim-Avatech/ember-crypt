@@ -3,6 +3,11 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.8.2 — compare cards scroll
+
+- Each card in the compare sheet now scrolls on its own by touch. Before, the game's touch handler blocked scrolling outside the panel body, so long items were cut off. A "▾ more" fade shows while a card has more below it, and spacing is tighter so most items fit without scrolling at 852×393.
+- Test: `scripts/compare-scroll.mjs`. At 852×393, and again at 852×300 to force overflow, it swipes each card and checks that the last affix of a 4-affix rare is reachable.
+
 ## v0.8.1 — no more black screen after an update
 
 - **Fix:** the v0.8 service worker deleted the old cache, and that cache held the new game files fetched on the first open after the update. Opening the app again on a weak or no connection then found the page but not the game files, and showed a black screen. The new worker caches a version's files before it takes over. It keeps hashed files across updates, and loads the page from the network first with a 6 s timeout.
