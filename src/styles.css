@@ -72,13 +72,6 @@ button {
   left: calc(var(--sal) + 10px);
   top: calc(var(--sat) + 8px);
 }
-#floor-label {
-  font-size: 12px;
-  color: var(--gold);
-  text-shadow: 0 1px 2px #000;
-  white-space: pre;
-  letter-spacing: 0.02em;
-}
 #buffs {
   margin-top: 4px;
   display: flex;
@@ -268,11 +261,6 @@ button {
 #btn-s2 {
   right: calc(var(--sar) + 108px);
   bottom: calc(var(--sab) + 136px);
-}
-/* v0.9: 4th skill button, left of the first two */
-#btn-s3 {
-  right: calc(var(--sar) + 256px);
-  bottom: calc(var(--sab) + 56px);
 }
 .sbtn .g {
   font-size: 24px;
@@ -849,15 +837,6 @@ body.portrait #rotate {
 .buff.frenzy {
   border-color: #c85a20;
   color: #ffb080;
-}
-#objective {
-  font-size: 11px;
-  color: #9ad0ff;
-  text-shadow: 0 1px 2px #000;
-  margin-top: 2px;
-}
-#objective:empty {
-  display: none;
 }
 .wplist {
   display: flex;

@@ -447,11 +447,12 @@ export class Renderer {
     }
     f.globalAlpha = 1;
 
+    this.lastBossBar = null;
     if (game.boss && game.boss.state !== "dead" && game.boss.state !== "idle") {
       const b = game.boss;
       const w = Math.min(320, this.W * 0.4);
       const x = this.W / 2 - w / 2;
-      const y = 12;
+      const y = this.bossBarY(x, w);
       f.fillStyle = "rgba(0,0,0,.75)";
       f.fillRect(x - 2, y - 2, w + 4, 22);
       f.fillStyle = b.def.rank === "final" ? "#a0400c" : "#7a1410";
@@ -628,6 +629,21 @@ export class Renderer {
   }
 
   /** Which animation + frame the player shows right now. */
+  /** v0.9.2: HUD boxes (menu buttons, buffs, minimap) the boss bar must not cover, in canvas CSS pixels. */
+  hudAvoid: () => { left: number; top: number; right: number; bottom: number }[] = () => [];
+  /** Top of the boss bar: top center, pushed down below any HUD box it would overlap. */
+  bossBarY(x: number, w: number): number {
+    const H = 22;
+    let y = 10;
+    const boxes = this.hudAvoid().filter((r) => r.right > r.left && r.bottom > r.top);
+    for (let pass = 0; pass < 3; pass++)
+      for (const r of boxes)
+        if (x - 6 < r.right && x + w + 6 > r.left && y - 4 < r.bottom && y + H + 4 > r.top) y = r.bottom + 6;
+    this.lastBossBar = { x: x - 2, y: y - 2, w: w + 4, h: H };
+    return y;
+  }
+  lastBossBar: { x: number; y: number; w: number; h: number } | null = null;
+
   playerAnim(game: Game): { anim: Anim; f: number } {
     const p = game.player;
     const a = p.action;

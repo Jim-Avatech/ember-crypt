@@ -66,9 +66,9 @@ describe("v4 migration refunds skills that no longer qualify", () => {
 
 describe("throwing weapons and quarterstaff", () => {
   it("new classes have stacks, hands and sizes", () => {
-    expect(makeItem("throwing_knife", 1).qty).toBe(40);
-    expect(makeItem("throwing_axe", 1).qty).toBe(30);
-    expect(makeItem("javelin", 1).qty).toBe(25);
+    expect(makeItem("throwing_knife", 1).qty).toBe(160);
+    expect(makeItem("throwing_axe", 1).qty).toBe(120);
+    expect(makeItem("javelin", 1).qty).toBe(100);
     expect(BASE_BY_ID.quarterstaff.hands).toBe(2);
     expect(BASE_BY_ID.quarterstaff.speed!).toBeLessThan(BASE_BY_ID.sword.speed!);
     const g = new Game(events, null, 1);
@@ -112,7 +112,7 @@ describe("throwing weapons and quarterstaff", () => {
     const { g, p, m } = setup();
     const hp0 = m.hp;
     for (let i = 0; i < 60; i++) g.update(1 / 30, { ...idle, attack: i < 40 });
-    expect(p.equip.main!.qty).toBeLessThan(40);
+    expect(p.equip.main!.qty).toBeLessThan(160);
     expect(m.hp).toBeLessThan(hp0);
     expect(Math.hypot(m.x - p.x, m.y - p.y)).toBeGreaterThan(1.5); // didn't walk into melee
   });
@@ -121,8 +121,8 @@ describe("throwing weapons and quarterstaff", () => {
     const { g, p } = setup(true);
     g.update(1 / 30, { ...idle, skills: [true, false, false] });
     for (let i = 0; i < 40; i++) g.update(1 / 30, idle);
-    expect(p.equip.main!.qty).toBe(39);
-    expect(p.equip.off!.qty).toBe(29);
+    expect(p.equip.main!.qty).toBe(159);
+    expect(p.equip.off!.qty).toBe(119);
   });
 
   it("empty stacks fall back to melee and refill in camp", () => {
@@ -131,7 +131,7 @@ describe("throwing weapons and quarterstaff", () => {
     g.update(1 / 30, { ...idle, attack: true });
     expect(p.action?.type).toBe("swing");
     g.goTown();
-    expect(p.equip.main!.qty).toBe(40);
+    expect(p.equip.main!.qty).toBe(160);
   });
 
   it("thrown weapons use Throwing Mastery; staff uses Pole Arm; javelin melee uses Spear", () => {

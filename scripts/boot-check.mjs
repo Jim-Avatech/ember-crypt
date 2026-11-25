@@ -26,7 +26,7 @@ for (let round = 0; round < 2; round++) {
   await page.waitForTimeout(3000);
   const st = await page.evaluate(() => ({
     canvas: document.querySelectorAll("canvas").length,
-    hud: document.querySelector("#floor-label")?.textContent ?? null,
+    hud: document.querySelector("#hud")?.getAttribute("aria-label") ?? null,
     bootErr: document.querySelector("#boot-error")?.textContent ?? null,
     saved: (() => { try { const s = JSON.parse(localStorage.getItem("ember-crypt-save-v1")); return { v: s.v, lvl: s.player.level, gold: s.player.gold, max: s.maxFloor }; } catch (e) { return String(e); } })(),
     sw: !!navigator.serviceWorker?.controller,

@@ -133,7 +133,7 @@ function monstersHtml(): string {
 
 function skillsHtml(): string {
   const tabs = [...new Set(SKILLS.map((s) => s.tab))];
-  return `<p class="gnote">Each level gives 1 skill point. As in Diablo II, a skill's hard points are capped at 1 + (your level − the skill's level), up to ${MAX_SKILL_LVL}; +skills on gear go on top. Every Barbarian skill is playable. Put up to four on the skill buttons: open Skills, pick one, tap 1–4. Passives (Masteries, Increased Speed and Stamina, Iron Skin, Natural Resistance) work on their own. Synergies: each hard point in Howl, Taunt, Battle Cry or Battle Orders adds 6% War Cry damage; Shout and Battle Orders lengthen each other (+5 s per point).</p>${tabs
+  return `<p class="gnote">Each level gives 1 skill point. As in Diablo II, a skill's hard points are capped at 1 + (your level − the skill's level), up to ${MAX_SKILL_LVL}; +skills on gear go on top. Every Barbarian skill is playable. Put up to three on the skill buttons: open Skills, pick one, tap 1–3. Passives (Masteries, Increased Speed and Stamina, Iron Skin, Natural Resistance) work on their own. Synergies: each hard point in Howl, Taunt, Battle Cry or Battle Orders adds 6% War Cry damage; Shout and Battle Orders lengthen each other (+5 s per point).</p>${tabs
     .map((t) => {
       const rows = SKILLS.filter((s) => s.tab === t)
         .sort((a, b) => a.reqLvl - b.reqLvl || a.row - b.row)

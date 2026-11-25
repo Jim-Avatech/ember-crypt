@@ -121,10 +121,30 @@ const ui = new Ui(app, () => game, input, settings, {
   soundState: () => sfx.state,
 });
 renderer.setMinimap(ui.minimap);
+// v0.9.2: the boss bar stays clear of the menu buttons, buffs and minimap; toasts drop below the bar
+const toastEl = document.getElementById("toast");
+let toastTop = "";
+function placeToast() {
+  const bb = renderer.lastBossBar;
+  const top = bb ? `${Math.round(bb.y + bb.h + 10)}px` : "";
+  if (toastEl && top !== toastTop) toastEl.style.top = toastTop = top;
+}
+{
+  const els = ["#hud .hud-tr", "#buffs", "#minimap"].map((s) => document.querySelector<HTMLElement>(s));
+  renderer.hudAvoid = () => {
+    const c = canvas.getBoundingClientRect();
+    return els.filter((e): e is HTMLElement => !!e).map((e) => {
+      const r = e.getBoundingClientRect();
+      return { left: r.left - c.left, top: r.top - c.top, right: r.right - c.left, bottom: r.bottom - c.top };
+    });
+  };
+}
 function applyAuto() {
   game.auto = { hp: settings.autoHp, hpAt: settings.autoHpAt, mp: settings.autoMp };
 }
 applyAuto();
+if (game.inTown && game.maxFloor <= 1 && game.player.kills === 0)
+  setTimeout(() => game.inTown && game.maxFloor <= 1 && ui.toast("Walk to the glowing waypoint ✦ to enter the crypt", 6000), 1800);
 
 // ---- v0.9: cloud save (off unless the build has a free Supabase project configured and VITE_CLOUD=1, or ?cloud)
 function cloudHooks(c: Cloud) {
@@ -359,6 +379,7 @@ function step(now: number) {
     }
   } else input.taps.length = 0;
   renderer.render(game, paused ? 0 : dt, settings.labels);
+  placeToast();
   ui.updateHud();
   ui.tick(dt);
   saveT += dt;

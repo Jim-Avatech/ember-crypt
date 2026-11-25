@@ -13,7 +13,7 @@ const watch = (page, tag) => {
   page.on("console", (m) => m.type() === "error" && errs.push(`${tag} console ${m.text()}`));
   page.on("response", (r) => r.status() >= 400 && errs.push(`${tag} http ${r.status()} ${r.url()}`));
 };
-const state = (page) => page.evaluate(() => ({ hud: document.querySelector("#floor-label")?.textContent ?? null, boot: (() => { const b = document.getElementById("boot"); return b ? (getComputedStyle(b).display === "none" ? "hidden" : b.textContent.slice(0, 80)) : "none"; })(), ver: [...document.querySelectorAll("script[src]")].map((s) => s.src.split("/").pop()).join(), sw: !!navigator.serviceWorker.controller, lvl: (() => { try { return JSON.parse(localStorage.getItem("ember-crypt-save-v1")).player.level; } catch { return null; } })() }));
+const state = (page) => page.evaluate(() => ({ hud: document.querySelector("#hud")?.getAttribute("aria-label") ?? null, boot: (() => { const b = document.getElementById("boot"); return b ? (getComputedStyle(b).display === "none" ? "hidden" : b.textContent.slice(0, 80)) : "none"; })(), ver: [...document.querySelectorAll("script[src]")].map((s) => s.src.split("/").pop()).join(), sw: !!navigator.serviceWorker.controller, lvl: (() => { try { return JSON.parse(localStorage.getItem("ember-crypt-save-v1")).player.level; } catch { return null; } })() }));
 let page = await ctx.newPage();
 watch(page, "old1");
 await page.goto(url);

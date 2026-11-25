@@ -263,7 +263,7 @@ describe("v0.8 difficulty", () => {
     const before = g.ground.length;
     kill(g, u);
     const items = g.ground.slice(before).filter((x) => x.item);
-    expect(items.length).toBe(1); // v0.9.1: one item (was 2), always magic or better
+    expect(items.length).toBeLessThanOrEqual(1); // v0.9.2: one item half the time (was 2, then 1), always magic or better
     expect(items.every((x) => x.item!.q === "magic" || x.item!.q === "rare")).toBe(true);
   });
   it("potions heal over time with a cooldown", () => {

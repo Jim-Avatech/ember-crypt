@@ -3,7 +3,7 @@ import { makeItem } from "../src/data/items";
 import { Game, type FrameInput, type GameEvents } from "../src/game";
 
 const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, levelUp() {}, shake() {} };
-const idle: FrameInput = { mx: 0, my: 0, mag: 0, attack: false, skills: [false, false, false, false] };
+const idle: FrameInput = { mx: 0, my: 0, mag: 0, attack: false, skills: [false, false, false] };
 
 function setup(weapon: string) {
   const g = new Game(events, null, 31);
@@ -34,8 +34,8 @@ describe("v0.9.1: Frenzy and Double Swing still work with a two-handed weapon (J
         const { g, p, m } = setup(weapon);
         vi.spyOn(Math, "random").mockReturnValue(0.02); // every swing connects (no miss rolls)
         expect(p.equip.main && p.equip.off).toBeFalsy();
-        p.slots = [skill, null, null, null];
-        g.update(1 / 30, { ...idle, skills: [true, false, false, false] });
+        p.slots = [skill, null, null];
+        g.update(1 / 30, { ...idle, skills: [true, false, false] });
         const a = p.action;
         expect(a?.type).toBe("swing");
         if (a?.type === "swing") expect(a.hands).toEqual([0, 0]); // two hits, both from the two-hander

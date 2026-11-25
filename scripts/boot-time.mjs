@@ -13,7 +13,7 @@ const cdp = await ctx.newCDPSession(page);
 await cdp.send("Emulation.setCPUThrottlingRate", { rate });
 const t0 = Date.now();
 await page.goto(url, { waitUntil: "commit" });
-await page.waitForFunction(() => !!document.querySelector("#floor-label")?.textContent, null, { timeout: 120000, polling: 50 });
+await page.waitForFunction(() => !!document.querySelector("#hud")?.getAttribute("aria-label"), null, { timeout: 120000, polling: 50 });
 const tHud = Date.now() - t0;
 const prof = await page.evaluate(() => performance.getEntriesByType("navigation")[0]?.domContentLoadedEventEnd | 0);
 console.log(`throttle ${rate}x: HUD after ${tHud} ms (DOMContentLoaded ${prof} ms)`);

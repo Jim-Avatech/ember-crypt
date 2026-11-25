@@ -3,6 +3,38 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.9.2: fewer drops, three skill buttons, cleaner HUD, tougher monsters, more throwing ammo, ring choice
+
+- **Drops halved again** (40,000 simulated kills):
+
+  | Source | v0.9.1 | v0.9.2 |
+  |---|---|---|
+  | Normal monster, item | 8.3% of kills | 4.2% |
+  | Champion | 0.5 items per kill | 0.25 |
+  | Unique | 1 item | 0.5 (always magic or better) |
+
+  The normal/magic/rare mix is unchanged at about 36/51/13%. Gold, potions, bosses, artifacts and Find Item are unchanged.
+- **Three skill buttons:** if a v0.9 save had a skill on the 4th button, the button is dropped but the skill stays learned.
+- **Boss bar:**
+  - The bar stays at the top center but is pushed below any HUD element it would touch (menu buttons, buffs, minimap); toasts move below it.
+  - Checked at 852×393 with iPhone safe areas (47/59 px sides, 21 px bottom) in Chromium and WebKit: `scripts/v092-shots.mjs`.
+- **No top-left text:**
+  - The game name, area, level and portal line are gone.
+  - ⌂ Town (top right) shows whenever you're in the crypt. The first trip down shows a one-time tip about it, and starting a return says "walk to cancel".
+  - Floor and portal info still come as toasts.
+- **Monsters:** +30% life and +25% damage for every monster. Champions, uniques and bosses build on that, so they scale too. Representative averages, before → after:
+
+  | Floor | Normal life | Normal damage | Boss life | Boss damage |
+  |---|---|---|---|---|
+  | 1 | 10 → 14 | 3 → 4 | 204 → 265 | 9 → 11 |
+  | 20 | 64 → 84 | 13 → 16 | 2086 → 2711 | 47 → 59 |
+  | 40 | 210 → 273 | 30 → 38 | 4680 → 6084 | 90 → 113 |
+  | 80 | 419 → 544 | 86 → 107 | 11400 → 14820 | 170 → 213 |
+- **Throwing weapons ×4:** Throwing Knives 40 → 160, Throwing Axes 30 → 120, Javelins 25 → 100. Existing stacks fill to the new cap the next time you're in camp, which includes opening the game.
+- **Rings:**
+  - Equipping a ring offers **Left ring** and **Right ring**.
+  - The compare sheet shows both equipped rings, labelled left and right.
+
 ## v0.9.1: half the item drops, two-handed grip
 
 - **Drops (measured over 40,000 simulated kills, Act II):**

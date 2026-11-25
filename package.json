@@ -14,7 +14,8 @@
     "test:file-backup": "node scripts/file-backup.mjs",
     "test:cloud-ui": "node scripts/cloud-ui.mjs",
     "test:skills": "node scripts/skills-shots.mjs",
-    "test:twohand": "node scripts/twohand-sheet.mjs"
+    "test:twohand": "node scripts/twohand-sheet.mjs",
+    "test:v092": "node scripts/v092-shots.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",

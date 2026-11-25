@@ -6,6 +6,6 @@ await ctx.addInitScript(([s, k]) => { if (!location.href.startsWith("http") || s
 const page = await ctx.newPage();
 await page.goto(url);
 await page.waitForTimeout(2500);
-console.log(JSON.stringify(await page.evaluate(() => ({ boot: document.getElementById("boot")?.innerText, hud: document.querySelector("#floor-label")?.textContent ?? null, main: (localStorage.getItem("ember-crypt-save-v1") || "").length, damaged: (localStorage.getItem("ember-crypt-save-damaged") || "").length }))));
+console.log(JSON.stringify(await page.evaluate(() => ({ boot: document.getElementById("boot")?.innerText, hud: document.querySelector("#hud")?.getAttribute("aria-label") ?? null, main: (localStorage.getItem("ember-crypt-save-v1") || "").length, damaged: (localStorage.getItem("ember-crypt-save-damaged") || "").length }))));
 await page.screenshot({ path: process.env.SHOT || "/tmp/fail.png" });
 await b.close();

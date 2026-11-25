@@ -27,7 +27,7 @@ export const TAB_NAMES: Record<Tab, string> = {
 
 export const MAX_SKILL_LVL = 20;
 /** Skill buttons next to the attack button (v0.9: 4, was 3). */
-export const SKILL_SLOTS = 4;
+export const SKILL_SLOTS = 3; // v0.9.2: back to three buttons (James prefers three)
 
 // ---- numbers used by both the game and the descriptions ----
 export const bashDmg = (l: number) => 50 + (l - 1) * 10; // % damage

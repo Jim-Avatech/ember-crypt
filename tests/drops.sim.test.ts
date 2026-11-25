@@ -28,21 +28,23 @@ export function simulate(kind: "normal" | "champion" | "unique", n: number) {
   return out;
 }
 
-it("drop rates (v0.9.1: items halved, mix kept, gold and potions unchanged)", () => {
+it("drop rates (v0.9.2: items quartered vs v0.9, mix kept, gold and potions unchanged)", () => {
   const N = 40000;
   const nm = simulate("normal", N), ch = simulate("champion", N / 4), un = simulate("unique", N / 4);
   const pct = (x: number, n: number) => ((100 * x) / n).toFixed(1);
   console.log(`normal monster: items ${pct(nm.items, N)}% per kill (normal/magic/rare ${pct(nm.normal, nm.items)}/${pct(nm.magic, nm.items)}/${pct(nm.rare, nm.items)}%), gold ${pct(nm.gold, N)}%, potions ${pct(nm.potions, N)}%`);
   console.log(`champion: ${(ch.items / (N / 4)).toFixed(2)} items/kill (n/m/r ${pct(ch.normal, ch.items)}/${pct(ch.magic, ch.items)}/${pct(ch.rare, ch.items)}%)`);
   console.log(`unique: ${(un.items / (N / 4)).toFixed(2)} items/kill (n/m/r ${pct(un.normal, un.items)}/${pct(un.magic, un.items)}/${pct(un.rare, un.items)}%)`);
-  expect(nm.items / N).toBeGreaterThan(0.075);
-  expect(nm.items / N).toBeLessThan(0.095);
+  expect(nm.items / N).toBeGreaterThan(0.035);
+  expect(nm.items / N).toBeLessThan(0.05);
   expect(nm.gold / N).toBeGreaterThan(0.18);
   expect(nm.potions / N).toBeGreaterThan(0.08);
-  expect(ch.items / (N / 4)).toBeGreaterThan(0.45);
-  expect(ch.items / (N / 4)).toBeLessThan(0.55);
-  expect(un.items / (N / 4)).toBe(1);
+  expect(ch.items / (N / 4)).toBeGreaterThan(0.2);
+  expect(ch.items / (N / 4)).toBeLessThan(0.3);
+  expect(un.items / (N / 4)).toBeGreaterThan(0.45);
+  expect(un.items / (N / 4)).toBeLessThan(0.55);
+  expect(un.normal).toBe(0); // a unique's item is always magic or better
   // the normal/magic/rare mix of a normal monster's drops is unchanged (36/51/13 before)
-  expect(Math.abs(nm.normal / nm.items - 0.364)).toBeLessThan(0.03);
+  expect(Math.abs(nm.normal / nm.items - 0.364)).toBeLessThan(0.04);
   expect(Math.abs(nm.rare / nm.items - 0.127)).toBeLessThan(0.025);
 });

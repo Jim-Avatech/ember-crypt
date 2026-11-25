@@ -15,7 +15,7 @@ for (let i = 0; i < saves.length; i++) {
   await page.goto(url + (url.includes("?") ? "&" : "?") + "debug");
   await page.waitForTimeout(900);
   const r = await page.evaluate(async () => {
-    const out = { hud: document.querySelector("#floor-label")?.textContent ?? null };
+    const out = { hud: document.querySelector("#hud")?.getAttribute("aria-label") ?? null };
     try {
       for (const t of ["char", "inv", "skills", "arts", "guide", "settings", "wp"]) { __ec.ui.open(t); await new Promise((r) => setTimeout(r, 60)); }
       __ec.ui.close();

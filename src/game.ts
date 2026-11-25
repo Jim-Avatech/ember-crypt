@@ -22,8 +22,12 @@ import { type Level, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight
 import { Rng, chance, rand, randInt } from "./rng";
 
 /** v0.9.1 drop rates: a normal monster drops an item 8.5% of the time (was 17%); a champion has a 50% chance of one item (was always 1). */
-export const ITEM_DROP = 0.085;
-export const ELITE_ITEM_CHANCE = 0.5;
+/** v0.9.2: every monster (elites and bosses build on these) has +30% life and +25% damage. */
+export const MON_HP = 1.3;
+export const MON_DMG = 1.25;
+export const ITEM_DROP = 0.0425; // v0.9.2: halved again (was 0.085, originally 0.17)
+export const ELITE_ITEM_CHANCE = 0.25; // champions (was 0.5, originally always 1)
+export const UNIQUE_ITEM_CHANCE = 0.5; // uniques: one item half the time (was always 1, originally 2); always magic or better
 
 export interface Stats {
   str: number;
@@ -665,7 +669,7 @@ export class Game {
       this.player.bag = this.player.bag ?? [];
       this.player.stash = this.player.stash ?? [];
       this.player.artifacts = this.player.artifacts ?? [];
-      // v0.9: 4 skill buttons (older saves have 3)
+      // v0.9.2: 3 skill buttons (a skill on the v0.9 4th button is dropped; it stays learned)
       this.player.slots = Array.isArray(this.player.slots) ? this.player.slots.slice(0, SKILL_SLOTS) : [];
       while (this.player.slots.length < SKILL_SLOTS) this.player.slots.push(null);
       this.player.chillT = 0;
@@ -752,6 +756,8 @@ export class Game {
     const a = actDef(this.floor);
     const l = levelInAct(this.floor);
     this.events.toast(l === 1 ? `Act ${a.roman}: ${a.area} — ${a.tagline}` : isFinalLevel(this.floor) ? `${floorName(this.floor)} — the lair of ${MONSTERS[a.finalBoss].name}` : `${floorName(this.floor)}/${LEVELS_PER_ACT}`);
+    // v0.9.2: the top-left text is gone, so the first trip down says where the way home is
+    if (this.floor === 1 && this.player.kills === 0) setTimeout(() => this.events.toast("Tip: ⌂ Town (top right) takes you back to camp at any time"), 3200);
     this.events.changed();
   }
 
@@ -896,10 +902,10 @@ export class Game {
 
   private spawn(kind: MonsterKind, mlvl: number, x: number, y: number, pack: number, defOverride?: MonsterDef): Monster {
     const def = defOverride ?? MONSTERS[kind];
-    const hp = scaleHp(def.hp, mlvl);
+    const hp = Math.round(scaleHp(def.hp, mlvl) * MON_HP);
     const m: Monster = {
       id: this.nextId++, def, mlvl, x, y, hp, maxHp: hp,
-      dmgMin: scaleDmg(def.dmgMin, mlvl), dmgMax: scaleDmg(def.dmgMax, mlvl),
+      dmgMin: Math.max(1, Math.round(scaleDmg(def.dmgMin, mlvl) * MON_DMG)), dmgMax: Math.max(1, Math.round(scaleDmg(def.dmgMax, mlvl) * MON_DMG)),
       ar: scaleAR(def.ar, mlvl), defense: scaleDef(def.def, mlvl), xp: Math.max(1, Math.round(scaleXp(def.xp, mlvl) * actDef(Math.max(1, this.floor)).reward * XP_RATE)),
       state: "idle", atkT: 0, windT: 0, stunT: 0, fearT: 0, kx: 0, ky: 0, flash: 0, fx: 0, fy: 1,
       walkPhase: Math.random() * 6, pack, homeX: x, homeY: y, wanderT: Math.random() * 3, wx: x, wy: y,
@@ -1939,7 +1945,7 @@ export class Game {
       // champions and uniques: better loot (uniques always drop magic or better)
       const u = m.elite === 2;
       // v0.9.1: half as many items (uniques 2 -> 1, champions 1 -> a 50% chance); each item's quality roll is unchanged
-      if (u || chance(ELITE_ITEM_CHANCE)) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (u ? 100 : 50), u) });
+      if (chance(u ? UNIQUE_ITEM_CHANCE : ELITE_ITEM_CHANCE)) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (u ? 100 : 50), u) });
       this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(8, 20) * m.mlvl * (u ? 2 : 1)) });
       if (u) this.events.sound("boss");
     } else if (!m.minion || chance(0.3)) {

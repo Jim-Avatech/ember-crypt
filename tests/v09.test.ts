@@ -4,7 +4,7 @@ import { makeItem } from "../src/data/items";
 import { Game, type FrameInput, type GameEvents, type Monster, migrateSave } from "../src/game";
 
 const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, levelUp() {}, shake() {} };
-const idle: FrameInput = { mx: 0, my: 0, mag: 0, attack: false, skills: [false, false, false, false] };
+const idle: FrameInput = { mx: 0, my: 0, mag: 0, attack: false, skills: [false, false, false] };
 const kill = (g: Game, m: Monster) => (g as unknown as { kill(m: Monster): void }).kill(m);
 
 /** A level 30 Barbarian in the crypt with `n` sturdy, harmless monsters right next to him. */
@@ -29,15 +29,15 @@ function setup(skills: Record<string, number>, n = 3) {
   return { g, p, ms };
 }
 function cast(g: Game, id: string, frames = 45) {
-  g.player.slots = [id, null, null, null];
-  g.update(1 / 30, { ...idle, skills: [true, false, false, false] });
+  g.player.slots = [id, null, null];
+  g.update(1 / 30, { ...idle, skills: [true, false, false] });
   for (let i = 0; i < frames; i++) g.update(1 / 30, idle);
 }
 
 describe("v0.9: every Barbarian skill is playable", () => {
-  it("no skill is 'coming soon' any more, and there are 4 skill buttons", () => {
+  it("no skill is 'coming soon' any more, and there are 3 skill buttons (v0.9.2)", () => {
     expect(SKILLS.filter((s) => !s.implemented).map((s) => s.id)).toEqual([]);
-    expect(SKILL_SLOTS).toBe(4);
+    expect(SKILL_SLOTS).toBe(3);
     for (const s of SKILLS) {
       expect(s.blurb.length).toBeGreaterThan(10);
       if (s.effect) expect(s.effect(1).length).toBeGreaterThan(3);
@@ -63,8 +63,8 @@ describe("v0.9: every Barbarian skill is playable", () => {
 
   it("Whirlwind spins for about a second and hits every monster around", () => {
     const { g, p, ms } = setup({ bash: 1, leap: 1, double_swing: 1, stun: 1, leap_attack: 1, concentrate: 1, double_throw: 1, frenzy: 1, whirlwind: 5 }, 4);
-    p.slots = ["whirlwind", null, null, null];
-    g.update(1 / 30, { ...idle, skills: [true, false, false, false] });
+    p.slots = ["whirlwind", null, null];
+    g.update(1 / 30, { ...idle, skills: [true, false, false] });
     expect(p.action?.type).toBe("whirl");
     let spun = 0;
     for (let i = 0; i < 60; i++) {
@@ -127,13 +127,13 @@ describe("v0.9: every Barbarian skill is playable", () => {
   it("Concentrate raises defense while swinging; Berserk drops it to zero", () => {
     const { g, p } = setup({ bash: 1, leap: 1, double_swing: 1, stun: 1, concentrate: 5, leap_attack: 1, double_throw: 1, frenzy: 1, whirlwind: 1, berserk: 1 }, 1);
     const def0 = g.derived().def;
-    p.slots = ["concentrate", null, null, null];
-    g.update(1 / 30, { ...idle, skills: [true, false, false, false] });
+    p.slots = ["concentrate", null, null];
+    g.update(1 / 30, { ...idle, skills: [true, false, false] });
     expect(p.buffs.conc).toBeGreaterThan(0);
     expect(g.derived().def).toBeGreaterThan(def0);
     for (let i = 0; i < 40; i++) g.update(1 / 30, idle);
-    p.slots = ["berserk", null, null, null];
-    g.update(1 / 30, { ...idle, skills: [true, false, false, false] });
+    p.slots = ["berserk", null, null];
+    g.update(1 / 30, { ...idle, skills: [true, false, false] });
     expect(p.buffs.bers).toBeGreaterThan(0);
     expect(g.derived().def).toBe(0);
   });
@@ -169,14 +169,22 @@ describe("v0.9: every Barbarian skill is playable", () => {
     expect(n).toBe(7);
   });
 
-  it("old 3-button saves load with a 4th empty button, skills and slots kept", () => {
+  it("3-button saves load unchanged; a v0.9 4-button save drops the 4th skill but keeps it learned", () => {
     const g = new Game(events, null, 2);
     const s = g.toSave();
     s.player.slots = ["bash", "frenzy", null] as (string | null)[];
     s.player.skills = { bash: 3, double_swing: 1, frenzy: 2 } as Record<string, number>;
     s.player.level = 12;
     const g2 = new Game(events, migrateSave(JSON.parse(JSON.stringify(s)))!);
-    expect(g2.player.slots).toEqual(["bash", "frenzy", null, null]);
+    expect(g2.player.slots).toEqual(["bash", "frenzy", null]);
     expect(g2.player.skills.frenzy).toBe(2);
+    const s4 = g.toSave();
+    s4.player.level = 30;
+    s4.player.skills = { bash: 3, double_swing: 1, frenzy: 2, howl: 1, shout: 1, battle_orders: 2 } as Record<string, number>;
+    s4.player.slots = ["bash", "frenzy", "shout", "battle_orders"] as (string | null)[];
+    const g3 = new Game(events, migrateSave(JSON.parse(JSON.stringify(s4)))!);
+    expect(g3.player.slots).toEqual(["bash", "frenzy", "shout"]);
+    expect(g3.player.skills.battle_orders).toBe(2);
+    expect(g3.toSave().player.slots.length).toBe(3);
   });
 });

@@ -12,7 +12,7 @@ import type { Settings } from "./save";
 import { type GuideSec, guideHtml } from "./guide";
 import { itemIconUrl } from "./sprites/items";
 import { artifactIcon } from "./sprites/artifacts";
-import { ACTS, ARTIFACTS, LEVELS_PER_ACT, MAX_FLOOR, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, levelInAct } from "./data/acts";
+import { ACTS, ARTIFACTS, LEVELS_PER_ACT, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, levelInAct } from "./data/acts";
 import { MONSTERS } from "./data/monsters";
 
 const artUrl = new Map<string, string>();
@@ -156,8 +156,6 @@ export class Ui {
       <div id="joy" aria-hidden="true"><div class="joy-knob"></div></div>
       <div id="hud">
         <div class="hud-tl">
-          <div id="floor-label">Ember Camp</div>
-          <div id="objective"></div>
           <div id="buffs"></div>
           <canvas id="minimap" width="150" height="90"></canvas>
         </div>
@@ -175,7 +173,6 @@ export class Ui {
         <button id="btn-s0" class="sbtn" data-slot="0"></button>
         <button id="btn-s1" class="sbtn" data-slot="1"></button>
         <button id="btn-s2" class="sbtn" data-slot="2"></button>
-        <button id="btn-s3" class="sbtn" data-slot="3"></button>
         <button id="btn-hp" class="pbtn hp" aria-label="Healing potion"><b></b></button>
         <button id="btn-mp" class="pbtn mp" aria-label="Mana potion"><b></b></button>
         <button id="btn-ctx" hidden></button>
@@ -280,7 +277,7 @@ export class Ui {
     if (g.recall) {
       g.recall = null;
       this.toast("Return to Town cancelled");
-    } else if (g.startRecall()) this.toast("Returning to Ember Camp…");
+    } else if (g.startRecall()) this.toast("Returning to Ember Camp… (walk to cancel)");
   }
 
   /** The button above the controls: descend, trade or use the waypoint. */
@@ -333,8 +330,9 @@ export class Ui {
     $(r, "#btn-mp").classList.toggle("empty", p.mpPots === 0);
     $(r, "#btn-hp").classList.toggle("cool", g.potionWait("hp") > 0);
     $(r, "#btn-mp").classList.toggle("cool", g.potionWait("mp") > 0);
-    $(r, "#floor-label").textContent = `${g.inTown ? "Ember Camp" : `Act ${actDef(g.floor).roman} · ${floorLabel(g.floor)}`}   ·   Lv ${p.level} Barbarian`;
-    $(r, "#objective").textContent = g.inTown ? (g.maxFloor <= 1 && p.kills === 0 ? "Walk to the glowing waypoint ✦ to enter the crypt" : g.portal ? `The blue portal ◎ leads back to ${floorLabel(g.portal.floor)}` : "Trade with Hilde, then take the waypoint ✦") : g.recall ? "Returning to town… (walk to cancel)" : g.victory && g.floor === MAX_FLOOR ? "The Burning Hells are conquered" : "";
+    // v0.9.2: no top-left text (floor and portal info come as toasts; ⌂ Town is top right). The same line is kept
+    // off-screen as the HUD's accessible name (screen readers, tests).
+    $(r, "#hud").setAttribute("aria-label", `${g.inTown ? "Ember Camp" : `Act ${actDef(g.floor).roman} · ${floorLabel(g.floor)}`}   ·   Lv ${p.level} Barbarian`);
     $(r, "#dot-char").textContent = p.statPoints ? `${p.statPoints}` : "";
     $(r, "#dot-skills").textContent = p.skillPoints ? `${p.skillPoints}` : "";
     for (let i = 0; i < SKILL_SLOTS; i++) {
@@ -1153,6 +1151,11 @@ export class Ui {
             `<button class="gbtn" data-act="equip" data-slot="main" ${g.meetsReq(it) ? "" : "disabled"}>Main hand</button>`,
             `<button class="gbtn" data-act="equip" data-slot="off" ${g.equipError(it, "off") ? "disabled" : ""}>Off-hand</button>`,
           );
+        else if (b.slot === "ring")
+          btns.push(
+            `<button class="gbtn" data-act="equip" data-slot="ring1" ${g.meetsReq(it) ? "" : "disabled"}>Left ring</button>`,
+            `<button class="gbtn" data-act="equip" data-slot="ring2" ${g.meetsReq(it) ? "" : "disabled"}>Right ring</button>`,
+          );
         else btns.push(`<button class="gbtn" data-act="equip" ${g.meetsReq(it) ? "" : "disabled"}>Equip</button>`);
         btns.push(`<button class="gbtn dim" data-act="drop">Drop</button>`);
       }
@@ -1189,7 +1192,7 @@ export class Ui {
     const slots = g.compareSlots(it);
     const eq = slots.map((sl) => {
       const cur = p.equip[sl];
-      const label = `Equipped · ${EQUIP_LABEL[sl]}`;
+      const label = `Equipped · ${sl === "ring1" ? "Left ring" : sl === "ring2" ? "Right ring" : EQUIP_LABEL[sl]}`;
       if (cur) return card(cur, label, "eqc");
       if (sl === "off" && isTwoHanded(p.equip.main)) return `<div class="ccard eqc empty"><div class="chead">${label}</div><div class="hint">Blocked by your two-handed weapon</div></div>`;
       return `<div class="ccard eqc empty"><div class="chead">${label}</div><div class="hint">Nothing equipped</div></div>`;
@@ -1467,13 +1470,13 @@ export class Ui {
         ${saveBox}
         <b>How to play</b>
         <p>Left side: put your thumb down anywhere and drag to move. Lift to stop.</p>
-        <p>Right side: tap or hold ⚔ to attack. The four small buttons use skills you learn: in Skills, pick a skill and tap 1–4 to put it on a button.</p>
+        <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn: in Skills, pick a skill and tap 1–3 to put it on a button. ⌂ Town (top right) takes you back to camp.</p>
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.9.1 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.9.2 · all art made in code for this game</p>
       </div>`;
   }
 

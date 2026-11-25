@@ -246,7 +246,7 @@ check("Dropping onto one item swaps them", bk2 && bk2[0] === 6 && bk2[1] === 0 &
 await tap('[data-src="bag"][data-uid="3003"]');
 await wait(150);
 const sh = await ev(() => ({ cards: [...document.querySelectorAll(".cmpsheet .ccard .chead")].map((e) => e.textContent), deltas: document.querySelectorAll(".cmpsheet .up, .cmpsheet .down, .cmp").length, btns: [...document.querySelectorAll(".cmpsheet .ibtns button")].map((b) => b.textContent.trim()) }));
-check("Tapping a ring opens the compare sheet: the ring next to both ring slots, plain stats, action buttons", sh.cards.length === 3 && /Selected/i.test(sh.cards[0]) && sh.cards.filter((c) => /Ring/i.test(c)).length === 2 && sh.deltas === 0 && sh.btns.includes("Equip") && sh.btns.some((b) => /Close/.test(b)), JSON.stringify(sh));
+check("Tapping a ring opens the compare sheet: the ring next to both ring slots, plain stats, action buttons", sh.cards.length === 3 && /Selected/i.test(sh.cards[0]) && sh.cards.filter((c) => /Ring/i.test(c)).length === 2 && sh.deltas === 0 && sh.btns.includes("Left ring") && sh.btns.includes("Right ring") && sh.btns.some((b) => /Close/.test(b)), JSON.stringify(sh));
 await tap('[data-act="cmp-close"]');
 await wait(150);
 const rg3c = await ev(() => ({ sheet: !!document.querySelector(".cmpsheet"), sel: !!document.querySelector(".gi.sel") }));
@@ -467,7 +467,7 @@ await wait(200);
     const p = g.player;
     return { main: p.equip.main.qty, off: p.equip.off.qty, hp: m.hp, dist: Math.hypot(m.x - p.x, m.y - p.y), throws: g.hitLog.filter((h) => h.skill === "throw").length, btn: document.querySelector("#btn-attack span").textContent };
   }, mid);
-  check("Throw: attack button throws from range, uses the stack and hits", shot && thr.throws >= 2 && thr.main < 30 && thr.off < 40 && thr.hp < 99999 && thr.dist > 3 && thr.btn === "➶", JSON.stringify(thr));
+  check("Throw: attack button throws from range, uses the stack and hits", shot && thr.throws >= 2 && thr.main < 120 && thr.off < 160 && thr.hp < 99999 && thr.dist > 3 && thr.btn === "➶", JSON.stringify(thr));
   await placeAt(4);
   const before = await ev(() => [__ec.game.player.equip.main.qty, __ec.game.player.equip.off.qty]);
   await useSkill(1, 120);
@@ -483,7 +483,7 @@ await wait(200);
   await ev(() => { __ec.game.player.equip.main.qty = 0; __ec.game.goTown(); });
   await wait(300);
   const refill = await ev(() => ({ q: __ec.game.player.equip.main.qty, stock: ["quarterstaff", "throwing_knife", "throwing_axe", "javelin"].every((id) => __ec.game.vendorStock.some((e) => e.item.baseId === id)) }));
-  check("Stacks refill in camp; Hilde sells all four new classes", refill.q === 30 && refill.stock, JSON.stringify(refill));
+  check("Stacks refill in camp; Hilde sells all four new classes", refill.q === 120 && refill.stock, JSON.stringify(refill));
 
   // quarterstaff: two-handed melee with Pole Arm Mastery
   await ev(() => {
@@ -1043,7 +1043,7 @@ await ev(() => __ec.ui.close());
     g.goDungeon(20);
   });
   await wait(400);
-  const lair = await ev(() => ({ kind: __ec.game.boss.def.kind, name: __ec.game.boss.def.name, label: document.getElementById("floor-label").textContent }));
+  const lair = await ev(() => ({ kind: __ec.game.boss.def.kind, name: __ec.game.boss.def.name, label: document.getElementById("hud").getAttribute("aria-label") }));
   check("Act I level 20/20 is the lair of the final boss, The Ember Lich", lair.kind === "lich" && /Act I · Ember Crypt · Level 20\/20/.test(lair.label), JSON.stringify(lair));
   // stand by the Lich and let it use its specials
   const sp = await ev(async () => {
@@ -1088,7 +1088,7 @@ await ev(() => __ec.ui.close());
   await wait(600);
   const a2 = await ev(() => {
     const g = __ec.game;
-    return { floor: g.floor, max: g.maxFloor, label: document.getElementById("floor-label").textContent, kinds: [...new Set(g.monsters.map((m) => m.def.kind))].sort(), toast: document.getElementById("toast").textContent };
+    return { floor: g.floor, max: g.maxFloor, label: document.getElementById("hud").getAttribute("aria-label"), kinds: [...new Set(g.monsters.map((m) => m.def.kind))].sort(), toast: document.getElementById("toast").textContent };
   });
   check("The stairs lead into Act II: Sunken Tombs, with its own monsters", /Enter Act II/.test(btnText) && a2.floor === 21 && a2.max >= 21 && /Act II · Sunken Tombs · Level 1\/20/.test(a2.label) && a2.kinds.every((k) => ["mummy", "raider", "priest", "boss2"].includes(k)), JSON.stringify({ btnText, ...a2 }));
   await page.screenshot({ path: `${outDir}/act2.png` });

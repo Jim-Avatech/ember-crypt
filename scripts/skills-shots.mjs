@@ -23,7 +23,7 @@ await page.evaluate(() => {
   p.skills = { bash: 4, leap: 6, double_swing: 3, stun: 2, leap_attack: 2, concentrate: 3, double_throw: 1, frenzy: 4, whirlwind: 8, berserk: 2,
     sword_mastery: 6, increased_stamina: 2, iron_skin: 3, increased_speed: 2, natural_resistance: 3,
     howl: 2, find_potion: 1, taunt: 2, shout: 4, find_item: 3, battle_cry: 3, battle_orders: 5, grim_ward: 1, war_cry: 8, battle_command: 2 };
-  p.slots = ["whirlwind", "war_cry", "leap", "battle_orders"];
+  p.slots = ["whirlwind", "war_cry", "leap"];
   p.mana = 9999;
   g.events.changed();
 });
@@ -54,7 +54,7 @@ const gather = () => page.evaluate(() => {
 check("monsters gathered", (await gather()) >= 3);
 await page.waitForTimeout(300);
 const labels = await page.$$eval(".sbtn", (bs) => bs.map((b) => b.textContent.trim().slice(0, 12)));
-check("four skill buttons filled", labels.length === 4 && labels.every((l) => l.length > 0), JSON.stringify(labels));
+check("three skill buttons filled", labels.length === 3 && labels.every((l) => l.length > 0), JSON.stringify(labels));
 await page.screenshot({ path: `${out}/skills-buttons.png` });
 // War Cry
 await page.locator("#btn-s1").tap();
@@ -85,10 +85,6 @@ const leap = await page.evaluate(() => ({ t: __ec.game.player.action?.type, z: _
 await page.screenshot({ path: `${out}/skills-leap.png` });
 check("Leap in the air", leap.t === "leap", JSON.stringify(leap));
 await page.waitForTimeout(800);
-// Battle Orders buff chip
-await page.locator("#btn-s3").tap();
-await page.waitForTimeout(600);
-check("Battle Orders buff shown", (await page.locator("#buffs").textContent()).includes("⚑"));
 check("no page errors", errs.length === 0, errs.join(" | "));
 await b.close();
 const ok = checks.every(Boolean);
