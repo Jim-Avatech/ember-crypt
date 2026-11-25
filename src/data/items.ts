@@ -7,7 +7,7 @@
 import { LOOK_BY_ID } from "./looks";
 
 export type Slot = "weapon" | "shield" | "armor" | "helm" | "gloves" | "boots" | "belt" | "ring" | "amulet" | "potion";
-export type Kind = "sword" | "axe" | "mace" | "armor" | "helm" | "shield" | "gloves" | "boots" | "belt" | "ring" | "amulet" | "potion";
+export type Kind = "sword" | "axe" | "mace" | "knife" | "spear" | "staff" | "armor" | "helm" | "shield" | "gloves" | "boots" | "belt" | "ring" | "amulet" | "potion";
 export type EquipSlot = "head" | "chest" | "gloves" | "boots" | "belt" | "ring1" | "ring2" | "amulet" | "main" | "off";
 export type Quality = "normal" | "magic" | "rare";
 
@@ -41,6 +41,8 @@ export interface ItemBase {
   str?: [number, number];
   dex?: [number, number];
   potion?: "hp" | "mp";
+  /** throwing weapon: stack size and throw range (tiles) */
+  thrown?: { max: number; range: number };
   /** price of a level-1 normal one */
   price: number;
   /** relative drop weight */
@@ -60,6 +62,12 @@ export const ITEM_BASES: ItemBase[] = [
   W("axe", "Axe", "axe", 2, 3, 0.52, [0.4, 1.6], 1.15, [12, 2], undefined),
   W("mace", "Mace", "mace", 1, 3, 0.5, [0.8, 1.2], 1.05, [12, 1.8], undefined),
   W("great_sword", "Great Sword", "sword", 2, 4, 0.6, [0.5, 1.5], 1.9, [18, 2.3], [10, 1.2], 2),
+  // v0.6: a fast, steady two-hander (not in D2; uses Pole Arm Mastery)
+  { ...W("quarterstaff", "Quarterstaff", "staff", 1, 4, 0.42, [0.85, 1.15], 1.45, [12, 1.6], [10, 1.4], 2), price: 60, weight: 0.6 },
+  // v0.6: throwing weapons (stacks; thrown with the attack button, refilled in camp)
+  { ...W("throwing_knife", "Throwing Knife", "knife", 1, 2, 0.4, [0.7, 1.3], 0.75, [0, 0.4], [12, 1.6]), thrown: { max: 40, range: 9 }, price: 35, weight: 0.5 },
+  { ...W("throwing_axe", "Throwing Axe", "axe", 1, 2, 0.48, [0.55, 1.45], 0.9, [10, 1.2], [10, 1.2]), thrown: { max: 30, range: 8 }, price: 35, weight: 0.5 },
+  { ...W("javelin", "Javelin", "spear", 1, 4, 0.54, [0.6, 1.4], 1.05, [8, 1], [14, 1.6]), thrown: { max: 25, range: 10 }, price: 40, weight: 0.5 },
   A("armor", "Armor", "armor", 2, 3, 1, [8, 1.6], 40, 1.2),
   A("helm", "Helm", "helm", 2, 2, 0.45, [0, 1.2], 30),
   A("shield", "Shield", "shield", 2, 2, 0.6, [8, 1.5], 35),
@@ -77,6 +85,10 @@ export const CLASS_USE: Record<string, string> = {
   axe: "Big swings: the widest damage spread and highest one-hand average. Normal speed.",
   mace: "Steady: tight damage spread, so every hit lands close to the average.",
   great_sword: "Two-handed. Slow, very high damage; takes both hands (no shield or second weapon).",
+  quarterstaff: "Two-handed, fast and steady: tight damage spread at the quickest swing of any weapon. Uses Pole Arm Mastery (not in Diablo II).",
+  throwing_knife: "Thrown with the attack button (stack of 40). Fastest throw, lowest damage. Throwing Mastery; Dex-heavy. Refilled free in camp.",
+  throwing_axe: "Thrown (stack of 30). Swingy damage. Throwing Mastery when thrown, Axe Mastery in melee. Refilled free in camp.",
+  javelin: "Thrown (stack of 25), longest range and highest damage of the throwers. Throwing Mastery when thrown, Spear Mastery in melee.",
   armor: "Most defense of any slot.",
   helm: "Defense. Can roll +skills, mana and magic find.",
   shield: "Off-hand defense for one-handed fighters. Can roll all resistances.",
@@ -103,6 +115,8 @@ export interface Item {
   mods?: Mod[];
   /** affix ids (one per group), for tooltips and tests */
   aff?: string[];
+  /** throwing weapons: how many are left in the stack */
+  qty?: number;
   /** v0.2 field, no longer used */
   def?: number;
 }
@@ -113,10 +127,15 @@ export const newUid = () => nextUid++;
 export function makeItem(baseId: string, ilvl = 1): Item {
   const it: Item = { uid: nextUid++, baseId };
   if (!BASE_BY_ID[baseId].potion) it.ilvl = Math.max(1, Math.round(ilvl));
+  const t = BASE_BY_ID[baseId].thrown;
+  if (t) it.qty = t.max;
   return it;
 }
 
 export const ilvlOf = (it: Item) => it.ilvl ?? 1;
+/** Stack size of a throwing weapon (0 for everything else). */
+export const qtyMax = (it: Item | undefined | null) => (it ? BASE_BY_ID[it.baseId]?.thrown?.max ?? 0 : 0);
+export const isThrowing = (it: Item | undefined | null) => !!it && !!BASE_BY_ID[it.baseId]?.thrown;
 export const qualityOf = (it: Item): Quality => it.q ?? "normal";
 export const modTotal = (it: Item | undefined | null, s: StatKey) => (it?.mods ?? []).reduce((a, m) => (m.s === s ? a + m.v : a), 0);
 
@@ -213,6 +232,10 @@ export function lookOf(it: Item | undefined | null): string | undefined {
     case "belt": return pick([[5, "sash"], [11, "light_belt"], [17, "belt"], [99, "heavy_belt"]]);
     case "ring": return ["copper_ring", "silver_ring", "gold_ring"][it.uid % 3];
     case "amulet": return ["bone_amulet", "jade_amulet"][it.uid % 2];
+    case "quarterstaff":
+    case "throwing_knife":
+    case "throwing_axe":
+    case "javelin": return it.baseId;
     default: return LOOK_BY_ID[it.baseId] ? it.baseId : undefined;
   }
 }

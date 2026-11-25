@@ -1,13 +1,13 @@
 import { enchant, rollDrop } from "./data/affixes";
 import {
   BASE_BY_ID, type EquipSlot, ITEM_BASES, type Item, type Kind, type StatKey, beltSlotsOf, isTwoHanded, itemDamage,
-  itemDefense, itemName, itemPrice, itemReqs, makeItem, migrateItem, modTotal, QUALITY_COLOR, qualityOf, sellPrice,
+  isThrowing, itemDefense, itemName, itemPrice, itemReqs, makeItem, migrateItem, modTotal, QUALITY_COLOR, qtyMax, qualityOf, sellPrice,
 } from "./data/items";
 import {
   MONSTERS, type MonsterDef, type MonsterKind, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp,
 } from "./data/monsters";
 import {
-  FRENZY_HOLD, FRENZY_MAX_STACKS, MAX_SKILL_LVL, SKILL_BY_ID, bashAR, bashDmg, boDur, boPct, doubleSwingAR,
+  FRENZY_HOLD, FRENZY_MAX_STACKS, MAX_SKILL_LVL, SKILL_BY_ID, bashAR, bashDmg, boDur, boPct, doubleSwingAR, doubleThrowAR,
   findPotionChance, frenzyAR, frenzyDmg, frenzyIas, frenzyMove, howlDur,
   incSpeed, ironSkinDef, leapAttackDmg, leapRange, masteryAR, masteryCrit, masteryDmg, shoutDef, shoutDur,
   stunAR, stunDur,
@@ -26,7 +26,24 @@ export interface Stats {
 export type Action =
   | { type: "swing"; skill: string | null; t: number; dur: number; hitAt: number[]; hands: number[]; hitsDone: number; target: Monster | null }
   | { type: "leap"; skill: string; t: number; dur: number; fx: number; fy: number; tx: number; ty: number; target: Monster | null }
-  | { type: "cry"; t: number; dur: number };
+  | { type: "cry"; t: number; dur: number }
+  | { type: "throw"; skill: string | null; t: number; dur: number; releaseAt: number[]; hands: number[]; done: number; target: Monster | null };
+
+/** A thrown weapon in flight. */
+export interface Projectile {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  dist: number;
+  range: number;
+  hand: Hand;
+  handIdx: number;
+  skill: string | null;
+  /** item class, for the sprite */
+  cls: string;
+  t: number;
+}
 
 export interface Player {
   x: number;
@@ -218,10 +235,11 @@ export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
 export const xpForLevel = (L: number) => (L <= 1 ? 0 : Math.round(100 * Math.pow(L - 1, 1.9)));
 
 /** Current save schema. Bump it (and add a migration step) whenever the save shape changes. */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export interface SaveData {
-  v: 3;
+  /** schema version (SAVE_VERSION when written) */
+  v: number;
   /** ms since epoch, set by saveGame */
   savedAt?: number;
   /** copy of the player's settings, so exports carry them */
@@ -233,7 +251,43 @@ export interface SaveData {
   /** items that didn't fit when an old save was converted */
   migratedSold?: number;
   migratedFrom?: number;
+  /** v4: skills whose points were refunded because the tree changed (names) */
+  refundedSkills?: string[];
+  refundedPoints?: number;
 }
+
+/**
+ * Refund points from any skill the hero can't legally have under the current tree
+ * (level too low, a prerequisite with no points, or a skill that no longer exists).
+ * Repeats until stable, since refunding one skill can break a later one. Also clears hotbar slots.
+ */
+export function refundSkills(p: Pick<Player, "level" | "skills" | "slots" | "skillPoints">): { names: string[]; points: number } {
+  const names: string[] = [];
+  let points = 0;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [id, pts] of Object.entries(p.skills)) {
+      if (!pts) continue;
+      const def = SKILL_BY_ID[id];
+      const ok = def && p.level >= def.reqLvl && (def.prereq ?? []).every((q) => (p.skills[q] ?? 0) > 0);
+      if (ok) continue;
+      points += pts;
+      names.push(def ? def.name : id);
+      delete p.skills[id];
+      changed = true;
+    }
+  }
+  if (points) {
+    p.skillPoints += points;
+    p.slots = p.slots.map((s) => (s && p.skills[s] ? s : null));
+  }
+  return { names, points };
+}
+
+/** Which mastery boosts each weapon kind in melee (D2: Pole Arm for staves is our call; spears = javelins). */
+const MASTERY_OF: Partial<Record<Kind | "fist", string>> = {
+  sword: "sword_mastery", axe: "axe_mastery", mace: "mace_mastery", spear: "spear_mastery", staff: "polearm_mastery",
+};
 
 const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy"]);
 const TWO_HIT = new Set(["double_swing", "frenzy"]);
@@ -250,11 +304,34 @@ function sanitizeV3(d: SaveData): SaveData {
   return d;
 }
 
-/** Bring any older save up to v3: v1 (20-slot list, 6 slots) → v2 (grid bag, D2 slots) → v3 (item classes). */
+/**
+ * Bring any older save up to the current version, one step at a time:
+ * v1 (20-slot list) → v2 (grid bag, D2 slots) → v3 (item classes) → v4 (D2 1.10 skill tree: refund skills that no longer qualify).
+ * Never wipe: every step keeps the hero, and anything that can't be kept is turned into gold or points.
+ */
 export function migrateSave(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== "object") return null;
+  const d = raw as { v: number };
+  if (d.v === 4) return sanitizeV3(d as SaveData);
+  const v3 = d.v === 3 ? sanitizeV3(d as SaveData) : migrateToV3(raw);
+  if (!v3) return null;
+  return toV4(v3);
+}
+
+function toV4(d: SaveData): SaveData {
+  const p = d.player;
+  if (!Number.isFinite(p.level)) p.level = 1;
+  const r = refundSkills(p);
+  d.v = 4;
+  if (r.points) {
+    d.refundedSkills = r.names;
+    d.refundedPoints = r.points;
+  }
+  return d;
+}
+
+function migrateToV3(raw: unknown): SaveData | null {
   const d = raw as Record<string, unknown> & { v: number };
-  if (d.v === 3) return sanitizeV3(d as unknown as SaveData);
   if (d.v !== 1 && d.v !== 2) return null;
   const op = d.player as Record<string, unknown>;
   const equip: Partial<Record<EquipSlot, Item>> = {};
@@ -332,6 +409,7 @@ export class Game {
   maxFloor = 1;
   vendorStock: BagEntry[] = [];
   hitLog: HitLog[] = [];
+  projectiles: Projectile[] = [];
   private flow = new Uint16Array(60 * 60);
   private flowFrom = -1;
   private nextId = 1;
@@ -382,7 +460,7 @@ export class Game {
   toSave(): SaveData {
     const p = this.player;
     return {
-      v: 3, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor,
+      v: SAVE_VERSION, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor,
       player: {
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
         skills: p.skills, slots: p.slots, bag: p.bag, equip: p.equip, gold: p.gold,
@@ -417,7 +495,17 @@ export class Game {
     const d = this.derived();
     p.hp = d.maxHp;
     p.mana = d.maxMana;
+    this.projectiles = [];
     this.restock();
+    // throwing weapons refill for free in camp
+    let refilled = 0;
+    for (const it of [...Object.values(p.equip), ...p.bag.map((e) => e.item)]) {
+      if (it && isThrowing(it) && (it.qty ?? 0) < qtyMax(it)) {
+        it.qty = qtyMax(it);
+        refilled++;
+      }
+    }
+    if (refilled) setTimeout(() => this.events.toast("Hilde restocked your throwing weapons"), silent ? 900 : 1600);
     if (!silent) {
       this.events.sound("stairs");
       this.events.toast("Ember Camp — you're safe here");
@@ -443,7 +531,7 @@ export class Game {
     add(makeItem("hp_potion"));
     add(makeItem("mp_potion"));
     // plain gear of every class near your level
-    for (const id of ["sword", "axe", "mace", "great_sword", "armor", "helm", "shield", "gloves", "boots", "belt"]) add(makeItem(id, Math.max(1, lvl - 1 + Math.floor(r() * 3))));
+    for (const id of ["sword", "axe", "mace", "great_sword", "quarterstaff", "throwing_knife", "throwing_axe", "javelin", "armor", "helm", "shield", "gloves", "boots", "belt"]) add(makeItem(id, Math.max(1, lvl - 1 + Math.floor(r() * 3))));
     // a few magic pieces (Hilde never sells rares)
     const n = 2 + Math.floor(r() * 3);
     for (let i = 0; i < n; i++) {
@@ -464,6 +552,7 @@ export class Game {
     this.floaters = [];
     this.particles = [];
     this.rings = [];
+    this.projectiles = [];
     this.stairs = null;
     this.flowFrom = -1;
     const rng = new Rng(this.seed + floor * 104729);
@@ -525,13 +614,14 @@ export class Game {
     return { str: b.str + this.gear("str"), dex: b.dex + this.gear("dex"), vit: b.vit + this.gear("vit"), ene: b.ene + this.gear("ene") };
   }
 
-  private handFor(slot: EquipSlot | null): Hand {
+  /** Stats for one hand. `thrown`: the weapon is being thrown (Throwing Mastery instead of its melee mastery). */
+  handFor(slot: EquipSlot | null, thrown = false): Hand {
     const p = this.player;
     const s = this.stats();
     const it = slot ? p.equip[slot] : undefined;
     const b = it ? BASE_BY_ID[it.baseId] : null;
     const kind: Kind | "fist" = b ? b.kind : "fist";
-    const mastery = kind === "sword" ? "sword_mastery" : kind === "axe" ? "axe_mastery" : kind === "mace" ? "mace_mastery" : null;
+    const mastery = thrown ? "throwing_mastery" : MASTERY_OF[kind] ?? null;
     const ml = mastery ? this.skillLevel(mastery) : 0;
     const arPct = ml ? masteryAR(ml) : 0;
     const arFlat = this.gear("ar");
@@ -640,6 +730,7 @@ export class Game {
     if (!p.dead) this.updatePlayer(dt, input, d);
     this.updateMonsters(dt, d);
     this.updateFx(dt);
+    this.updateProjectiles(dt);
     this.exploreT -= dt;
     if (this.exploreT <= 0) {
       this.exploreT = 0.2;
@@ -834,8 +925,109 @@ export class Game {
     return best;
   }
 
+  /** Hand indexes that would throw for this attack, or null to melee. */
+  private throwHands(skill: string | null, d: Derived): number[] | null {
+    const p = this.player;
+    const ok = (sl: EquipSlot) => isThrowing(p.equip[sl]) && (p.equip[sl]!.qty ?? 0) > 0;
+    if (skill === "double_throw") return d.dual && ok("main") && ok("off") ? [0, 1] : null;
+    if (skill) return null;
+    if (d.dual) {
+      const h = p.nextHand % 2;
+      if (ok(h ? "off" : "main")) return [h];
+      if (ok(h ? "main" : "off")) return [1 - h];
+      return null;
+    }
+    return ok("main") ? [0] : null;
+  }
+
+  private startThrow(skill: string | null, hands: number[], d: Derived) {
+    const p = this.player;
+    const sl = (h: number): EquipSlot => (h === 1 ? "off" : "main");
+    const range = Math.max(...hands.map((h) => BASE_BY_ID[p.equip[sl(h)]!.baseId].thrown!.range));
+    const target = this.nearestMonster(range);
+    if (target) {
+      const dx = target.x - p.x;
+      const dy = target.y - p.y;
+      const l = Math.hypot(dx, dy) || 1;
+      p.fx = dx / l;
+      p.fy = dy / l;
+    } else if (this.moveDir.active) {
+      p.fx = this.moveDir.x;
+      p.fy = this.moveDir.y;
+    }
+    let dur = hands.reduce((a, h) => a + d.hands[Math.min(h, d.hands.length - 1)].speed, 0) / hands.length;
+    if (hands.length === 2) dur *= 1.15;
+    dur /= 1 + d.ias;
+    if (d.dual && !skill) p.nextHand = 1 - hands[0];
+    p.action = { type: "throw", skill, t: 0, dur, releaseAt: hands.length === 2 ? [0.28, 0.78] : [0.55], hands, done: 0, target };
+    p.moveTarget = null;
+    this.events.sound("swing");
+  }
+
+  private release(a: Extract<Action, { type: "throw" }>, handIdx: number) {
+    const p = this.player;
+    const slot: EquipSlot = handIdx === 1 ? "off" : "main";
+    const it = p.equip[slot];
+    if (!it || !isThrowing(it) || (it.qty ?? 0) <= 0) return;
+    it.qty = (it.qty ?? 0) - 1;
+    const b = BASE_BY_ID[it.baseId];
+    let ax = p.fx;
+    let ay = p.fy;
+    const t = a.target && a.target.state !== "dead" ? a.target : null;
+    if (t) {
+      const l = Math.hypot(t.x - p.x, t.y - p.y) || 1;
+      ax = (t.x - p.x) / l;
+      ay = (t.y - p.y) / l;
+    }
+    if (a.hands.length === 2) {
+      // Double Throw: the two weapons fan out slightly
+      const ang = (handIdx === 0 ? -1 : 1) * 0.09;
+      const c = Math.cos(ang);
+      const sn = Math.sin(ang);
+      [ax, ay] = [ax * c - ay * sn, ax * sn + ay * c];
+    }
+    const speed = b.kind === "spear" ? 15 : 13;
+    this.projectiles.push({
+      x: p.x + ax * 0.4, y: p.y + ay * 0.4, vx: ax * speed, vy: ay * speed, dist: 0, range: b.thrown!.range + 1,
+      hand: this.handFor(slot, true), handIdx, skill: a.skill, cls: it.baseId, t: 0,
+    });
+    this.hitLog.push({ hand: handIdx, skill: a.skill ?? "throw", t: this.time });
+    if (it.qty === 0) this.events.toast(`Out of ${b.name}s: they refill in camp (you can still fight with it)`);
+    this.events.changed();
+  }
+
+  private updateProjectiles(dt: number) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const q = this.projectiles[i];
+      q.t += dt;
+      const steps = 3;
+      let gone = false;
+      for (let k = 0; k < steps && !gone; k++) {
+        q.x += (q.vx * dt) / steps;
+        q.y += (q.vy * dt) / steps;
+        q.dist += (Math.hypot(q.vx, q.vy) * dt) / steps;
+        if (this.blocked(q.x, q.y, 0.05) || q.dist > q.range) {
+          gone = true;
+          break;
+        }
+        for (const m of this.monsters) {
+          if (m.state === "dead") continue;
+          if (Math.hypot(m.x - q.x, m.y - q.y) < m.def.radius + 0.22) {
+            const lvl = q.skill === "double_throw" ? this.skillLevel("double_throw") : 0;
+            this.playerHit(m, q.hand, { arPct: lvl ? doubleThrowAR(lvl) : 0, knock: 1.2 });
+            gone = true;
+            break;
+          }
+        }
+      }
+      if (gone) this.projectiles.splice(i, 1);
+    }
+  }
+
   private startSwing(skill: string | null, d: Derived) {
     const p = this.player;
+    const th = this.throwHands(skill, d);
+    if (th) return this.startThrow(skill, th, d);
     const target = this.nearestMonster(2.4);
     if (target) {
       const dx = target.x - p.x;
@@ -887,11 +1079,21 @@ export class Game {
         }
       }
       // fall back to a normal attack for melee skills so holding the button still swings
-      if (MELEE_SKILLS.has(id)) {
+      if (MELEE_SKILLS.has(id) || id === "double_throw") {
         this.startSwing(null, d);
         return true;
       }
       return false;
+    }
+    if (id === "double_throw") {
+      const hands = this.throwHands(id, d);
+      if (!hands) {
+        this.floatAt(p.x, p.y, "Needs a throwing weapon in each hand", "#ccc", 12);
+        return false;
+      }
+      p.mana -= cost;
+      this.startThrow(id, hands, d);
+      return true;
     }
     if (MELEE_SKILLS.has(id)) {
       p.mana -= cost;
@@ -1050,6 +1252,13 @@ export class Game {
         }
       }
     } else if (a.type === "cry") {
+      if (a.t >= a.dur) p.action = null;
+    } else if (a.type === "throw") {
+      while (a.done < a.releaseAt.length && a.t >= a.releaseAt[a.done] * a.dur) {
+        const h = a.hands[a.done] ?? 0;
+        a.done++;
+        this.release(a, h);
+      }
       if (a.t >= a.dur) p.action = null;
     }
   }
@@ -1685,7 +1894,16 @@ export class Game {
     const price = sellPrice(e.item);
     p.bag = p.bag.filter((q) => q !== e);
     p.gold += price;
-    if (!BASE_BY_ID[e.item.baseId].potion) addItem(this.vendorStock, e.item, VENDOR_W, VENDOR_H);
+    if (!BASE_BY_ID[e.item.baseId].potion) {
+      // keep sold items for buy-back: if the shop is full, push out the oldest plain piece (then magic)
+      const st = this.vendorStock;
+      while (!addItem(st, e.item, VENDOR_W, VENDOR_H)) {
+        const i = st.findIndex((q) => qualityOf(q.item) === "normal" && !BASE_BY_ID[q.item.baseId].potion);
+        const j = i >= 0 ? i : st.findIndex((q) => !BASE_BY_ID[q.item.baseId].potion);
+        if (j < 0) break;
+        st.splice(j, 1);
+      }
+    }
     this.events.sound("gold");
     this.events.changed();
     return price;

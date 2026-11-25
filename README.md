@@ -3,6 +3,13 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.6 — Diablo II skill tree, throwing weapons, quarterstaff
+
+- **Skill tree matches Diablo II LoD 1.10+** for every Barbarian skill (levels, prerequisites, placement; enforced by `tests/v06.test.ts`). All six weapon masteries are available from level 1 and all work. Frenzy is back to level 24 after Double Throw.
+- **Save v4 migration:** points in any skill that no longer qualifies (e.g. Frenzy before 24, or without Double Throw) are refunded and removed from the skill buttons, with a toast saying which.
+- **Throwing weapons:** Throwing Knife (stack 40), Throwing Axe (30), Javelin (25). With one in the main hand the attack button throws (➶ plus a count) at the nearest enemy in range; at 0 it fights in melee. Stacks refill free when you arrive in camp, and Hilde sells all three. Thrown hits use Throwing Mastery; melee with a throwing axe uses Axe Mastery and a javelin uses Spear Mastery. **Double Throw** throws one from each hand (needs a thrower in both).
+- **Quarterstaff:** two-handed, the fastest swing (0.42 s), tight damage spread (0.85–1.15×). It uses **Pole Arm Mastery**; D2 has no staff mastery for Barbarians.
+
 ## v0.5 — Item Guide, safer saves, auto-potions
 
 - **Guide tab** (also a button in Settings): item classes with icon, size, speed, damage spread, requirements and what each is for; damage/defense by item level; every affix tier with its value range and minimum item level; rarity rules and drop odds; monsters by level; the skill list. All generated from the game data, so it can't go out of date.

@@ -33,6 +33,7 @@ export const bashAR = (l: number) => 20 + (l - 1) * 5;
 export const doubleSwingAR = (l: number) => 15 + (l - 1) * 5;
 export const stunDur = (l: number) => 1 + l * 0.2;
 export const stunAR = (l: number) => 15 + (l - 1) * 10;
+export const doubleThrowAR = (l: number) => 20 + (l - 1) * 7;
 export const frenzyDmg = (l: number) => 50 + (l - 1) * 9;
 export const frenzyAR = (l: number) => 20 + (l - 1) * 6;
 /** per-stack attack speed and move speed, in % */
@@ -87,7 +88,12 @@ export const SKILLS: SkillDef[] = [
     mana: () => 2,
     effect: (l) => `Stuns for ${stunDur(l).toFixed(1)}s, +${stunAR(l)}% attack rating`,
   }),
-  S({ id: "double_throw", name: "Double Throw", tab: "combat", reqLvl: 12, row: 4, col: 2, glyph: "⇉", prereq: ["double_swing"], blurb: "Throw two weapons at once. Needs throwing weapons, which aren't in the game yet." }),
+  S({
+    id: "double_throw", name: "Double Throw", tab: "combat", reqLvl: 12, row: 2, col: 2, glyph: "⇉", prereq: ["double_swing"], implemented: true,
+    blurb: "Throw both weapons at once, one from each hand. Needs a throwing weapon in each hand (knives, throwing axes or javelins).",
+    mana: () => 1,
+    effect: (l) => `Throws one weapon per hand, +${doubleThrowAR(l)}% attack rating`,
+  }),
   S({
     id: "leap_attack", name: "Leap Attack", tab: "combat", reqLvl: 18, row: 3, col: 1, glyph: "⇓", prereq: ["leap"], implemented: true,
     blurb: "Leap onto the nearest enemy and smash it.",
@@ -96,8 +102,8 @@ export const SKILLS: SkillDef[] = [
   }),
   S({ id: "concentrate", name: "Concentrate", tab: "combat", reqLvl: 18, row: 3, col: 0, glyph: "◎", prereq: ["stun"], blurb: "An uninterruptible attack that boosts defense." }),
   S({
-    id: "frenzy", name: "Frenzy", tab: "combat", reqLvl: 12, row: 2, col: 2, glyph: "≋", prereq: ["double_swing"], implemented: true,
-    blurb: "Two quick hits. Each hit stacks extra attack and move speed (up to 5). Stacks fade after a few seconds without hitting. (D2: level 24, after Double Throw.)",
+    id: "frenzy", name: "Frenzy", tab: "combat", reqLvl: 24, row: 4, col: 2, glyph: "≋", prereq: ["double_throw"], implemented: true,
+    blurb: "Two quick hits. Each hit stacks extra attack and move speed (up to 5). Stacks fade after a few seconds without hitting.",
     mana: () => 3,
     effect: (l) => `+${frenzyDmg(l)}% damage, +${frenzyAR(l)}% attack, +${frenzyIas(l)}% attack speed and +${frenzyMove(l)}% move speed per stack`,
   }),
@@ -120,9 +126,21 @@ export const SKILLS: SkillDef[] = [
     blurb: "Passive: better with maces and clubs.",
     effect: (l) => `+${masteryDmg(l)}% damage, +${masteryAR(l)}% attack, ${masteryCrit(l)}% critical strike`,
   }),
-  S({ id: "polearm_mastery", name: "Pole Arm Mastery", tab: "masteries", reqLvl: 6, row: 1, col: 0, glyph: "⟊", kind: "passive", blurb: "Passive: better with pole arms." }),
-  S({ id: "throwing_mastery", name: "Throwing Mastery", tab: "masteries", reqLvl: 6, row: 1, col: 1, glyph: "➶", kind: "passive", blurb: "Passive: better with throwing weapons." }),
-  S({ id: "spear_mastery", name: "Spear Mastery", tab: "masteries", reqLvl: 6, row: 1, col: 2, glyph: "↑", kind: "passive", blurb: "Passive: better with spears." }),
+  S({
+    id: "polearm_mastery", name: "Pole Arm Mastery", tab: "masteries", reqLvl: 1, row: 1, col: 0, glyph: "⟊", kind: "passive", implemented: true,
+    blurb: "Passive: better with pole arms. In Ember Crypt that means the Quarterstaff.",
+    effect: (l) => `+${masteryDmg(l)}% damage, +${masteryAR(l)}% attack, ${masteryCrit(l)}% critical strike`,
+  }),
+  S({
+    id: "throwing_mastery", name: "Throwing Mastery", tab: "masteries", reqLvl: 1, row: 1, col: 1, glyph: "➶", kind: "passive", implemented: true,
+    blurb: "Passive: better when throwing knives, throwing axes and javelins.",
+    effect: (l) => `+${masteryDmg(l)}% damage, +${masteryAR(l)}% attack, ${masteryCrit(l)}% critical strike`,
+  }),
+  S({
+    id: "spear_mastery", name: "Spear Mastery", tab: "masteries", reqLvl: 1, row: 1, col: 2, glyph: "↑", kind: "passive", implemented: true,
+    blurb: "Passive: better with spears. In Ember Crypt that means a javelin used in melee.",
+    effect: (l) => `+${masteryDmg(l)}% damage, +${masteryAR(l)}% attack, ${masteryCrit(l)}% critical strike`,
+  }),
   S({ id: "increased_stamina", name: "Increased Stamina", tab: "masteries", reqLvl: 12, row: 2, col: 0, glyph: "♥", kind: "passive", blurb: "Passive: more stamina." }),
   S({
     id: "iron_skin", name: "Iron Skin", tab: "masteries", reqLvl: 18, row: 3, col: 2, glyph: "⛨", kind: "passive", implemented: true,

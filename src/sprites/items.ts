@@ -86,6 +86,33 @@ function paint(baseId: string, cs: number, cw?: number, ch?: number): HTMLCanvas
       }
       break;
     }
+    case "knife": {
+      // a small leaf blade with a wrapped grip, pointing up
+      const tip = 1.5 * u;
+      const guard = H * 0.58;
+      part(M().poly([[cx - 2.2 * u, guard], [cx - 1.4 * u, H * 0.25], [cx, tip], [cx + 1.4 * u, H * 0.25], [cx + 2.2 * u, guard]]), STEEL);
+      pb.part(M().capsule(cx, tip + 3 * u, cx, guard - 1.5 * u, 0.35 * u), mul(STEEL, 0.8), { shade: false });
+      part(M().rect(cx - 3 * u, guard, 6 * u, 1.4 * u), STEEL_D);
+      part(M().rect(cx - 1 * u, guard + 1.4 * u, 2 * u, H - guard - 3.6 * u), LEATHER, (_x, y) => (y % 2 ? 0.75 : 1));
+      part(M().disc(cx, H - 2 * u, 1.4 * u), STEEL_D);
+      break;
+    }
+    case "spear": {
+      // javelin: long shaft, leaf-shaped head, small fletching wrap
+      part(M().rect(cx - 0.8 * u, 7 * u, 1.6 * u, H - 8 * u), WOOD_L, (_x, y) => (y % 5 === 0 ? 0.85 : 1));
+      part(M().poly([[cx, 0.8 * u], [cx + 2.4 * u, 5 * u], [cx + 0.9 * u, 8.5 * u], [cx - 0.9 * u, 8.5 * u], [cx - 2.4 * u, 5 * u]]), STEEL);
+      part(M().rect(cx - 1.3 * u, H * 0.55, 2.6 * u, 2.4 * u), LEATHER);
+      part(M().rect(cx - 1.1 * u, H - 3 * u, 2.2 * u, 1.6 * u), STEEL_D);
+      break;
+    }
+    case "staff": {
+      // quarterstaff: long wooden pole with iron caps and a leather grip in the middle
+      part(M().rect(cx - 1.3 * u, 2 * u, 2.6 * u, H - 4 * u), WOOD, (_x, y) => (y % 4 === 0 ? 0.82 : y % 7 === 0 ? 1.12 : 1));
+      part(M().rect(cx - 1.7 * u, 1 * u, 3.4 * u, 3 * u), STEEL_D);
+      part(M().rect(cx - 1.7 * u, H - 4 * u, 3.4 * u, 3 * u), STEEL_D);
+      part(M().rect(cx - 1.6 * u, H * 0.44, 3.2 * u, H * 0.12), LEATHER, (_x, y) => (y % 2 ? 0.75 : 1));
+      break;
+    }
     case "armor": {
       const q = b.qlvl;
       const c = q >= 11 ? hex("#9aa2aa") : id === "quilted_armor" ? hex("#b8a47c") : id === "studded_leather" ? hex("#74482a") : id === "hard_leather" ? hex("#6a4224") : LEATHER;

@@ -4,7 +4,7 @@
  * separate full-resolution overlay so it stays sharp.
  */
 import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, qualityOf } from "./data/items";
-import type { Game, GroundItem, Monster } from "./game";
+import type { Game, GroundItem, Monster, Projectile } from "./game";
 import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
 import { type Anim, FRAMES, type Look, type Model, dirOf, getFrame, lookKey } from "./sprites/puppet";
@@ -338,6 +338,7 @@ export class Renderer {
       list.push({ d: v.x + v.y, f: () => this.drawVendor(game) });
     }
     list.push({ d: pD, f: () => this.drawPlayer(game) });
+    for (const q of game.projectiles) list.push({ d: q.x + q.y + 0.3, f: () => this.drawProjectile(q) });
     list.sort((a, b) => a.d - b.d);
     for (const it of list) it.f();
 
@@ -528,6 +529,51 @@ export class Renderer {
     return { main: lookOf(e.main), off: lookOf(e.off), head: lookOf(e.head), chest: lookOf(e.chest), gloves: lookOf(e.gloves), boots: lookOf(e.boots) };
   }
 
+  /** A thrown knife, spinning axe or javelin in flight, with a ground shadow. */
+  private drawProjectile(q: Projectile) {
+    const ctx = this.ctx;
+    const x = this.ax(q.x, q.y);
+    const y = this.ay(q.x, q.y, 0.55);
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(x - 2, this.ay(q.x, q.y) - 1, 4, 2);
+    let dx = (q.vx - q.vy) * HW;
+    let dy = (q.vx + q.vy) * HH;
+    const l = Math.hypot(dx, dy) || 1;
+    dx /= l;
+    dy /= l;
+    const line = (a: number, b: number, color: string, w = 1.6) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(x + dx * a, y + dy * a);
+      ctx.lineTo(x + dx * b, y + dy * b);
+      ctx.stroke();
+    };
+    ctx.save();
+    ctx.lineCap = "round";
+    if (q.cls === "javelin") {
+      line(-9, 5, "#a8743e", 1.6);
+      line(5, 9, "#d8dde6", 2.4);
+      line(-9, -6, "#5a3a1e", 2);
+    } else if (q.cls === "throwing_axe") {
+      const a = q.t * 22;
+      [dx, dy] = [Math.cos(a), Math.sin(a) * 0.7];
+      line(-4, 4, "#7a5230", 1.8);
+      ctx.fillStyle = "#c9ced8";
+      ctx.beginPath();
+      ctx.arc(x + dx * 4, y + dy * 4, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // knife: a glinting streak
+      ctx.globalAlpha = 0.35;
+      line(-10, -3, "#e8eef8", 1);
+      ctx.globalAlpha = 1;
+      line(-3, 0, "#5a3a1e", 1.8);
+      line(0, 4, "#e8eef8", 1.8);
+    }
+    ctx.restore();
+  }
+
   /** Which animation + frame the player shows right now. */
   playerAnim(game: Game): { anim: Anim; f: number } {
     const p = game.player;
@@ -544,6 +590,15 @@ export class Renderer {
         if (a.hands[0] === a.hands[1] && half === 1) return { anim: "atk1", f: Math.min(5, Math.floor(prog * 6)) };
       }
       return { anim: hand === 1 ? "atk1" : "atk0", f: Math.min(5, Math.floor(prog * 6)) };
+    }
+    if (a?.type === "throw") {
+      let prog = a.t / a.dur;
+      let hand = a.hands[0] ?? 0;
+      if (a.hands.length > 1) {
+        hand = prog < 0.5 ? a.hands[0] : a.hands[1];
+        prog = (prog * 2) % 1;
+      }
+      return { anim: hand === 1 ? "thr1" : "thr0", f: Math.min(5, Math.floor(prog * 6)) };
     }
     if (a?.type === "leap") return { anim: "leap", f: Math.min(2, Math.floor((a.t / a.dur) * 3)) };
     if (game.recall) return { anim: "cry", f: Math.min(3, Math.floor((game.recall.t / game.recall.dur) * 6)) };

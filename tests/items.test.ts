@@ -21,7 +21,7 @@ const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, le
 describe("item classes", () => {
   it("has one base per class", () => {
     const ids = ITEM_BASES.map((b) => b.id).sort();
-    expect(ids).toEqual(["amulet", "armor", "axe", "belt", "boots", "gloves", "great_sword", "helm", "hp_potion", "mace", "mp_potion", "ring", "shield", "sword"]);
+    expect(ids).toEqual(["amulet", "armor", "axe", "belt", "boots", "gloves", "great_sword", "helm", "hp_potion", "javelin", "mace", "mp_potion", "quarterstaff", "ring", "shield", "sword", "throwing_axe", "throwing_knife"]);
   });
 
   it("class sets spread and speed, level sets the numbers", () => {
@@ -210,7 +210,7 @@ describe("migration", () => {
       },
     };
     const s = migrateSave(v2)!;
-    expect(s.v).toBe(3);
+    expect(s.v).toBe(4);
     expect(s.player.equip.main!.baseId).toBe("axe");
     expect(s.player.equip.chest!.baseId).toBe("armor");
     expect(s.player.equip.ring1!.q).toBe("magic");

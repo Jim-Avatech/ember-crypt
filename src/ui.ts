@@ -137,7 +137,7 @@ export class Ui {
         <div class="globe life" aria-label="Life"><div class="fill"></div><span></span></div>
         <div class="globe mana" aria-label="Mana"><div class="fill"></div><span></span></div>
         <div id="xpbar"><div class="fill"></div></div>
-        <button id="btn-attack" class="abtn" aria-label="Attack"><span>⚔</span></button>
+        <button id="btn-attack" class="abtn" aria-label="Attack"><span>⚔</span><b class="ammo"></b></button>
         <button id="btn-s0" class="sbtn" data-slot="0"></button>
         <button id="btn-s1" class="sbtn" data-slot="1"></button>
         <button id="btn-s2" class="sbtn" data-slot="2"></button>
@@ -261,6 +261,7 @@ export class Ui {
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
       Math.ceil(p.buffs.shout), Math.ceil(p.buffs.bo), p.frenzy.stacks, Math.ceil(p.frenzy.t), g.maxFloor,
       g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0,
+      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId,
     ].join("|");
     if (key === this.lastHud) return;
     this.lastHud = key;
@@ -270,6 +271,12 @@ export class Ui {
     $(r, ".globe.life span").textContent = `${Math.ceil(p.hp)}`;
     $(r, ".globe.mana span").textContent = `${Math.ceil(p.mana)}`;
     $(r, "#xpbar .fill").style.width = `${Math.min(100, xpPct * 100)}%`;
+    // throwing: the attack button shows a throw icon and how many are left
+    const thr = BASE_BY_ID[p.equip.main?.baseId ?? ""]?.thrown ? p.equip.main! : null;
+    const ab = $(r, "#btn-attack");
+    ab.classList.toggle("throw", !!thr && (thr.qty ?? 0) > 0);
+    $(ab, "span").textContent = thr && (thr.qty ?? 0) > 0 ? "➶" : "⚔";
+    $(ab, ".ammo").textContent = thr ? `${(thr.qty ?? 0) + (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.thrown ? p.equip.off!.qty ?? 0 : 0)}` : "";
     $(r, "#btn-hp b").textContent = `${p.hpPots}`;
     $(r, "#btn-mp b").textContent = `${p.mpPots}`;
     $(r, "#btn-hp").classList.toggle("empty", p.hpPots === 0);
@@ -320,11 +327,11 @@ export class Ui {
     k.style.transform = `translate(${this.input.jx - this.input.ox}px, ${this.input.jy - this.input.oy}px)`;
   }
 
-  toast(text: string) {
+  toast(text: string, ms = 2600) {
     const t = $(this.root, "#toast");
     t.textContent = text;
     t.classList.add("on");
-    this.toastT = 2.6;
+    this.toastT = ms / 1000;
   }
 
   tick(dt: number) {
@@ -894,7 +901,13 @@ export class Ui {
       const [lo, hi] = itemDamage(it);
       const m = lo !== bl || hi !== bh;
       lines.push(`${b.hands === 2 ? "Two-Hand" : "One-Hand"} Damage: <b class="${m ? "mod" : ""}">${lo} to ${hi}</b>`);
+      if (b.thrown) {
+        lines.push(`Throw Damage: <b class="${m ? "mod" : ""}">${lo} to ${hi}</b>`);
+        lines.push(`Quantity: <b class="${(it.qty ?? 0) === 0 ? "bad" : ""}">${it.qty ?? 0} of ${b.thrown.max}</b> · refills in camp`);
+        lines.push(`Throw range: ${b.thrown.range} · Throwing Mastery`);
+      }
       lines.push(`Speed: ${b.speedLabel}${b.hands === 1 ? " · can dual wield" : ""}`);
+      if (b.kind === "staff") lines.push(`Uses Pole Arm Mastery`);
     } else if (b.potion) {
       lines.push(b.potion === "hp" ? "Restores 45% life over a few seconds" : "Restores 60% mana over a few seconds");
     } else if (b.defMul) {
@@ -949,7 +962,7 @@ export class Ui {
     const sel = this.sel && this.sel.src === src && this.sel.uid === it.uid;
     const bad = src !== "vendor" && !b.potion && !this.game().meetsReq(it);
     return `<div class="gi q-${qualityOf(it)} ${sel ? "sel" : ""} ${bad ? "bad" : ""}" data-src="${src}" data-uid="${it.uid}" data-q="${qualityOf(it)}" style="left:${x * C}px;top:${y * C}px;width:${b.w * C}px;height:${b.h * C}px" ${extra}>
-      <img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false"/></div>`;
+      <img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false"/>${b.thrown ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
   }
 
   private bagGrid() {
@@ -973,7 +986,7 @@ export class Ui {
         if (it) {
           const b = BASE_BY_ID[it.baseId];
           const k = Math.min(1, w / b.w, h / b.h);
-          inner = `<div class="eqi q-${qualityOf(it)}" data-src="eq" data-eq="${s}"><img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false" style="width:${b.w * U * k}px;height:${b.h * U * k}px"/></div>`;
+          inner = `<div class="eqi q-${qualityOf(it)}" data-src="eq" data-eq="${s}"><img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false" style="width:${b.w * U * k}px;height:${b.h * U * k}px"/>${b.thrown ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
         } else if (blocked && p.equip.main) {
           const b = BASE_BY_ID[p.equip.main.baseId];
           inner = `<img class="ghost2h" src="${itemIconUrl(p.equip.main)}" alt="" draggable="false" style="width:${b.w * U * 0.9}px;height:${b.h * U * 0.9}px"/><em>2-handed</em>`;
@@ -1234,7 +1247,7 @@ export class Ui {
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.5 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.6 · all art made in code for this game</p>
       </div>`;
   }
 

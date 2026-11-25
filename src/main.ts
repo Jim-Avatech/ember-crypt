@@ -1,3 +1,4 @@
+import { SKILLS } from "./data/skills";
 import "./styles.css";
 import { AFFIXES, enchant, rollDrop } from "./data/affixes";
 import { ITEM_BASES, makeItem, migrateItem } from "./data/items";
@@ -117,6 +118,7 @@ function replaceGame(d: SaveData) {
   ui.close();
   doSave(true);
   ui.refresh();
+  if (d.refundedPoints) setTimeout(() => ui.toast(`Skill tree updated to match Diablo II: ${d.refundedPoints} point${d.refundedPoints === 1 ? "" : "s"} refunded (${d.refundedSkills!.join(", ")}).`, 7000), 3000);
 }
 if (loaded?.recovered) {
   setTimeout(() => ui.toast(`Your last save was damaged. Restored the backup from ${new Date(lastSavedAt()).toLocaleString()}.`), 700);
@@ -142,6 +144,13 @@ if (saved?.migratedSold !== undefined) {
   const n = saved.migratedSold;
   const what = saved.migratedFrom === 1 ? "Your bag now uses a grid, like Diablo II." : "Your gear was converted to the new item classes.";
   setTimeout(() => ui.toast(n ? `${what} ${n} item${n === 1 ? "" : "s"} didn't fit and were sold.` : what), 600);
+}
+if (saved?.refundedPoints) {
+  const n = saved.refundedPoints;
+  setTimeout(
+    () => ui.toast(`The skill tree now matches Diablo II. ${n} skill point${n === 1 ? "" : "s"} refunded (${saved.refundedSkills!.join(", ")}): spend them again in Skills.`, 7000),
+    1400,
+  );
 }
 input.onFirstTouch = () => {
   sfx.unlock();
@@ -249,7 +258,7 @@ if (DEBUG) (window as unknown as { __ec: unknown }).__ec = {
   ui,
   settings,
   items: { makeItem, enchant, rollDrop, migrateItem },
-  data: { ITEM_BASES, AFFIXES },
+  data: { ITEM_BASES, AFFIXES, SKILLS },
   get fps() {
     return fps;
   },

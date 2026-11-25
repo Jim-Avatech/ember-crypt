@@ -57,6 +57,11 @@ const J = (id: string, name: string, kind: Kind, qlvl: number, bonus: LookBase["
 });
 
 export const LOOK_BASES: LookBase[] = [
+  // v0.6 classes (art for the new item classes)
+  W("quarterstaff", "Quarterstaff", "staff", 1, 7, 9, 12, 10, 0.42, 1, 4, 2),
+  W("throwing_knife", "Throwing Knife", "knife", 1, 2, 4, 0, 12, 0.4, 1, 2),
+  W("throwing_axe", "Throwing Axe", "axe", 1, 3, 5, 10, 10, 0.48, 1, 2),
+  W("javelin", "Javelin", "spear", 1, 4, 7, 8, 14, 0.54, 1, 4),
   // Swords
   W("short_sword", "Short Sword", "sword", 1, 2, 7, 0, 0, 0.48, 1, 3),
   W("scimitar", "Scimitar", "sword", 5, 2, 6, 0, 21, 0.42, 1, 3),

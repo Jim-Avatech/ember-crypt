@@ -7,8 +7,8 @@ import { LOOK_BY_ID as BASE_BY_ID } from "../data/looks";
 import { Mask, PB, type RGB, hex, mul, whiteOf } from "../pixel";
 
 export type Model = "barb" | "zombie" | "fallen" | "boss" | "vendor";
-export type Anim = "idle" | "walk" | "atk0" | "atk1" | "cry" | "leap" | "death";
-export const FRAMES: Record<Anim, number> = { idle: 4, walk: 8, atk0: 6, atk1: 6, cry: 4, leap: 3, death: 6 };
+export type Anim = "idle" | "walk" | "atk0" | "atk1" | "thr0" | "thr1" | "cry" | "leap" | "death";
+export const FRAMES: Record<Anim, number> = { idle: 4, walk: 8, atk0: 6, atk1: 6, thr0: 6, thr1: 6, cry: 4, leap: 3, death: 6 };
 
 export interface Look {
   main?: string;
@@ -136,6 +136,19 @@ function barbPose(anim: Anim, f: number, look: Look): Pose {
       const strike = pose({ ...swingArm(arm(1.35, 0.05, 0.05, 0.25)), twist: -0.4 * sign, lean: 0.28, ...legs(leg(0.45, 0.3), leg(-0.35, 0.1)) });
       const follow = pose({ ...swingArm(arm(0.75, 0.25, 0.1, 0.6)), twist: -0.25 * sign, lean: 0.18, ...legs(leg(0.35, 0.25), leg(-0.25, 0.1)) });
       return keyed([[0, base], [0.28, wind], [0.5, strike], [0.72, follow], [1, base]], t);
+    }
+    case "thr0":
+    case "thr1": {
+      // overhand throw: cock the arm back behind the head, step in and release forward
+      const t = (f + 0.5) / 6;
+      const left = anim === "thr1";
+      const sign = left ? -1 : 1;
+      const one = (a: Arm): Partial<Pose> => (left ? { armL: a, armR: restR } : { armR: a, armL: arm(1.1, 0.5, 0.15) });
+      const legs = (front: Leg, back: Leg) => (left ? { legL: back, legR: front } : { legL: front, legR: back });
+      const cock = pose({ ...one(arm(3.0, 1.5, 0.35, 0.9)), twist: 0.55 * sign, lean: -0.12, ...legs(leg(0.25, 0.2), leg(-0.3, 0.2)) });
+      const release = pose({ ...one(arm(1.75, 0.05, 0.1, 0.1)), twist: -0.45 * sign, lean: 0.3, ...legs(leg(0.5, 0.35), leg(-0.35, 0.1)) });
+      const follow = pose({ ...one(arm(0.7, 0.15, 0.1, 0.3)), twist: -0.3 * sign, lean: 0.22, ...legs(leg(0.4, 0.3), leg(-0.25, 0.1)) });
+      return keyed([[0, base], [0.35, cock], [0.55, release], [0.75, follow], [1, base]], t);
     }
     case "cry": {
       const t = smooth(Math.min(1, f / 2));
@@ -507,6 +520,17 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
       cap(add(tip, scl(w, -1.6)), add(tip, scl(w, 1.0)), big ? 1.7 : 1.3, C.steel, bias + 0.1);
       disc(add(tip, scl(perp, big ? 2.4 : 1.8)), big ? 2.1 : 1.6, C.steel, bias + 0.15, big ? 2.6 : 2);
       if (big && (id === "double_axe" || id === "battle_axe" || id === "broad_axe")) disc(add(tip, scl(perp, -2.2)), 1.9, C.steel, bias + 0.15, 2.4);
+    } else if (b.kind === "knife") {
+      cap(add(hnd, scl(w, -1.2)), add(hnd, scl(w, 0.6)), 0.55, hex("#6a4426"), bias);
+      cap(add(hnd, scl(w, 0.8)), add(hnd, scl(w, 4.2)), 0.6, C.steel, bias + 0.1);
+    } else if (b.kind === "spear") {
+      cap(add(hnd, scl(w, -6)), add(hnd, scl(w, 11)), 0.5, hex("#9a6a3a"), bias);
+      cap(add(hnd, scl(w, 10.5)), add(hnd, scl(w, 14)), 0.9, C.steel, bias + 0.1);
+    } else if (b.kind === "staff") {
+      // held across the body: long both ways from the hand
+      cap(add(hnd, scl(w, -9)), add(hnd, scl(w, 12)), 0.75, C.wood, bias);
+      cap(add(hnd, scl(w, 10.5)), add(hnd, scl(w, 12.5)), 0.85, C.steelDark, bias + 0.05);
+      cap(add(hnd, scl(w, -9)), add(hnd, scl(w, -7.5)), 0.85, C.steelDark, bias + 0.05);
     } else if (b.kind === "mace") {
       const L = two ? 12 : 8;
       const club = id === "club" || id === "spiked_club";

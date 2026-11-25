@@ -36,6 +36,9 @@ function classesHtml(): string {
       facts.push(`${b.hands === 2 ? "Two-handed" : "One-handed"}`, `Speed ${b.speedLabel} (${b.speed!.toFixed(2)} s/swing)`);
       const [lo, hi] = b.spread!;
       facts.push(`Damage spread ${lo}–${hi}× average`, `Damage ×${b.dmgMul} vs base`);
+      if (b.thrown) facts.push(`Throws: stack of ${b.thrown.max}, range ${b.thrown.range}`);
+      const mast = b.thrown ? "Throwing Mastery" : ({ sword: "Sword", axe: "Axe", mace: "Mace", staff: "Pole Arm", spear: "Spear" } as Record<string, string>)[b.kind];
+      if (mast) facts.push(b.thrown ? `${mast}${b.kind === "axe" ? " (Axe Mastery in melee)" : b.kind === "spear" ? " (Spear Mastery in melee)" : ""}` : `${mast} Mastery`);
     } else if (b.defMul) facts.push(`Defense ×${b.defMul}`);
     if (b.kind === "belt") facts.push("+1 to +4 potion slots");
     const req = [reqText(b.str, "Str"), reqText(b.dex, "Dex")].filter(Boolean).join(", ");

@@ -341,7 +341,10 @@ await ev(() => {
   const g = __ec.game;
   const p = g.player;
   p.equip.off = { uid: 5002, baseId: "sword", ilvl: 1 };
-  p.skillPoints = Math.max(p.skillPoints, 1);
+  // D2 1.10: Frenzy is level 24 and needs Double Throw
+  p.level = 24;
+  p.skillPoints = Math.max(p.skillPoints, 3);
+  g.learn("double_throw");
   g.learn("frenzy");
   g.assignSlot(2, "frenzy");
   p.mana = 999;
@@ -365,9 +368,136 @@ await tap('.snode[data-id="frenzy"]');
 await wait(200);
 await page.screenshot({ path: `${outDir}/skill-tree.png` });
 const learnedViaUi = await ev(() => __ec.game.player.skills.frenzy >= 1);
-check("Skill tree shows Frenzy under Double Swing", learnedViaUi && (await ev(() => document.querySelectorAll(".sgrid path").length > 3)));
+check("Skill tree shows Frenzy under Double Throw (D2 1.10 tree)", learnedViaUi && (await ev(() => document.querySelectorAll(".sgrid path").length > 3)));
 await page.locator(".pclose").tap();
 await wait(200);
+
+// ---------------------------------------------------------------- 10b. D2 tree rules, throwing weapons, quarterstaff
+{
+  const tree = await ev(() => {
+    const S = Object.fromEntries(__ec.data.SKILLS.map((s) => [s.id, s]));
+    return {
+      frenzy: [S.frenzy.reqLvl, S.frenzy.prereq.join()], dt: [S.double_throw.reqLvl, S.double_throw.row],
+      masteries: ["sword_mastery", "axe_mastery", "mace_mastery", "polearm_mastery", "throwing_mastery", "spear_mastery"].every((id) => S[id].reqLvl === 1 && !(S[id].prereq ?? []).length && S[id].implemented),
+    };
+  });
+  check("D2 tree: Frenzy 24 after Double Throw; all six masteries at level 1", tree.frenzy[0] === 24 && tree.frenzy[1] === "double_throw" && tree.dt[0] === 12 && tree.dt[1] === 2 && tree.masteries, JSON.stringify(tree));
+  await page.locator('.mbtn[data-tab="skills"]').tap();
+  await wait(250);
+  await tap('.stab[data-tree="masteries"]');
+  await wait(200);
+  await page.screenshot({ path: `${outDir}/skill-tree-masteries.png` });
+  await page.locator(".pclose").tap();
+  await wait(200);
+
+  // put a tanky monster 4 tiles away on a clear line, and hold throwing weapons
+  const placeAt = (dist) => ev((dist) => {
+    const g = __ec.game;
+    const p = g.player;
+    const alive = g.monsters.filter((m) => m.state !== "dead" && m.def.kind !== "boss");
+    for (const q of alive) { q.x = p.x + 80; q.y = p.y + 80; }
+    const m = alive[0];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]) {
+      let clear = true;
+      for (let t = 0.3; t <= dist + 0.5; t += 0.2) if (g.blocked(p.x + dx * t, p.y + dy * t, 0.5)) clear = false;
+      if (clear) { m.x = p.x + dx * dist; m.y = p.y + dy * dist; break; }
+    }
+    Object.assign(m, { hp: 99999, maxHp: 99999, dmgMin: 0, dmgMax: 0, ar: 0, defense: 0, state: "idle", atkT: 99, homeX: m.x, homeY: m.y, wx: m.x, wy: m.y });
+    m.def = { ...m.def, speed: 0 };
+    p.hp = g.derived().maxHp;
+    return m.id;
+  }, dist);
+  await ev(() => {
+    const g = __ec.game;
+    g.goDungeon(1);
+    const p = g.player;
+    p.equip.main = __ec.items.makeItem("throwing_axe", 6);
+    p.equip.off = __ec.items.makeItem("throwing_knife", 6);
+    g.assignSlot(1, "double_throw");
+    p.mana = 999;
+    g.events.changed();
+  });
+  await wait(400);
+  const mid = await placeAt(4);
+  await ev(() => { __ec.game.hitLog.length = 0; });
+  await touch("touchStart", [{ ...atkPt, id: 7 }]);
+  let shot = false;
+  for (let i = 0; i < 40 && !shot; i++) {
+    await wait(25);
+    if (await ev(() => __ec.game.projectiles.some((q) => q.dist > 1.2))) {
+      await page.screenshot({ path: `${outDir}/throw.png` });
+      shot = true;
+    }
+  }
+  await wait(1500);
+  await touch("touchEnd", []);
+  await wait(500);
+  const thr = await ev((id) => {
+    const g = __ec.game;
+    const m = g.monsters.find((q) => q.id === id);
+    const p = g.player;
+    return { main: p.equip.main.qty, off: p.equip.off.qty, hp: m.hp, dist: Math.hypot(m.x - p.x, m.y - p.y), throws: g.hitLog.filter((h) => h.skill === "throw").length, btn: document.querySelector("#btn-attack span").textContent };
+  }, mid);
+  check("Throw: attack button throws from range, uses the stack and hits", shot && thr.throws >= 2 && thr.main < 30 && thr.off < 40 && thr.hp < 99999 && thr.dist > 3 && thr.btn === "➶", JSON.stringify(thr));
+  await placeAt(4);
+  const before = await ev(() => [__ec.game.player.equip.main.qty, __ec.game.player.equip.off.qty]);
+  await useSkill(1, 120);
+  await wait(800);
+  const after = await ev(() => [__ec.game.player.equip.main.qty, __ec.game.player.equip.off.qty, __ec.game.hitLog.filter((h) => h.skill === "double_throw").map((h) => h.hand).join("")]);
+  check("Double Throw throws one from each hand", after[0] === before[0] - 1 && after[1] === before[1] - 1 && after[2].length === 2, JSON.stringify({ before, after }));
+  await ev(() => __ec.ui.open("inv"));
+  await wait(250);
+  await page.screenshot({ path: `${outDir}/throwing-inventory.png` });
+  const badge = await ev(() => [...document.querySelectorAll(".eqi .qty")].map((e) => e.textContent));
+  check("Inventory shows how many are left", badge.length === 2, JSON.stringify(badge));
+  await ev(() => __ec.ui.close());
+  await ev(() => { __ec.game.player.equip.main.qty = 0; __ec.game.goTown(); });
+  await wait(300);
+  const refill = await ev(() => ({ q: __ec.game.player.equip.main.qty, stock: ["quarterstaff", "throwing_knife", "throwing_axe", "javelin"].every((id) => __ec.game.vendorStock.some((e) => e.item.baseId === id)) }));
+  check("Stacks refill in camp; Hilde sells all four new classes", refill.q === 30 && refill.stock, JSON.stringify(refill));
+
+  // quarterstaff: two-handed melee with Pole Arm Mastery
+  await ev(() => {
+    const g = __ec.game;
+    g.goDungeon(1);
+    const p = g.player;
+    delete p.equip.off;
+    p.equip.main = __ec.items.makeItem("quarterstaff", 6);
+    g.events.changed();
+  });
+  await wait(400);
+  const qsBase = await ev(() => __ec.game.handFor("main").crit);
+  await ev(() => { const g = __ec.game; g.player.skills.polearm_mastery = 5; g.events.changed(); });
+  const qsM = await ev(() => __ec.game.handFor("main").crit);
+  const qm = await standByMonster(true);
+  // clear the rest so the staff reads clearly; stand to the monster's lower left (facing up-right, toward the camera side)
+  await ev((id) => {
+    const g = __ec.game;
+    const p = g.player;
+    const m = g.monsters.find((q) => q.id === id);
+    for (const q of g.monsters) if (q !== m) { q.x += 80; q.y += 80; }
+    for (const [dx, dy] of [[0, 1.1], [1.1, 0], [-1.1, 0], [0, -1.1]]) if (!g.blocked(m.x + dx, m.y + dy, p.r)) { p.x = m.x + dx; p.y = m.y + dy; break; }
+    p.fx = m.x - p.x; p.fy = m.y - p.y;
+    m.def = { ...m.def, speed: 0 };
+  }, qm);
+  await wait(300);
+  await ev(() => { __ec.game.hitLog.length = 0; });
+  await touch("touchStart", [{ ...atkPt, id: 7 }]);
+  let qshot = false;
+  for (let i = 0; i < 40 && !qshot; i++) {
+    await wait(25);
+    if (await ev(() => { const a = __ec.game.player.action; return a?.type === "swing" && a.t / a.dur > 0.35 && a.t / a.dur < 0.6; })) {
+      await page.screenshot({ path: `${outDir}/quarterstaff.png` });
+      qshot = true;
+    }
+  }
+  await wait(1500);
+  await touch("touchEnd", []);
+  const qs = await ev(() => ({ hits: __ec.game.hitLog.filter((h) => h.skill === null).length, off: !__ec.game.player.equip.off }));
+  check("Quarterstaff: two-handed melee, boosted by Pole Arm Mastery", qshot && qs.hits >= 2 && qs.off && qsM > qsBase, JSON.stringify({ qs, qsBase, qsM }));
+  await ev(() => __ec.game.goTown());
+  await wait(300);
+}
 
 // ---------------------------------------------------------------- 11. settings: joystick + multi-touch
 await page.locator('.mbtn[data-tab="settings"]').tap();
