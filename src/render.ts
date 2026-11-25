@@ -463,7 +463,9 @@ export class Renderer {
       f.font = "bold 13px Georgia, serif";
       f.textAlign = "center";
       f.fillStyle = b.def.rank === "final" ? "#ffcf7a" : "#e9d9a8";
-      f.fillText(b.def.name, this.W / 2, y + 14);
+      // v0.9.4: boss modifiers (Extra Fast, Stone Skin) after the name
+      const mods = (b.mods ?? []).map((k) => ELITE_MODS[k]).join(" · ");
+      f.fillText(mods ? `${b.def.name} · ${mods}` : b.def.name, this.W / 2, y + 14, w - 8);
     }
     const maxHp = game.derived().maxHp;
     if (!p.dead) this.drawVitalRing(game, p.hp / maxHp, p.mana / game.derived().maxMana);

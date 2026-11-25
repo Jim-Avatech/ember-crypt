@@ -25,6 +25,21 @@ import { Rng, chance, rand, randInt } from "./rng";
 /** v0.9.2: every monster (elites and bosses build on these) has +30% life and +25% damage. */
 export const MON_HP = 1.69; // v0.9.3: +30% on v0.9.2's 1.3
 export const MON_DMG = 1.875; // v0.9.3: +50% on v0.9.2's 1.25
+/**
+ * v0.9.4 bosses. Accuracy: a boss rolls 3x its attack rating and ignores the hero being above its level, so an
+ * on-level hero standing still is hit about 80% of the time (defense still helps). Damage: an average hit is a set
+ * share of an on-level hero's life (≈ 55 + 10.6 × the level a full clear gives, about 1.1 × monster level + 1.5):
+ * level bosses 30% on an act's first level up to 35% on its last, act bosses 38% (their bolts do 0.9x). Big telegraphed slams hit ~1.5x.
+ */
+export const BOSS_AR = 3;
+export const heroLifeRef = (floor: number) => 55 + 10.6 * (1.1 * mlvlOf(floor) + 1.5);
+export const bossHitShare = (floor: number) =>
+  isFinalLevel(floor) ? 0.38 : 0.3 + (0.05 * (levelInAct(floor) - 1)) / Math.max(1, LEVELS_PER_ACT - 2);
+/** Elite-style boss modifiers: none early in an act, one from level 7, two from level 14; act bosses get both. */
+export const bossMods = (floor: number): EliteMod[] =>
+  isFinalLevel(floor) ? ["fast", "stone"] : levelInAct(floor) >= 14 ? ["fast", "stone"] : levelInAct(floor) >= 7 ? [levelInAct(floor) % 2 ? "fast" : "stone"] : [];
+/** Seconds between a level boss's ground slams (7 s on an act's first level down to 4.3 s on its last). */
+export const slamEvery = (floor: number) => 7 - (2.7 * (levelInAct(floor) - 1)) / Math.max(1, LEVELS_PER_ACT - 2);
 /** v0.9.3: level and act bosses end up with 1.9x their v0.9.2 life (the general +30% is not stacked on top). */
 export const BOSS_HP_EXTRA = 1.9 / 1.3;
 export const ITEM_DROP = 0.0425; // v0.9.2: halved again (was 0.085, originally 0.17)
@@ -159,6 +174,8 @@ export interface Monster {
   taunt: { t: number; pct: number };
   bcry: { t: number; def: number; dmg: number };
   mods: EliteMod[];
+  /** v0.9.4: seconds left in a boss's ground-slam windup (it stands still) */
+  slamT?: number;
 }
 
 /** Seconds between two potions of the same kind (v0.8). */
@@ -870,16 +887,35 @@ export class Game {
       const m = this.spawn(act.finalBoss, ml + 2, x, y, pack);
       m.cd = 3;
       m.maxHp = m.hp = Math.round(m.hp * 1.2 * BOSS_HP_EXTRA); // v0.8: tougher final bosses; v0.9.3: 1.9x v0.9.2
+      this.bossUp(m, floor);
+      m.def = { ...m.def, specials: [...(m.def.specials ?? []), "slam"] };
       return m;
     }
     const m = this.spawn(act.levelBoss, ml + 1, x, y, pack, { ...MONSTERS[act.levelBoss], name: bossName(act, lvl) });
     // on top of the climbing monster level, each level's boss gets +4% life and +2% damage
     const k = 1 + 0.04 * (lvl - 1);
     m.maxHp = m.hp = Math.round(m.hp * k * 1.25 * BOSS_HP_EXTRA); // v0.8: +25% life on every level boss; v0.9.3: 1.9x v0.9.2
-    m.dmgMin = Math.round(m.dmgMin * (1 + 0.02 * (lvl - 1)));
-    m.dmgMax = Math.round(m.dmgMax * (1 + 0.02 * (lvl - 1)));
-    m.xp = Math.round(m.xp * k);
+    this.bossUp(m, floor);
+    m.cd = slamEvery(floor) * 0.6;
     return m;
+  }
+
+  /** v0.9.4: boss damage set from the on-level hero's life, plus elite-style modifiers (shown on the boss bar). */
+  private bossUp(m: Monster, floor: number) {
+    const avg = (m.dmgMin + m.dmgMax) / 2 || 1;
+    const k = (bossHitShare(floor) * heroLifeRef(floor)) / avg;
+    m.dmgMin = Math.max(1, Math.round(m.dmgMin * k));
+    m.dmgMax = Math.max(m.dmgMin, Math.round(m.dmgMax * k));
+    const mods = bossMods(floor);
+    const d: MonsterDef = { ...m.def, atkInterval: m.def.atkInterval * 0.9 }; // a little quicker than before
+    if (mods.includes("fast")) {
+      d.speed *= 1.2;
+      d.atkInterval *= 0.8;
+      d.windup *= 0.85;
+    }
+    if (mods.includes("stone")) m.defense = Math.round(m.defense * 2);
+    m.def = d;
+    m.mods = mods;
   }
 
   /** Turn a monster into a champion (tier 1, blue) or a unique (tier 2, gold) with modifiers. */
@@ -2109,6 +2145,10 @@ export class Game {
       const ranged = m.def.behavior === "ranged";
       const reach = ranged ? m.def.reach : m.def.reach + m.def.radius + p.r;
       m.cd = Math.max(0, m.cd - dt);
+      if (m.slamT && m.slamT > 0) {
+        m.slamT -= dt;
+        continue;
+      }
       // exploder: lit fuse, then burst
       if (m.fuse >= 0) {
         m.fuse -= dt;
@@ -2140,6 +2180,12 @@ export class Game {
         // final boss specials
         if (m.def.specials && m.cd <= 0 && los) {
           this.bossSpecial(m, dx, dy, dist);
+          continue;
+        }
+        // v0.9.4: level bosses slam the ground when you're close (a red ring warns first)
+        if (m.def.rank === "boss" && m.cd <= 0 && dist < 2.4 && los) {
+          this.bossSlam(m);
+          m.cd = slamEvery(this.floor);
           continue;
         }
         if (m.def.behavior === "charger" && m.cd <= 0 && dist > 2.5 && dist < 7 && los) {
@@ -2274,7 +2320,10 @@ export class Game {
     const p = this.player;
     if (p.dead || p.action?.type === "leap") return;
     if (roll) {
-      const hc = Math.max(0.05, Math.min(0.95, 2 * (src.ar / (src.ar + d.def)) * (src.mlvl / (src.mlvl + p.level))));
+      // v0.9.4: bosses (big hits) aim with 3x attack rating and don't lose accuracy when you out-level them
+      const hc = src.big
+        ? Math.max(0.05, Math.min(0.95, (BOSS_AR * src.ar) / (BOSS_AR * src.ar + d.def)))
+        : Math.max(0.05, Math.min(0.95, 2 * (src.ar / (src.ar + d.def)) * (src.mlvl / (src.mlvl + p.level))));
       if (!chance(hc)) {
         this.floatAt(p.x, p.y, "Miss", "#9a9a9a", 12);
         this.events.sound("whiff");
@@ -2320,7 +2369,7 @@ export class Game {
     const final = m.def.rank === "final";
     this.shots.push({
       x: m.x + Math.cos(a) * m.def.radius, y: m.y + Math.sin(a) * m.def.radius, vx: Math.cos(a) * s.speed, vy: Math.sin(a) * s.speed,
-      dist: 0, range: s.range, dmgMin: m.dmgMin * (final ? 0.7 : 1) * this.weaken(m), dmgMax: m.dmgMax * (final ? 0.7 : 1) * this.weaken(m), ar: m.ar, mlvl: m.mlvl,
+      dist: 0, range: s.range, dmgMin: m.dmgMin * (final ? 0.9 : 1) * this.weaken(m), dmgMax: m.dmgMax * (final ? 0.9 : 1) * this.weaken(m), ar: m.ar, mlvl: m.mlvl,
       elem: m.def.elem, look: s.look, color: s.color, t: 0, big: final,
     });
     this.events.sound(s.look === "arrow" ? "shoot" : "bolt");
@@ -2384,11 +2433,26 @@ export class Game {
     this.events.sound("charge");
   }
 
+  /**
+   * v0.9.4: a telegraphed ground slam. The boss stops and raises its weapon while a red ring grows on the floor
+   * (about a second; a little shorter deeper into an act, 0.8 s for act bosses), then the ring bursts for a big hit
+   * (~1.5x a normal hit). Step out of the ring to take nothing.
+   */
+  bossSlam(m: Monster) {
+    const final = m.def.rank === "final";
+    const warn = final ? 0.8 : Math.max(0.8, 1.1 - 0.3 * ((levelInAct(this.floor) - 1) / Math.max(1, LEVELS_PER_ACT - 2)));
+    this.novas.push({ x: m.x, y: m.y, t: 0, warn, radius: final ? 2.4 : 2.0, elem: "phys", dmgMin: m.dmgMin * 1.4 * this.weaken(m), dmgMax: m.dmgMax * 1.6 * this.weaken(m), done: false });
+    m.slamT = warn;
+    m.atkT = Math.max(m.atkT, warn + 0.35);
+    m.state = "chase";
+    this.events.sound("nova_warn");
+  }
+
   /** Final bosses take turns through their special attacks. */
   private bossSpecial(m: Monster, dx: number, dy: number, dist: number) {
     const sp = m.def.specials!;
     const kind = sp[m.spIdx++ % sp.length];
-    m.cd = 3.6;
+    m.cd = 3.0; // v0.9.4: was 3.6
     if (kind === "nova") {
       this.novas.push({ x: m.x, y: m.y, t: 0, warn: 1.0, radius: 3.2, elem: m.def.elem, dmgMin: m.dmgMin * 1.2, dmgMax: m.dmgMax * 1.3, done: false });
       this.events.sound("nova_warn");
@@ -2397,6 +2461,9 @@ export class Game {
       for (let i = -2; i <= 2; i++) this.fireShot(m, a, i * 0.22);
     } else if (kind === "charge") {
       if (dist > 1.6) this.startCharge(m, dx, dy, dist);
+      else m.cd = 0.5;
+    } else if (kind === "slam") {
+      if (dist < 2.6) this.bossSlam(m);
       else m.cd = 0.5;
     } else if (kind === "summon") {
       const alive = this.monsters.filter((o) => o.minion && o.state !== "dead").length;

@@ -3,12 +3,26 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
-## v0.9.4: life ring under the hero (HUD option C)
+## v0.9.4: life ring under the hero (HUD option C), bosses that hit like bosses
 
 - **Life and mana where your eyes already are:** a red life arc and a blue mana arc curve under the hero's feet, with the life number beside them. The bottom-corner orbs are gone (the left thumb used to cover the life orb, and the right thumb the mana orb). They stay only for screen readers.
 - **Readable number:** bold, with a black outline and shadow. It sits right, left or below the ring, whichever side no monster is standing on. The ring and number are kept on screen.
 - **Low life (under 35%):** the screen edge pulses red like a heartbeat, stronger the lower you go, and a soft heartbeat sound plays in time with it (only when Sound is on).
 - **Everything else:** the XP bar moved right, out from under the left thumb. Minimap, buffs, the menu row with Town, and the potions were already clear of both thumbs, so they stay put. **Attack and the three skill buttons haven't moved by a pixel.**
+- **Bosses hit like bosses.** Measured on an "on-level hero" (the level a full clear gives, magic gear in every slot, no buffs) standing still next to the boss (`tests/bossfight.sim.test.ts`):
+  - **Accuracy:** bosses aim with 3× attack rating and don't lose accuracy when you out-level them. They used to miss about half the time; now it's about 80%. Defense still helps.
+  - **Damage:** an average hit is set from that hero's life: level bosses 30% on an act's first level up to 35% on its last, act bosses 38% (bolts 0.9×). Bosses also attack 10% faster.
+  - **Ground slam (telegraphed):** level bosses stop, raise their weapon, and a red ring grows on the floor for 1.1 s (0.8 s deep in an act). Then it bursts for about half your life. Step out and it does nothing. It comes every 7 s on an act's first level, down to every 4.3 s on its last. Act bosses add the slam to their rotation, and their specials come every 3 s (was 3.6 s).
+  - **Modifiers (shown on the boss bar):** none early in an act; from level 7, Extra Fast or Stone Skin; from level 14, and on every act boss, both.
+
+  | Floor (boss) | Hit chance before → after | Normal hit, % of life | Slam / big hit | Damage per second standing still |
+  |---|---|---|---|---|
+  | 1 (Gravelord Morth) | 57% → 80% | 22% → 33% | — → 51% | 7% → 21% |
+  | 20 (Ember Lich, act) | 55% → 81% | 26% → 32% | 47% → 51% | 17% → 31% |
+  | 40 (Queen Sekhet, act) | 51% → 78% | 28% → 26% (lightning resist) | — → 52% | 25% → 37% |
+  | 80 (Malakar, act) | 50% → 78% | 44% → 34% | 55% → 51% | 55% → 61% |
+  | 19 / 39 / 79 (elders) | 52 / 51 / 50% → 76 / 80 / 78% | 40 / 39 / 49% → 36 / 32 / 32% | — → ~50% | 11–12% → 29–31% |
+
 - The A/B mockups (`screenshots/hud-options/`) are kept for reference; their code was removed.
 
 ## v0.9.3: harder monsters, skill page matches the three buttons

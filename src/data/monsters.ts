@@ -4,7 +4,7 @@
  */
 export type Elem = "phys" | "fire" | "cold" | "light" | "poison";
 export type Behavior = "melee" | "ranged" | "charger" | "exploder";
-export type Special = "nova" | "bolts" | "charge" | "summon";
+export type Special = "nova" | "bolts" | "charge" | "summon" | "slam";
 
 export type MonsterKind =
   | "zombie" | "fallen" | "skeleton" | "boss" | "lich"

@@ -13,14 +13,14 @@ const checks = [];
 const check = (n, ok, i = "") => { checks.push(ok); console.log(ok ? "PASS" : "FAIL", n, i); };
 const W = 78, H = 190;
 const thumbs = [{ x: ins.l + 115, y: 393 - ins.b - 100, rot: 40 }, { x: 852 - ins.r - 128, y: 393 - ins.b - 70, rot: -40 }];
-async function setup(page, hpPct, monsterRight) {
-  await page.evaluate(({ s, hpPct, monsterRight }) => {
+async function setup(page, hpPct, monsterRight, floor = 5) {
+  await page.evaluate(({ s, hpPct, monsterRight, floor }) => {
     const r = document.documentElement.style;
     r.setProperty("--sal", `${s.l}px`); r.setProperty("--sar", `${s.r}px`); r.setProperty("--sat", `${s.t}px`); r.setProperty("--sab", `${s.b}px`);
     __ec.settings.tutorialSeen = true;
     __ec.ui.showTutorial(false);
     const g = __ec.game, p = g.player;
-    g.goDungeon(5);
+    g.goDungeon(floor);
     p.level = 20; p.base.vit = 60;
     p.skills = { bash: 3, double_swing: 2, frenzy: 3, leap: 1 };
     p.slots = ["frenzy", "double_swing", "leap"];
@@ -34,7 +34,7 @@ async function setup(page, hpPct, monsterRight) {
     for (const m of g.monsters) { m.dmgMin = 0; m.dmgMax = 0; }
     p.hp = g.derived().maxHp * hpPct; p.mana = g.derived().maxMana * 0.55;
     g.events.changed();
-  }, { s: ins, hpPct, monsterRight });
+  }, { s: ins, hpPct, monsterRight, floor });
   await page.waitForTimeout(700);
   await page.evaluate((hpPct) => { const g = __ec.game; g.player.hp = g.derived().maxHp * hpPct; g.events.changed(); }, hpPct);
   await page.waitForTimeout(200);
@@ -62,8 +62,8 @@ const inLeftThumb = (px, py) => {
 };
 for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   const br = await engine.launch();
-  for (const [tag, hpPct, monsterRight] of [["normal", 0.62, false], ["lowlife", 0.24, false], ["crowded", 0.62, true]]) {
-    if (ename === "webkit" && tag === "crowded") continue;
+  for (const [tag, hpPct, monsterRight] of [["normal", 0.62, false], ["lowlife", 0.24, false], ["crowded", 0.62, true], ["slam", 0.62, false]]) {
+    if (ename === "webkit" && (tag === "crowded" || tag === "slam")) continue;
     const ctx = await br.newContext({ viewport: { width: 852, height: 393 }, deviceScaleFactor: 2, hasTouch: true, isMobile: engine === chromium });
     const page = await ctx.newPage();
     const errs = [];
@@ -71,7 +71,13 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
     await page.goto(`${base}?debug&new&seed=4`);
     await page.waitForTimeout(900);
     await page.evaluate(() => { window.__beats = 0; const s = __ec.sfx, o = s.play.bind(s); s.play = (n) => { if (n === "heartbeat") window.__beats++; return o(n); }; });
-    await setup(page, hpPct, monsterRight);
+    await setup(page, hpPct, monsterRight, tag === "slam" ? 19 : 5);
+    if (tag === "slam") {
+      // an elder level boss (two modifiers) starts its telegraphed ground slam
+      const sl = await page.evaluate(() => { const g = __ec.game, b = g.boss; b.slamT = 0; g.bossSlam(b); return { n: g.novas.length, warn: g.novas.at(-1)?.warn, mods: b.mods, name: b.def.name }; });
+      check(`${ename} slam: warning ring up with ~1 s to step out; boss shows 2 mods`, sl.n >= 1 && sl.warn >= 0.8 && sl.mods.length === 2, JSON.stringify(sl));
+      await page.waitForTimeout(380);
+    }
     const lbl = `${ename} ${tag}`;
     const r = await page.evaluate(() => {
       const btns = ["#btn-attack", "#btn-s0", "#btn-s1", "#btn-s2"].map((sel) => { const q = document.querySelector(sel).getBoundingClientRect(); return [sel, Math.round(q.left), Math.round(q.top), Math.round(q.width), Math.round(q.height)].join(":"); });
@@ -100,6 +106,14 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
     check(`${lbl}: old orbs gone from view`, !r.globeVis);
     check(`${lbl}: boss bar clear of the HUD`, r.hits.length === 0, JSON.stringify({ bar: r.bar, hits: r.hits }));
     // heartbeat: only at low life, about once a second, and silent with sound off
+    if (tag === "slam") {
+      await overlay(page, "v0.9.4 · elder boss slam: red ring = step out");
+      await page.screenshot({ path: `${out}/v094-boss-slam.png` });
+      console.log("shot", `${out}/v094-boss-slam.png`);
+      check(`${lbl}: no page errors`, errs.length === 0, errs.join(" | "));
+      await ctx.close();
+      continue;
+    }
     const b0 = await page.evaluate(() => window.__beats);
     await page.waitForTimeout(2600);
     const b1 = await page.evaluate(() => window.__beats);
