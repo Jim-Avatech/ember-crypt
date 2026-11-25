@@ -201,13 +201,14 @@ await ev(() => {
   alive.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y));
   const m = alive[0];
   for (const [dx, dy] of [[2, 1], [-2, 1], [1, 2], [2, -1], [-1, 2]]) if (!g.blocked(m.x + dx, m.y + dy, p.r)) { p.x = m.x + dx; p.y = m.y + dy; break; }
+  for (const q of g.monsters) { q.dmgMin = 0; q.dmgMax = 0; } // a level-1 hero next to a pack must not die mid-test
   p.hp = g.derived().maxHp;
 });
 await touch("touchStart", [{ ...atkPt, id: 7 }]);
 await wait(700);
 await page.screenshot({ path: `${outDir}/gameplay.png` });
 await touch("touchEnd", []);
-await ev(() => { const g = __ec.game; g.player.hp = g.derived().maxHp; }); // a level-1 hero in a pack: don't let the next steps start dead
+await ev(() => { const g = __ec.game; for (const m of g.monsters) { m.dmgMin = 0; m.dmgMax = 0; } g.player.hp = g.derived().maxHp; }); // a level-1 hero in a pack: the next steps must not start dead
 
 // ---------------------------------------------------------------- 6. grid inventory
 await ev(() => {
