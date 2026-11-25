@@ -3,6 +3,12 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v0.6.1 — iPhone sound fix
+
+- Audio now starts on the **end** of a tap (touchend / pointerup / click / keydown). iOS ignores touchstart/pointerdown for this, which is where the game used to start it, so the AudioContext stayed suspended and nothing played.
+- Every tap retries until audio is running. Audio also resumes when the app comes back from the background, since iOS suspends or "interrupts" it there (Home Screen mode included). A silent buffer plays on unlock, and on iOS 17+ the page asks to route as media playback (`navigator.audioSession.type = "playback"`).
+- Settings → **🔊 Test sound** plays a chime and shows the audio state. Bad or missing sound settings fall back to on, and imported saves no longer reset other settings.
+
 ## v0.6 — Diablo II skill tree, throwing weapons, quarterstaff
 
 - **Skill tree matches Diablo II LoD 1.10+** for every Barbarian skill (levels, prerequisites, placement; enforced by `tests/v06.test.ts`). All six weapon masteries are available from level 1 and all work. Frenzy is back to level 24 after Double Throw.

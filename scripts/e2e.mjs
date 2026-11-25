@@ -83,6 +83,32 @@ await ev(() => { __ec.settings.tutorialSeen = true; });
 const start = await ev(() => { const g = __ec.game; const e = g.player.equip; return { town: g.inTown, main: e.main?.baseId, chest: e.chest?.baseId, belt: e.belt?.baseId }; });
 check("New hero starts in Ember Camp", start.town && start.main === "axe", JSON.stringify(start));
 
+// ---------------------------------------------------------------- 1b. audio unlocks on the end of a tap (iOS rule)
+{
+  const st0 = await ev(() => __ec.sfx.state);
+  await touch("touchStart", [{ x: 420, y: 200, id: 1 }]);
+  await wait(150);
+  const stDown = await ev(() => __ec.sfx.state);
+  await touch("touchEnd", []);
+  await wait(300);
+  const stUp = await ev(() => __ec.sfx.state);
+  check("Audio: nothing on touchstart; AudioContext running after the tap ends", st0 === "not started" && stDown === "not started" && stUp === "running", JSON.stringify({ st0, stDown, stUp }));
+  // backgrounding suspends it (iOS 'interrupted'); coming back + the next tap resumes it
+  await ev(() => __ec.sfx["ctx"].suspend());
+  await wait(100);
+  await ev(() => document.dispatchEvent(new Event("visibilitychange")));
+  await wait(200);
+  const afterVis = await ev(() => __ec.sfx.state);
+  await ev(() => __ec.sfx["ctx"].suspend());
+  await wait(100);
+  await tapAt({ x: 420, y: 200 });
+  await wait(300);
+  const afterTap = await ev(() => __ec.sfx.state);
+  check("Audio resumes after backgrounding (on return and on the next tap)", afterVis === "running" && afterTap === "running", JSON.stringify({ afterVis, afterTap }));
+  const gain = await ev(() => ({ master: __ec.sfx["master"].gain.value, on: __ec.sfx.enabled, setting: __ec.settings.sound }));
+  check("Sound is on by default with non-zero volume", gain.master > 0 && gain.on && gain.setting, JSON.stringify(gain));
+}
+
 // ---------------------------------------------------------------- 2. joystick
 const p0 = await ev(() => ({ x: __ec.game.player.x, y: __ec.game.player.y }));
 await touch("touchStart", [{ x: 200, y: 250, id: 1 }]);
@@ -502,6 +528,14 @@ await wait(200);
 // ---------------------------------------------------------------- 11. settings: joystick + multi-touch
 await page.locator('.mbtn[data-tab="settings"]').tap();
 await wait(200);
+{
+  // Test sound button: plays a chime through a running context
+  const before = await ev(() => { const c = __ec.sfx["ctx"]; let n = 0; const o = c.createOscillator; c.createOscillator = function (...a) { n++; window.__osc = n; return o.apply(this, a); }; return 0; });
+  await tap('[data-act="testsnd"]');
+  await wait(500);
+  const ts = await ev(() => ({ osc: window.__osc ?? 0, text: document.getElementById("sndstate")?.textContent ?? "", st: __ec.sfx.state }));
+  check("Settings has a Test sound button that plays a chime", before === 0 && ts.osc >= 3 && ts.st === "running" && /chime/.test(ts.text), JSON.stringify(ts));
+}
 await page.locator('[data-key="showJoystick"]').tap();
 await wait(100);
 await page.locator(".pclose").tap();

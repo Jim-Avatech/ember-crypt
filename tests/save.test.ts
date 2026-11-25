@@ -231,3 +231,22 @@ describe("auto potions", () => {
     expect(g.player.mpPots).toBe(1);
   });
 });
+
+describe("sound setting", () => {
+  it("defaults to on, survives bad values, and old saves without it keep it on", () => {
+    expect(save.loadSettings().sound).toBe(true);
+    mem.setItem("ember-crypt-settings-v1", JSON.stringify({ sound: "false", shake: false }));
+    const st = save.loadSettings();
+    expect(st.sound).toBe(true); // wrong type → default
+    expect(st.shake).toBe(false);
+    mem.setItem("ember-crypt-settings-v1", "{broken");
+    expect(save.loadSettings().sound).toBe(true);
+    // a migrated v0.3 save has no settings block; one with settings but no sound keeps the current value
+    const cur = { ...save.DEFAULT_SETTINGS, tutorialSeen: true };
+    const merged = save.cleanSettings({ autoHp: false }, cur);
+    expect(merged.sound).toBe(true);
+    expect(merged.tutorialSeen).toBe(true);
+    expect(merged.autoHp).toBe(false);
+    expect(save.cleanSettings({ sound: false }, cur).sound).toBe(false);
+  });
+});

@@ -7,7 +7,7 @@ import { Game, type GameEvents, type SaveData } from "./game";
 import { Input } from "./input";
 import { Renderer } from "./render";
 import {
-  canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings,
+  canSave, clearGame, exportCode, importCode, lastSavedAt, listBackups, loadBackup, loadFromIdb, loadGame, loadSettings, cleanSettings,
   requestPersist, saveGame, saveSettings,
 } from "./save";
 import { Ui } from "./ui";
@@ -81,6 +81,8 @@ const ui = new Ui(app, () => game, input, settings, {
     replace: (d: SaveData) => replaceGame(d),
   },
   click: () => sfx.play("click"),
+  testSound: () => sfx.test(),
+  soundState: () => sfx.state,
 });
 renderer.setMinimap(ui.minimap);
 function applyAuto() {
@@ -111,8 +113,10 @@ function replaceGame(d: SaveData) {
   doSave(true);
   game = new Game(events, d);
   if (d.settings) {
-    Object.assign(settings, d.settings);
+    Object.assign(settings, cleanSettings(d.settings, settings));
     saveSettings(settings);
+    sfx.enabled = settings.sound;
+    renderer.shakeOn = settings.shake;
   }
   applyAuto();
   ui.close();
@@ -153,10 +157,13 @@ if (saved?.refundedPoints) {
   );
 }
 input.onFirstTouch = () => {
-  sfx.unlock();
   void requestPersist();
 };
-document.addEventListener("pointerdown", () => sfx.unlock(), { capture: true });
+// iOS audio: only the end of a tap counts as a gesture that may start sound, so unlock on
+// touchend / pointerup / click / keydown, every time until it's running (also after backgrounding)
+for (const ev of ["touchend", "pointerup", "click", "keydown"]) document.addEventListener(ev, () => sfx.unlock(), { capture: true, passive: true });
+document.addEventListener("visibilitychange", () => sfx.visibility(document.visibilityState === "visible"));
+window.addEventListener("pageshow", () => sfx.visibility(true));
 
 // ---- iOS hardening: no zoom, no scroll, no callouts
 for (const ev of ["gesturestart", "gesturechange", "gestureend", "dblclick", "contextmenu"]) {
@@ -250,6 +257,7 @@ document.addEventListener("visibilitychange", () => {
 
 // ---- debug hooks for automated tests (dev builds or ?debug only)
 if (DEBUG) (window as unknown as { __ec: unknown }).__ec = {
+  sfx,
   get game() {
     return game;
   },

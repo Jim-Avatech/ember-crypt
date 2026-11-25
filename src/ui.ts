@@ -76,6 +76,9 @@ export interface UiHooks {
   settingsChanged(): void;
   newGame(): void;
   click(): void;
+  /** plays a chime (inside the tap) and returns the audio state */
+  testSound(): string;
+  soundState(): string;
   save: SaveTools;
 }
 
@@ -327,6 +330,12 @@ export class Ui {
     k.style.transform = `translate(${this.input.jx - this.input.ox}px, ${this.input.jy - this.input.oy}px)`;
   }
 
+  private soundText(st: string): string {
+    if (st === "running") return this.settings.sound ? "Audio is on. You should hear a chime." : "Audio works, but the Sound switch above is off.";
+    if (st === "not started") return "Tap Test sound to start audio.";
+    return `Audio is ${st}. Tap Test sound again; if it stays silent, check the volume buttons while the game is open.`;
+  }
+
   toast(text: string, ms = 2600) {
     const t = $(this.root, "#toast");
     t.textContent = text;
@@ -466,6 +475,16 @@ export class Ui {
       case "bak":
         void this.saveAction(act, el);
         return;
+      case "testsnd": {
+        this.hooks.testSound();
+        const show = () => {
+          const el2 = this.root.querySelector("#sndstate");
+          if (el2) el2.textContent = this.soundText(this.hooks.soundState());
+        };
+        show();
+        setTimeout(show, 400);
+        break;
+      }
       case "hpat": {
         const v = Math.max(5, Math.min(50, this.settings.autoHpAt + Number(el.dataset.d)));
         this.settings.autoHpAt = v;
@@ -1234,6 +1253,7 @@ export class Ui {
         ${t("autoMp", "Auto mana potion", "Press a skill again within 1.5 s while out of mana to drink one")}
         ${t("showJoystick", "Show joystick", "Debug: draw the movement stick where your thumb lands")}
         ${t("sound", "Sound", "Sound effects")}
+        <div class="sndrow"><button class="gbtn" data-act="testsnd">🔊 Test sound</button><small id="sndstate">${this.soundText(this.hooks.soundState())}</small></div>
         ${t("shake", "Screen shake", "Shake on big hits")}
         ${t("labels", "Item labels", "Show item names on the ground")}
         <button class="gbtn danger" data-act="reset">${this.confirmReset ? "Tap again to start over (old hero goes to backups)" : "Start a new character"}</button>
@@ -1247,7 +1267,7 @@ export class Ui {
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
         <p>Kill the boss to open the stairs to the next level. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
-        <p class="ver">Ember Crypt v0.6 · all art made in code for this game</p>
+        <p class="ver">Ember Crypt v0.6.1 · all art made in code for this game</p>
       </div>`;
   }
 

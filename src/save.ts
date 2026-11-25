@@ -214,9 +214,21 @@ export function importCode(text: string): SaveData | null {
 }
 
 // ------------------------------------------------------------------ settings
+/** Defaults for anything missing, and drop values of the wrong type (so sound can't end up undefined or "false"). */
+export function cleanSettings(raw: unknown, base: Settings = DEFAULT_SETTINGS): Settings {
+  const out: Settings = { ...DEFAULT_SETTINGS, ...base };
+  if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const def = (DEFAULT_SETTINGS as unknown as Record<string, unknown>)[k];
+      if (def !== undefined && typeof v === typeof def && (typeof v !== "number" || Number.isFinite(v))) (out as unknown as Record<string, unknown>)[k] = v;
+    }
+  }
+  return out;
+}
+
 export function loadSettings(): Settings {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(ls()?.getItem(SKEY) || "{}") };
+    return cleanSettings(JSON.parse(ls()?.getItem(SKEY) || "{}"));
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

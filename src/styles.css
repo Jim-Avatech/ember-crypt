@@ -1245,3 +1245,6 @@ body.portrait #rotate {
 .eqi { position: relative; }
 #btn-attack .ammo { position: absolute; right: 10px; bottom: 8px; font: 800 13px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 0 3px #000; pointer-events: none; }
 #btn-attack .ammo:empty { display: none; }
+.sndrow { display: flex; align-items: center; gap: 10px; }
+.sndrow .gbtn { min-height: 44px; flex: none; }
+.sndrow small { color: #b8a888; font-size: 12px; line-height: 1.3; }

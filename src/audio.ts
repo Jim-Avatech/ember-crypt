@@ -6,28 +6,69 @@ export class Sfx {
   enabled = true;
   private last = new Map<string, number>();
 
+  /** for the Settings "Test sound" readout */
+  get state(): string {
+    return this.ctx ? this.ctx.state : "not started";
+  }
+  onState: (() => void) | null = null;
+
+  /**
+   * Create / resume audio. iOS only lets this work inside a real user gesture that ends a tap
+   * (touchend, pointerup, click, keydown), not touchstart/pointerdown, so call it from those
+   * on every gesture until the context is running. Cheap when already running.
+   */
   unlock() {
-    if (this.ctx) {
-      if (this.ctx.state === "suspended") void this.ctx.resume();
-      return;
+    // iOS 17+: route as media playback so the ring/silent switch doesn't mute the game
+    const nav = navigator as Navigator & { audioSession?: { type: string } };
+    try {
+      if (nav.audioSession && nav.audioSession.type !== "playback") nav.audioSession.type = "playback";
+    } catch {
+      /* not supported */
     }
-    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return;
-    this.ctx = new AC();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.5;
-    this.master.connect(this.ctx.destination);
-    const len = this.ctx.sampleRate * 0.5;
-    this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const d = this.noise.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    // iOS needs a sound started inside the gesture
-    const o = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    g.gain.value = 0;
-    o.connect(g).connect(this.master);
-    o.start();
-    o.stop(this.ctx.currentTime + 0.01);
+    if (!this.ctx) {
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.6;
+      this.master.connect(this.ctx.destination);
+      const len = this.ctx.sampleRate * 0.5;
+      this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const d = this.noise.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      this.ctx.onstatechange = () => this.onState?.();
+    }
+    const c = this.ctx;
+    if (c.state !== "running") {
+      // "suspended" or iOS's "interrupted" (backgrounded, a call, Siri)
+      void c.resume().then(() => this.onState?.()).catch(() => {});
+      // a silent buffer started inside the gesture is what actually unlocks older iOS
+      const b = c.createBuffer(1, 1, 22050);
+      const src = c.createBufferSource();
+      src.buffer = b;
+      src.connect(c.destination);
+      src.start(0);
+    }
+  }
+
+  /** Called when the page is hidden / shown. */
+  visibility(visible: boolean) {
+    if (!visible) return;
+    if (this.ctx && this.ctx.state !== "running") void this.ctx.resume().catch(() => {});
+  }
+
+  /** Settings "Test sound": unlock (we're inside the tap) and play a short chime even if sound is off. */
+  test(): string {
+    this.unlock();
+    if (!this.ctx) return "This browser has no Web Audio.";
+    const go = () => {
+      this.tone(523, 0.18, "triangle", 0.5);
+      this.tone(659, 0.18, "triangle", 0.5, 0, 0.12);
+      this.tone(784, 0.3, "triangle", 0.5, 0, 0.24);
+    };
+    if (this.ctx.state === "running") go();
+    else void this.ctx.resume().then(go).catch(() => {});
+    return this.ctx.state;
   }
 
   private tone(freq: number, dur: number, type: OscillatorType, vol: number, slide = 0, delay = 0) {
@@ -64,7 +105,11 @@ export class Sfx {
   }
 
   play(name: string) {
-    if (!this.enabled || !this.ctx || this.ctx.state !== "running") return;
+    if (!this.enabled || !this.ctx) return;
+    if (this.ctx.state !== "running") {
+      void this.ctx.resume().catch(() => {});
+      return;
+    }
     const now = performance.now();
     const min = name === "hit" || name === "gold" ? 40 : 60;
     if (now - (this.last.get(name) ?? 0) < min) return;
@@ -153,3 +198,4 @@ export class Sfx {
     }
   }
 }
+
