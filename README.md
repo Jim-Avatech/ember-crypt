@@ -3,6 +3,12 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.3.2: Amazons don't dual wield
+
+- D2 rule: only the Barbarian dual wields (`Game.canDualWield()`). For an Amazon, `slotsFor` gives a one-hander the main hand only, `equipError`/`swapEquip` refuse a weapon in the off-hand with `AMAZON_OFFHAND_MSG`, `defaultSlot` never picks the off-hand, `compareSlots` compares against the main hand, and `derived()` ignores an off-hand weapon (no dual-wield DPS). The compare sheet shows an off-hand card that says why; the Off-hand button is disabled; dragging onto the off-hand toasts the reason.
+- Saves: on load, an Amazon's off-hand weapon (`clearAmazonOffhand`) goes to the bag; if full, to `player.unclaimed`, which `placeUnclaimed()` (main.ts, after the shared stash sync) puts in the stash, or else on the ground in camp, re-dropped every visit and kept in the save until picked up. Never deleted.
+- Tests: `tests/v132.test.ts`, `scripts/v132-shots.mjs` (screenshots/v132). SW cache v27.
+
 ## v1.3.1: Ice Arrow pierces you can see
 
 - Ice Arrow always pierced as often as other arrows (real game loop: ~51% at Pierce 5), but v1.3's pierce cue (tag, sparks, streak) was ice cyan, the colour of Ice Arrow's damage numbers and of the frozen monster's ice block, so it was invisible. The cue is now magenta "⇶ Pierce" (`PIERCE_COLOR`), above the damage number, with a magenta/white streak.

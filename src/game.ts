@@ -183,6 +183,12 @@ export interface Player {
   bag: BagEntry[];
   /** camp stash (10×10), usable only in town */
   stash: BagEntry[];
+  /**
+   * v1.3.2: items taken off an Amazon's off-hand by the no-dual-wield rule that fit in neither the bag nor the stash.
+   * They lie on the ground in camp (put back every time she is in camp) and stay listed here, in the save, until she
+   * picks them up, so they are never lost.
+   */
+  unclaimed?: Item[];
   equip: Partial<Record<EquipSlot, Item>>;
   nextHand: number;
   frenzy: { stacks: number; t: number; decay: number };
@@ -567,7 +573,7 @@ export interface SaveData {
   floor: number;
   maxFloor: number;
   player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & {
-    stashGold?: number; stash?: BagEntry[]; artifacts?: FoundArtifact[]; cls?: HeroClass; name?: string; mainAtk?: string | null;
+    stashGold?: number; stash?: BagEntry[]; unclaimed?: Item[]; artifacts?: FoundArtifact[]; cls?: HeroClass; name?: string; mainAtk?: string | null;
   };
   /** v1.0: when the (shared) stash last changed; the newest copy of the stash wins across heroes */
   stashAt?: number;
@@ -642,6 +648,10 @@ const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy", "concent
 /** v1.0 Amazon skill groups */
 const SPEAR_MELEE = new Set(["jab", "power_strike", "impale", "charged_strike", "fend", "lightning_strike"]);
 const JAV_THROWS = new Set(["poison_javelin", "lightning_bolt", "plague_javelin", "lightning_fury"]);
+/** v1.3.2: like Diablo II, only the Barbarian dual wields; the Amazon's off-hand takes a shield (or a quiver with a bow) */
+export const AMAZON_OFFHAND_MSG = "The Amazon can't dual wield: her off-hand takes a shield (or a quiver with a bow)";
+/** v1.3.2: a weapon (not a shield or quiver) */
+export const isWeaponItem = (it: Item | undefined | null) => !!it && BASE_BY_ID[it.baseId]?.slot === "weapon";
 /** v1.3.1: the colour of a pierce (tag, sparks, arrow streak): used by no element, crit or magic, so it shows on any arrow */
 export const PIERCE_COLOR = "#ff5ce1";
 /**
@@ -702,6 +712,7 @@ function sanitizeV3(d: SaveData): SaveData {
   const okEntry = (e: BagEntry) => e && e.item && BASE_BY_ID[e.item.baseId] && Number.isFinite(e.x) && Number.isFinite(e.y);
   if (Array.isArray(p.bag)) p.bag = p.bag.filter(okEntry);
   p.stash = Array.isArray(p.stash) ? p.stash.filter(okEntry) : [];
+  if (p.unclaimed !== undefined) p.unclaimed = Array.isArray(p.unclaimed) ? p.unclaimed.filter((it) => it && BASE_BY_ID[it.baseId]) : [];
   if (p.equip && typeof p.equip === "object") for (const k of Object.keys(p.equip) as EquipSlot[]) if (!p.equip[k] || !BASE_BY_ID[p.equip[k]!.baseId]) delete p.equip[k];
   if (!p.skills || typeof p.skills !== "object") p.skills = {};
   if (!Array.isArray(p.slots)) p.slots = [null, null, null];
@@ -998,6 +1009,8 @@ export class Game {
       if (!isHeroClass(this.player.cls)) this.player.cls = "barbarian";
       if (!this.player.name) this.player.name = CLASS_NAME[this.player.cls];
       if (!mainAtkOk(this.player.mainAtk, this.player.cls)) this.player.mainAtk = null;
+      this.player.unclaimed = this.player.unclaimed ?? [];
+      this.clearAmazonOffhand();
       this.stashAt = save.stashAt ?? 0;
       this.floor = save.floor;
       this.maxFloor = Math.max(save.maxFloor ?? save.floor, save.floor);
@@ -1030,6 +1043,7 @@ export class Game {
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
         skills: p.skills, slots: p.slots.slice(0, SKILL_SLOTS), bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold, stashGold: p.stashGold,
         hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills, artifacts: p.artifacts,
+        ...(p.unclaimed?.length ? { unclaimed: p.unclaimed } : {}),
       },
     };
   }
@@ -1093,6 +1107,7 @@ export class Game {
     this.novas = [];
     this.wards = [];
     this.addDummy();
+    this.dropUnclaimed();
     this.restock();
     // throwing weapons (v1.0: and quivers) refill for free in camp
     let refilled = 0;
@@ -1436,7 +1451,8 @@ export class Game {
     const isWeapon = (sl: EquipSlot) => this.usable(sl) && BASE_BY_ID[p.equip[sl]!.baseId].slot === "weapon";
     const hands: Hand[] = [];
     if (isWeapon("main")) hands.push(this.handFor("main"));
-    if (isWeapon("off")) hands.push(this.handFor("off"));
+    // v1.3.2: only the Barbarian dual wields (an Amazon never has an off-hand weapon; see clearAmazonOffhand)
+    if (isWeapon("off") && this.canDualWield()) hands.push(this.handFor("off"));
     if (!hands.length) hands.push(this.handFor(null));
     let armor = 0;
     for (const it of this.worn()) armor += itemDefense(it);
@@ -1599,7 +1615,7 @@ export class Game {
     const opts = this.slotsFor(it);
     if (!opts.length) return [];
     // v0.8 compare sheet: a one-hander is shown against both hands, a ring against both rings
-    if (b.slot === "weapon" && b.hands === 1) return ["main", "off"];
+    if (b.slot === "weapon" && b.hands === 1) return this.canDualWield() ? ["main", "off"] : ["main"];
     if (b.slot === "ring") return ["ring1", "ring2"];
     return [opts[0]];
   }
@@ -4038,6 +4054,7 @@ export class Game {
         this.events.sound("nomana");
         return false;
       }
+      if (p.unclaimed?.length) p.unclaimed = p.unclaimed.filter((q) => q.uid !== g.item!.uid);
       this.floatAt(g.x, g.y, itemName(g.item), QUALITY_COLOR[qualityOf(g.item)], 13);
       this.events.sound("pickup");
     }
@@ -4050,12 +4067,78 @@ export class Game {
     return this.player.bag.find((e) => e.item.uid === uid) ?? null;
   }
 
+  /** v1.3.2: Diablo II rule: the Barbarian dual wields one-handed weapons, the Amazon never does. */
+  canDualWield(): boolean {
+    return this.player.cls !== "amazon";
+  }
+  /**
+   * v1.3.2: an Amazon with a weapon in her off-hand (saves from before v1.3.2) has it moved to the bag; if the bag is
+   * full it waits in player.unclaimed, and placeUnclaimed() puts it in the stash or on the ground in camp. Never deleted.
+   * Returns what was moved (for the toast).
+   */
+  clearAmazonOffhand(): { item: Item; to: "bag" | "unclaimed" | "stash" | "ground" } | null {
+    const p = this.player;
+    const it = p.equip.off;
+    if (this.canDualWield() || !isWeaponItem(it)) return null;
+    delete p.equip.off;
+    p.nextHand = 0;
+    if (addItem(p.bag, it!)) {
+      this.offhandMoved = { item: it!, to: "bag" };
+    } else {
+      (p.unclaimed ??= []).push(it!);
+      this.offhandMoved = { item: it!, to: "unclaimed" };
+    }
+    return this.offhandMoved;
+  }
+  /** v1.3.2: set when clearAmazonOffhand moved something; main.ts shows a toast once (takeOffhandNote) */
+  offhandMoved: { item: Item; to: "bag" | "unclaimed" | "stash" | "ground" } | null = null;
+  /**
+   * v1.3.2: items in player.unclaimed go into the stash if there is room (returns true when the stash changed, so the
+   * shared stash is saved), otherwise they lie on the ground in camp next to the hero until picked up.
+   */
+  placeUnclaimed(): boolean {
+    const p = this.player;
+    if (!p.unclaimed?.length) return false;
+    let stashed = false;
+    for (const it of [...p.unclaimed]) {
+      const s = sizeOf(it);
+      const spot = findSpot(p.stash, s.w, s.h, STASH_W, STASH_H);
+      if (!spot) continue;
+      p.stash.push({ item: it, ...spot });
+      p.unclaimed = p.unclaimed.filter((q) => q !== it);
+      this.ground = this.ground.filter((g) => g.item?.uid !== it.uid);
+      if (this.offhandMoved?.item.uid === it.uid) this.offhandMoved.to = "stash";
+      stashed = true;
+    }
+    if (stashed) this.stashAt = Date.now();
+    this.dropUnclaimed();
+    return stashed;
+  }
+  /** v1.3.2: unclaimed items lie on the ground in camp (each once), next to where the hero stands */
+  private dropUnclaimed() {
+    const p = this.player;
+    if (!this.inTown || !p.unclaimed?.length) return;
+    for (const it of p.unclaimed) {
+      if (this.ground.some((g) => g.item?.uid === it.uid)) continue;
+      this.dropAt(p.x + 0.8, p.y + 0.8, { item: it });
+      if (this.offhandMoved?.item.uid === it.uid) this.offhandMoved.to = "ground";
+    }
+  }
+  /** v1.3.2: the one-time message about a moved off-hand weapon (null when nothing moved) */
+  takeOffhandNote(): string | null {
+    const m = this.offhandMoved;
+    if (!m) return null;
+    this.offhandMoved = null;
+    const where = m.to === "bag" ? "is in your bag" : m.to === "stash" ? "is in the camp stash (bag full)" : "is on the ground beside you (bag and stash full)";
+    return `Amazons don't dual wield: your off-hand ${itemName(m.item)} ${where}`;
+  }
+
   /** Slots an item could go in. */
   slotsFor(it: Item): EquipSlot[] {
     const b = BASE_BY_ID[it.baseId];
     switch (b.slot) {
       case "weapon":
-        return b.hands === 2 ? ["main"] : ["main", "off"];
+        return b.hands === 2 || !this.canDualWield() ? ["main"] : ["main", "off"];
       case "shield":
       case "quiver":
         return ["off"];
@@ -4074,6 +4157,7 @@ export class Game {
 
   /** Why an item can't go in a slot, or null if it can. */
   equipError(it: Item, slot: EquipSlot): string | null {
+    if (slot === "off" && isWeaponItem(it) && !this.canDualWield()) return AMAZON_OFFHAND_MSG;
     if (!this.slotsFor(it).includes(slot)) return "That doesn't go there";
     if (!this.meetsReq(it)) return "You don't meet the requirements";
     if (slot === "off" && offBlocked(this.player.equip.main, it)) return isBow(this.player.equip.main) ? "Your bow takes both hands (a quiver fits)" : "Your two-handed weapon needs both hands";
@@ -4087,7 +4171,7 @@ export class Game {
     if (!opts.length) return null;
     if (b.slot === "weapon" && b.hands === 1) {
       if (!e.main) return "main";
-      if (!e.off && !isTwoHanded(e.main)) return "off";
+      if (!e.off && !isTwoHanded(e.main) && this.canDualWield()) return "off";
       return "main";
     }
     if (b.slot === "ring") return !e.ring1 ? "ring1" : !e.ring2 ? "ring2" : "ring1";
@@ -4131,6 +4215,7 @@ export class Game {
     const ia = p.equip[a];
     const ib = p.equip[b];
     if (!ia || a === b) return null;
+    if ((b === "off" && isWeaponItem(ia)) || (a === "off" && isWeaponItem(ib))) if (!this.canDualWield()) return AMAZON_OFFHAND_MSG;
     if (!this.slotsFor(ia).includes(b)) return "That doesn't go there";
     if (ib && !this.slotsFor(ib).includes(a)) return "Those can't swap";
     if ((b === "off" && isTwoHanded(ia)) || (a === "off" && isTwoHanded(ib))) return "Two-handed weapons go in the main hand";

@@ -172,6 +172,20 @@ function syncStash() {
     game.player.stash = items;
     game.stashAt = sh.at;
   } else if (!sh || game.stashAt > sh.at) saveSharedStash(game.stashAt || Date.now(), game.player.stash);
+  afterLoad();
+}
+/**
+ * v1.3.2: after a hero is loaded and the shared stash is in place: an Amazon's old off-hand weapon that fit in neither
+ * the bag nor the stash goes into the stash now if there is room (and the shared stash is saved), otherwise it waits on
+ * the ground in camp; then tell the player once where it went.
+ */
+function afterLoad() {
+  if (game.placeUnclaimed()) saveSharedStash(game.stashAt, game.player.stash);
+  const note = game.takeOffhandNote();
+  if (note) {
+    setTimeout(() => ui.toast(note, 8000), 2600); // after the "walk to the waypoint" hint (1.8 s) so it is not covered
+    setTimeout(() => doSave(true), 0);
+  }
 }
 function lookOfSave(d: SaveData) {
   const e = d.player.equip as Record<string, { baseId: string } | undefined>;
@@ -383,6 +397,7 @@ if (loaded?.recovered) {
   void loadFromIdb().then((d) => {
     if (d && game.player.level === 1 && game.player.kills === 0 && game.player.xp === 0) {
       game = new Game(events, d);
+      syncStash();
       applyAuto();
       ui.refresh();
       ui.toast(`Restored your level ${d.player.level} hero from backup storage`);

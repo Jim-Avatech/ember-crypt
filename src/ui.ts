@@ -6,7 +6,7 @@ import {
 } from "./data/items";
 import type { SaveData } from "./game";
 import { CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
-import { AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
+import { AMAZON_OFFHAND_MSG, AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
 import type { Settings } from "./save";
@@ -909,7 +909,7 @@ export class Ui {
     const it = this.selItem(s);
     if (!t || !it) return;
     if (t.ok === "bad") {
-      this.toast(t.kind === "slot" && s.src === "bag" ? (g.equipError(it, t.slot) ?? "That doesn't go there") : "It doesn't fit there");
+      this.toast(t.kind === "slot" && (s.src === "bag" || s.src === "eq") ? (g.equipError(it, t.slot) ?? "That doesn't go there") : "It doesn't fit there");
       return;
     }
     this.hooks.click();
@@ -1141,7 +1141,9 @@ export class Ui {
       }
       if (b.kind === "bow") lines.push(`Shoots arrows from a quiver in the off-hand · range ${b.range ?? 11} · damage grows with Dexterity`);
       if (b.reach) lines.push(`Long reach · two-handed thrust · Spear Mastery`);
-      lines.push(`Speed: ${b.speedLabel}${b.hands === 1 ? " · can dual wield" : ""}`);
+      // v1.3.2: only the Barbarian dual wields
+      lines.push(`Speed: ${b.speedLabel}${b.hands === 1 ? (g.canDualWield() ? " · can dual wield" : "") : ""}`);
+      if (b.hands === 1 && !g.canDualWield()) lines.push(`<span class="offnol">Main hand only: Amazons don't dual wield</span>`);
       // v1.3: DPS of your ⚔ normal attack with this weapon (your stats and skills, crits in; misses not)
       const wd = g.weaponDps(it);
       // (item cards list their own stats with no deltas; the DPS difference is in the compare stat list)
@@ -1268,12 +1270,14 @@ export class Ui {
         btns.push(beltBtn());
         btns.push(`<button class="gbtn dim" data-act="drop">Drop</button>`);
       } else {
-        const opts = g.slotsFor(it);
-        if (opts.length === 2 && b.slot === "weapon")
+        if (b.slot === "weapon" && b.hands === 1) {
+          // v1.3.2: an Amazon's Off-hand button stays, disabled, and says why (tap it for the reason)
+          const offErr = g.equipError(it, "off");
           btns.push(
             `<button class="gbtn" data-act="equip" data-slot="main" ${g.meetsReq(it) ? "" : "disabled"}>Main hand</button>`,
-            `<button class="gbtn" data-act="equip" data-slot="off" ${g.equipError(it, "off") ? "disabled" : ""}>Off-hand</button>`,
+            `<button class="gbtn${offErr === AMAZON_OFFHAND_MSG ? " offno" : ""}" data-act="equip" data-slot="off" ${offErr ? "disabled" : ""} title="${offErr ? esc(offErr) : ""}">Off-hand</button>`,
           );
+        }
         else if (b.slot === "ring")
           btns.push(
             `<button class="gbtn" data-act="equip" data-slot="ring1" ${g.meetsReq(it) ? "" : "disabled"}>Left ring</button>`,
@@ -1313,7 +1317,17 @@ export class Ui {
       <div class="itype">${SLOT_LABEL[BASE_BY_ID[x.baseId].slot]} · ${QUALITY_LABEL[qualityOf(x)]} · Item level ${ilvlOf(x)}</div>
       <div class="clines">${this.itemLines(x)}</div></div>`;
     const slots = g.compareSlots(it);
+    // v1.3.2: for an Amazon a one-hander is compared with the main hand only; the off-hand card says why it can't go there
+    const amzOff = g.equipError(it, "off") === AMAZON_OFFHAND_MSG && BASE_BY_ID[it.baseId].hands === 1;
+    if (amzOff) slots.push("off");
     const eq = slots.map((sl) => {
+      if (sl === "off" && amzOff) {
+        const cur = p.equip.off;
+        const no = `<div class="offno">✕ Can't go in the off-hand: Amazons don't dual wield. Her off-hand takes a shield, or a quiver with a bow.</div>`;
+        return cur
+          ? card(cur, `Equipped · ${EQUIP_LABEL.off}`, "eqc").replace('<div class="iname', `${no}<div class="iname`)
+          : `<div class="ccard eqc empty"><div class="chead">Equipped · ${EQUIP_LABEL.off}</div>${no}</div>`;
+      }
       const cur = p.equip[sl];
       const label = `Equipped · ${sl === "ring1" ? "Left ring" : sl === "ring2" ? "Right ring" : EQUIP_LABEL[sl]}`;
       if (cur) return card(cur, label, "eqc");
@@ -1647,7 +1661,7 @@ export class Ui {
         <p>Left side: put your thumb down anywhere and drag to move. Lift to stop.</p>
         <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn: in Skills, pick a skill and tap 1–3 to put it on a button. ⌂ Town (top right) takes you back to camp.</p>
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
-        <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
+        <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. A Barbarian can put a one-handed weapon in the off-hand to dual wield; an Amazon can't (like Diablo II): her off-hand takes a shield, or a quiver with a bow.</p>
         <p>Kill the boss to open the stairs to the next level. Each act has 20 levels; the 20th holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ in camp takes you to any waypoint level you’ve reached: level 1 and every 5th level of each act. Only those levels have a waypoint stone, so that’s where your progress is kept.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>

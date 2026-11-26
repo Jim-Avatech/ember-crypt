@@ -1611,3 +1611,8 @@ body.portrait #rotate {
 .dpsl b.down { color: #ff6a5a; }
 .kv.dpsrow b { color: #ffe9a8; }
 .kv.dpsrow > span { color: #e8d9a0; }
+
+/* v1.3.2: an Amazon's off-hand refuses a second weapon (compare sheet, tooltips, disabled Off-hand button) */
+div.offno { color: #ff9a8a; font-size: 12px; line-height: 1.3; margin: 4px 0 6px; padding: 4px 6px; border: 1px solid rgba(255, 120, 100, 0.45); border-radius: 6px; background: rgba(120, 20, 10, 0.35); }
+.gbtn.offno { text-decoration: line-through; }
+.offnol { color: #ff9a8a; }

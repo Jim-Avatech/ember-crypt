@@ -10,6 +10,14 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.3.2",
+    title: "Amazons don't dual wield",
+    notes: [
+      "Like Diablo II, only the Barbarian dual wields. The Amazon holds one one-handed weapon; her off-hand takes a shield, or a quiver with a bow. Equipping, dragging and the compare sheet show why a second weapon can't go in her off-hand, and her DPS never counts one.",
+      "An Amazon who had a weapon in her off-hand gets it back in her bag (or, if the bag is full, in the camp stash, or on the ground in camp next to her). Nothing is lost.",
+    ],
+  },
+  {
     version: "1.3.1",
     title: "Ice Arrow pierces you can see",
     notes: [
