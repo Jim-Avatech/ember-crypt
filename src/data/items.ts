@@ -229,12 +229,23 @@ export const QUALITY_COLOR: Record<Quality, string> = { normal: "#ffffff", magic
 export const QUALITY_LABEL: Record<Quality, string> = { normal: "Normal", magic: "Magic", rare: "Rare" };
 
 /** Pick a random item class for a drop. */
-export function rollBase(roll = Math.random): ItemBase {
+/**
+ * v1.1 class-leaning weapon drops: 40% of the other class's weapon weight moves to your own class's weapons, so
+ * each class's total weapon weight (6.05) is unchanged and armor/jewelry keep exactly the same share. Quarterstaff,
+ * throwing knives/axes and arrows stay shared. Bases not listed use their normal weight.
+ */
+export const CLASS_DROP_WEIGHTS: Record<"barbarian" | "amazon", Record<string, number>> = {
+  amazon: { sword: 0.51, axe: 0.51, mace: 0.51, great_sword: 0.3, javelin: 0.61, spear: 0.78, short_bow: 0.78, long_bow: 0.7 },
+  barbarian: { sword: 1.03, axe: 1.03, mace: 1.03, great_sword: 0.62, javelin: 0.21, spear: 0.27, short_bow: 0.27, long_bow: 0.24 },
+};
+export const dropWeight = (b: ItemBase, cls?: string): number => (cls ? CLASS_DROP_WEIGHTS[cls as "amazon"]?.[b.id] : undefined) ?? b.weight;
+
+export function rollBase(roll = Math.random, cls?: string): ItemBase {
   const pool = ITEM_BASES.filter((b) => b.weight > 0);
-  const total = pool.reduce((a, b) => a + b.weight, 0);
+  const total = pool.reduce((a, b) => a + dropWeight(b, cls), 0);
   let r = roll() * total;
   for (const b of pool) {
-    r -= b.weight;
+    r -= dropWeight(b, cls);
     if (r <= 0) return b;
   }
   return pool[pool.length - 1];

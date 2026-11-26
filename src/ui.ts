@@ -2,11 +2,11 @@ import { GAME_VERSION, PATCH_NOTES } from "./data/patchNotes";
 import { modText } from "./data/affixes";
 import {
   BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, QUALITY_LABEL, SLOT_LABEL, baseDamage, baseDefense, beltSlotsOf, ilvlOf,
-  isBow, offBlocked, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
+  isBow, isThrowing, offBlocked, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
 } from "./data/items";
 import type { SaveData } from "./game";
 import { type BasicId, CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
-import { type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
+import { BUYBACK_MAX, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
 import type { Settings } from "./save";
@@ -53,7 +53,7 @@ const DOLL_H = 7.75;
 /** On touch, the dragged item floats this far above the finger so it stays visible. */
 export const DRAG_LIFT = 26;
 
-type Src = "bag" | "eq" | "vendor" | "stash";
+type Src = "bag" | "eq" | "vendor" | "stash" | "buyback";
 type GridName = "bag" | "stash";
 interface Sel {
   src: Src;
@@ -654,6 +654,26 @@ export class Ui {
           this.sel = null;
         }
         break;
+      case "sg-in":
+      case "sg-out": {
+        const n = g.moveStashGold(act === "sg-in" ? g.player.gold : -g.player.stashGold);
+        if (n) this.toast(n > 0 ? `Put ${n.toLocaleString()} gold in your stash` : `Took ${(-n).toLocaleString()} gold from your stash`);
+        break;
+      }
+      case "tobelt":
+        if ((this.sel?.src === "bag" || this.sel?.src === "stash") && this.sel.uid !== undefined) {
+          const err = g.toBelt(this.sel.uid);
+          if (err) this.toast(err);
+          else this.sel = null;
+        }
+        break;
+      case "buyback":
+        if (this.sel?.src === "buyback" && this.sel.uid !== undefined) {
+          const err = g.buyBack(this.sel.uid);
+          if (err) this.toast(err);
+          else this.sel = null;
+        }
+        break;
       case "buy":
         if (this.sel?.src === "vendor" && this.sel.uid !== undefined) {
           const err = g.buy(this.sel.uid);
@@ -700,6 +720,7 @@ export class Ui {
     if (s.src === "bag") return g.bagEntry(s.uid!)?.item ?? null;
     if (s.src === "eq") return g.player.equip[s.slot!] ?? null;
     if (s.src === "stash") return g.stashEntry(s.uid!)?.item ?? null;
+    if (s.src === "buyback") return g.buyback.find((q) => q.uid === s.uid) ?? null;
     return g.vendorStock.find((q) => q.item.uid === s.uid)?.item ?? null;
   }
 
@@ -737,7 +758,7 @@ export class Ui {
     const pr = this.press;
     if (!pr || e.pointerId !== pr.pid) return;
     e.preventDefault();
-    if (!pr.moved && Math.hypot(e.clientX - pr.x, e.clientY - pr.y) > 8 && pr.sel) {
+    if (!pr.moved && Math.hypot(e.clientX - pr.x, e.clientY - pr.y) > 8 && pr.sel && pr.sel.src !== "buyback") {
       const it = this.selItem(pr.sel);
       if (!it) return;
       pr.moved = true;
@@ -949,8 +970,9 @@ export class Ui {
           if (err) this.toast(err);
           else this.sel = null;
         } else {
-          const err = g.buy(cur.uid!);
+          const err = cur.src === "buyback" ? g.buyBack(cur.uid!) : g.buy(cur.uid!);
           if (err) this.toast(err);
+          else if (cur.src === "buyback") this.sel = null;
         }
       }
       return;
@@ -988,6 +1010,13 @@ export class Ui {
     const s = p.base;
     const tot = d.stats;
     const next = xpForLevel(p.level + 1);
+    // v1.1: which stat adds damage depends on the weapon (bows: Dexterity; throwing weapons: both; melee: Strength)
+    const mw = g.usable("main") ? p.equip.main : undefined;
+    const dmgNote = isBow(mw)
+      ? { str: "for gear requirements", dex: "+1% bow damage each, attack rating, defense" }
+      : isThrowing(mw)
+        ? { str: "+0.75% throwing damage each", dex: "+0.75% throwing damage each, attack rating, defense" }
+        : { str: "+1% melee damage each", dex: "attack rating, defense" };
     const row = (k: keyof Stats, name: string, note: string) => `
       <div class="srow">
         <div class="sname">${name}<small>${note}</small></div>
@@ -1010,10 +1039,10 @@ export class Ui {
       : "";
     return `
       <div class="char-left">
-        <div class="char-head"><b>Barbarian</b> · Level ${p.level}</div>
+        <div class="char-head"><b>${esc(p.name && p.name !== CLASS_NAME[p.cls] ? `${p.name}, ${CLASS_NAME[p.cls]}` : CLASS_NAME[p.cls])}</b> · Level ${p.level}</div>
         <div class="char-xp">Experience ${p.xp.toLocaleString()} / ${next.toLocaleString()}</div>
-        ${row("str", "Strength", "+1% damage each")}
-        ${row("dex", "Dexterity", "attack rating, defense")}
+        ${row("str", "Strength", dmgNote.str)}
+        ${row("dex", "Dexterity", dmgNote.dex)}
         ${row("vit", "Vitality", "+4 life each")}
         ${row("ene", "Energy", "+1.5 mana each")}
         <div class="spoints ${p.statPoints ? "has" : ""}">${p.statPoints ? `${p.statPoints} stat points to spend` : "Gain 5 stat points each level"}</div>
@@ -1043,6 +1072,9 @@ export class Ui {
     const st = g.stats();
     const L = ilvlOf(it);
     const lines: string[] = [];
+    // v1.1: a worn item whose requirements you no longer meet does nothing (Diablo II's red items)
+    const worn = (Object.keys(g.player.equip) as EquipSlot[]).find((sl) => g.player.equip[sl] === it);
+    if (worn && !g.usable(worn)) lines.push(`<span class="bad unusable">Unusable: requirements not met. It gives no damage, defense or bonuses until you meet them.</span>`);
     if (b.slot === "weapon") {
       const [bl, bh] = baseDamage(b, L);
       const [lo, hi] = itemDamage(it);
@@ -1106,7 +1138,7 @@ export class Ui {
         if (it) {
           const b = BASE_BY_ID[it.baseId];
           const k = Math.min(1, w / b.w, h / b.h);
-          inner = `<div class="eqi q-${qualityOf(it)}" data-src="eq" data-eq="${s}"><img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false" style="width:${b.w * U * k}px;height:${b.h * U * k}px"/>${b.thrown || b.ammo ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
+          inner = `<div class="eqi q-${qualityOf(it)} ${g.usable(s) ? "" : "bad"}" data-src="eq" data-eq="${s}"><img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false" style="width:${b.w * U * k}px;height:${b.h * U * k}px"/>${b.thrown || b.ammo ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
         } else if (blocked && p.equip.main) {
           const b = BASE_BY_ID[p.equip.main.baseId];
           inner = `<img class="ghost2h" src="${itemIconUrl(p.equip.main)}" alt="" draggable="false" style="width:${b.w * U * 0.9}px;height:${b.h * U * 0.9}px"/><em>2-handed</em>`;
@@ -1126,7 +1158,7 @@ export class Ui {
     }
     if (!s || !it) {
       return shop
-        ? `<div class="hint">Tap an item to see its price.<br/>Drag your items onto Hilde's stock to sell (or tap and Sell). Drag hers into your bag to buy. Tap again to deselect.</div>`
+        ? `<div class="hint">Tap an item to see its price.<br/>Drag your items onto Hilde's stock to sell (or tap and Sell). Drag hers into your bag to buy. Tap again to deselect.</div>${this.buybackRow()}`
         : `<div class="hint">Tap an item to see it and compare; tap it again to deselect.<br/>Equip with the button, by dragging onto a slot, or tap the item then a slot.<br/>Drag out of the window to drop.</div>`;
     }
     if (this.sheetShown()) return `<div class="hint">Comparing…</div>`;
@@ -1150,20 +1182,32 @@ export class Ui {
     const b = BASE_BY_ID[it.baseId];
     const btns: string[] = [];
     let price = "";
-    if (s.src === "vendor") {
+    // v1.1: potions in the backpack or stash can go straight onto the belt
+    const beltBtn = () => {
+      const full = (b.potion === "hp" ? g.player.hpPots : g.player.mpPots) >= g.beltCap();
+      return `<button class="gbtn" data-act="tobelt" ${full ? "disabled" : ""}>${full ? "Belt full" : "To belt"}</button>`;
+    };
+    if (s.src === "buyback") {
+      const cost = sellPrice(it);
+      price = `<div class="price ${g.player.gold < cost ? "bad" : ""}">Buy back: ${cost} gold</div>`;
+      btns.push(`<button class="gbtn" data-act="buyback" ${g.player.gold < cost ? "disabled" : ""}>Buy back</button>`);
+    } else if (s.src === "vendor") {
       const cost = itemPrice(it);
       price = `<div class="price ${g.player.gold < cost ? "bad" : ""}">Price: ${cost} gold</div>`;
       btns.push(`<button class="gbtn" data-act="buy" ${g.player.gold < cost ? "disabled" : ""}>Buy</button>`);
     } else if (s.src === "stash") {
       btns.push(`<button class="gbtn" data-act="stash-take">To backpack</button>`);
+      if (b.potion) btns.push(beltBtn());
     } else if (s.src === "bag" && stash) {
       btns.push(`<button class="gbtn" data-act="stash-put">To stash</button>`);
+      if (b.potion) btns.push(beltBtn());
     } else if (s.src === "bag") {
       if (shop) {
         price = `<div class="price">Sells for ${sellPrice(it)} gold</div>`;
         btns.push(`<button class="gbtn" data-act="sell">Sell</button>`);
       } else if (b.potion) {
         btns.push(`<button class="gbtn" data-act="drink">Drink</button>`);
+        btns.push(beltBtn());
         btns.push(`<button class="gbtn dim" data-act="drop">Drop</button>`);
       } else {
         const opts = g.slotsFor(it);
@@ -1219,7 +1263,7 @@ export class Ui {
       return `<div class="ccard eqc empty"><div class="chead">${label}</div><div class="hint">Nothing equipped</div></div>`;
     });
     const { btns, price } = this.actionsFor(this.openTab === "shop");
-    const where = s.src === "vendor" ? "Hilde's item" : s.src === "stash" ? "In your stash" : "Selected";
+    const where = s.src === "buyback" ? "You sold this" : s.src === "vendor" ? "Hilde's item" : s.src === "stash" ? "In your stash" : "Selected";
     return `<div class="cmpsheet" data-n="${1 + eq.length}">
       <div class="ccards">${card(it, where, "selc")}${eq.join("")}</div>
       <div class="cfoot">${price}<div class="ibtns">${btns.join("")}<button class="gbtn dim" data-act="cmp-close">✕ Close</button></div></div>
@@ -1267,6 +1311,22 @@ export class Ui {
       <div class="idetail">${this.detailHtml(true)}</div>`;
   }
 
+  /** v1.1: the last 8 things you sold, newest first; tap one to buy it back */
+  private buybackRow() {
+    const g = this.game();
+    const cells: string[] = [];
+    for (let i = 0; i < BUYBACK_MAX; i++) {
+      const it = g.buyback[i];
+      if (!it) {
+        cells.push(`<div class="bbc empty"></div>`);
+        continue;
+      }
+      const sel = this.sel?.src === "buyback" && this.sel.uid === it.uid;
+      cells.push(`<div class="bbc gi q-${qualityOf(it)} ${sel ? "sel" : ""}" data-src="buyback" data-uid="${it.uid}" data-price="${sellPrice(it)}"><img src="${itemIconUrl(it)}" alt="${esc(BASE_BY_ID[it.baseId].name)}" draggable="false"/></div>`);
+    }
+    return `<div class="bbwrap"><div class="bagtop"><span>Buy back</span><span class="muted">${g.buyback.length ? "your last sales" : "items you sell show here"}</span></div><div class="dnd bbrow" data-bb>${cells.join("")}</div></div>`;
+  }
+
   private stashHtml() {
     const g = this.game();
     const p = g.player;
@@ -1274,7 +1334,8 @@ export class Ui {
     const items = p.stash.map((e) => this.itemBox(e.item, "stash", e.x, e.y, C)).join("");
     return `
       <div class="vendwrap">
-        <div class="bagtop"><span>Stash</span><span class="muted">${p.stash.length} item${p.stash.length === 1 ? "" : "s"}</span></div>
+        <div class="bagtop sgold"><span>Stash <span class="muted">· ${p.stash.length} item${p.stash.length === 1 ? "" : "s"}</span></span>
+          <span class="sgbtns"><span class="gold" title="${esc(p.name)}'s own gold, safe if you die">${p.stashGold.toLocaleString()} gold</span><button class="gbtn" data-act="sg-in" ${p.gold ? "" : "disabled"}>Deposit</button><button class="gbtn" data-act="sg-out" ${p.stashGold ? "" : "disabled"}>Take</button></span></div>
         <div class="dnd"><div class="grid sgrid2" data-grid="stash" style="--c:${C}px;width:${STASH_W * C}px;height:${STASH_H * C}px">${items}</div></div>
       </div>
       <div class="bagwrap">
@@ -1525,7 +1586,7 @@ export class Ui {
         <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn: in Skills, pick a skill and tap 1–3 to put it on a button. ⌂ Town (top right) takes you back to camp.</p>
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
         <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. One-handed weapons can go in the off-hand to dual wield.</p>
-        <p>Kill the boss to open the stairs to the next level. Each act has five levels; the fifth holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ takes you to any level you’ve reached.</p>
+        <p>Kill the boss to open the stairs to the next level. Each act has 20 levels; the 20th holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ in camp takes you to any waypoint level you’ve reached: level 1 and every 5th level of each act. Only those levels have a waypoint stone, so that’s where your progress is kept.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>
         <p class="ver">Ember Crypt v${GAME_VERSION} · all art made in code for this game</p>

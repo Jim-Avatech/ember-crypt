@@ -317,7 +317,8 @@ describe("v1.0 loot is the same for every class", () => {
     expect(w("long_bow")).toBeGreaterThan(0);
     expect(w("spear")).toBeGreaterThan(0);
   });
-  it("a Barbarian and an Amazon get the same drops from the same kills", () => {
+  // v1.1: loot now leans to the hero's class (CLASS_DROP_WEIGHTS); same number of items and qualities, other weapons
+  it("v1.1: same number and quality of drops for both classes, but weapons lean to the class", () => {
     const drops = (cls: "amazon" | "barbarian") => {
       const g = new Game(events, null, 9, { cls, name: "" });
       g.player.level = 30;
@@ -344,6 +345,12 @@ describe("v1.0 loot is the same for every class", () => {
     const a = drops("amazon");
     const b = drops("barbarian");
     expect(a.length).toBeGreaterThan(50);
-    expect(a).toEqual(b);
+    expect(a.length).toBe(b.length);
+    const q = (l: string[]) => l.map((x) => x.split(":")[1]).join(",");
+    expect(q(a)).toBe(q(b));
+    const amaz = (l: string[]) => l.filter((x) => /^(javelin|spear|short_bow|long_bow):/.test(x)).length;
+    const barb = (l: string[]) => l.filter((x) => /^(sword|axe|mace|great_sword):/.test(x)).length;
+    expect(amaz(a)).toBeGreaterThan(amaz(b));
+    expect(barb(b)).toBeGreaterThan(barb(a));
   });
 });

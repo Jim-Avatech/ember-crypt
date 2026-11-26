@@ -242,7 +242,7 @@ export class Renderer {
       ctx.drawImage(c, this.ax(dcl.x, dcl.y) - 7, this.ay(dcl.x, dcl.y) - 4);
     }
     if (game.stairs) ctx.drawImage(A.stairs, this.ax(game.stairs.x - 0.5, game.stairs.y - 0.5) - HW, this.ay(game.stairs.x - 0.5, game.stairs.y - 0.5));
-    {
+    if (game.waypointHere()) {
       const wp = L.waypoint;
       const f = A.waypoint[fi(game.time * 5, 4)];
       ctx.drawImage(f, this.ax(wp.x - 0.5, wp.y - 0.5) - HW, this.ay(wp.x - 0.5, wp.y - 0.5));
@@ -560,7 +560,7 @@ export class Renderer {
     if (game.boss && game.boss.state !== "dead") hole(game.boss.x, game.boss.y, game.boss.def.rank === "final" ? 3.4 : 2.4, 0.55);
     for (const q of game.shots) if (q.look === "bolt") hole(q.x, q.y, 1.4, 0.6);
     for (const n of game.novas) hole(n.x, n.y, n.radius + 0.6, 0.5);
-    hole(L.waypoint.x, L.waypoint.y, 2.6, 0.7);
+    if (game.waypointHere()) hole(L.waypoint.x, L.waypoint.y, 2.6, 0.7);
     const fires = L.props.filter((pr) => pr.kind === "campfire");
     for (const fr of fires) hole(fr.x + 0.5, fr.y + 0.5, 6 + Math.sin(game.time * 7) * 0.2, 1);
     g.globalCompositeOperation = "source-over";
@@ -585,7 +585,7 @@ export class Renderer {
     for (const q of game.shots) if (q.look === "bolt") glow(q.x, q.y, 1.2, q.elem === "light" ? "200,200,80" : "200,90,20", 0.35);
     for (const g of game.ground) if (g.artifact) glow(g.x, g.y, 2.2, "255,140,40", 0.3 + Math.sin(game.time * 4) * 0.08);
     for (const fr of fires) glow(fr.x + 0.5, fr.y + 0.5, 4.5, "150,70,10", 0.3 + Math.sin(game.time * 11) * 0.03);
-    glow(L.waypoint.x, L.waypoint.y, 2, "40,90,200", 0.25 + Math.sin(game.time * 3) * 0.06);
+    if (game.waypointHere()) glow(L.waypoint.x, L.waypoint.y, 2, "40,90,200", 0.25 + Math.sin(game.time * 3) * 0.06);
     ctx.globalCompositeOperation = "source-over";
   }
 
@@ -1290,7 +1290,7 @@ export class Renderer {
     };
     if (game.stairs) dot(game.stairs.x, game.stairs.y, "#ffb04a", 5);
     for (const gi of game.ground) if (gi.artifact) dot(gi.x, gi.y, ARTIFACT_COLOR, 5);
-    dot(L.waypoint.x, L.waypoint.y, "#5aa8ff", 5);
+    if (game.waypointHere()) dot(L.waypoint.x, L.waypoint.y, "#5aa8ff", 5);
     if (L.vendor) dot(L.vendor.x, L.vendor.y, "#ffe08a", 4);
     for (const m of game.monsters) {
       if (m.state === "dead" || !L.explored[idx(Math.floor(m.x), Math.floor(m.y))]) continue;

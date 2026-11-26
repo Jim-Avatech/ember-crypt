@@ -71,6 +71,9 @@ export function isFloor(level: Level, x: number, y: number): boolean {
   return level.tiles[idx(x, y)] === 1;
 }
 
+/** v1.1: corridor width in tiles (was 2), so packs and bosses don't jam them */
+export const CORRIDOR_W = 3;
+
 export function generateLevel(seed: number): Level {
   const rng = new Rng(seed);
   const tiles = new Uint8Array(MAP_W * MAP_H);
@@ -88,10 +91,10 @@ export function generateLevel(seed: number): Level {
   for (const r of rooms) {
     for (let yy = r.y; yy < r.y + r.h; yy++) for (let xx = r.x; xx < r.x + r.w; xx++) tiles[idx(xx, yy)] = 1;
   }
-  // connect each room to the nearest already-connected room with a 2-wide L corridor
+  // connect each room to the nearest already-connected room with an L corridor (v1.1: 3 wide, was 2)
   const carve = (x: number, y: number) => {
-    for (let dy = 0; dy < 2; dy++)
-      for (let dx = 0; dx < 2; dx++) {
+    for (let dy = -1; dy < CORRIDOR_W - 1; dy++)
+      for (let dx = -1; dx < CORRIDOR_W - 1; dx++) {
         const xx = x + dx;
         const yy = y + dy;
         if (xx > 0 && yy > 0 && xx < MAP_W - 1 && yy < MAP_H - 1) tiles[idx(xx, yy)] = 1;

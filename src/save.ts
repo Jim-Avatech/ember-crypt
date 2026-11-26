@@ -1,3 +1,4 @@
+import { CLASS_NAME } from "./data/skills";
 /**
  * Saves: localStorage (main + temp + rotating backups) mirrored to IndexedDB.
  *
@@ -74,7 +75,7 @@ export function listHeroes(): HeroInfo[] {
     const d = readSlot(n);
     if (!d) continue;
     const p = d.player;
-    out.push({ slot: n, cls: p.cls ?? "barbarian", name: p.name ?? "Barbarian", level: p.level, maxFloor: d.maxFloor, savedAt: d.savedAt ?? 0 });
+    out.push({ slot: n, cls: p.cls ?? "barbarian", name: p.name || CLASS_NAME[p.cls ?? "barbarian"] || "Barbarian", level: p.level, maxFloor: d.maxFloor, savedAt: d.savedAt ?? 0 });
   }
   const last = lastSlot();
   return out.sort((a, b) => (a.slot === last ? -1 : b.slot === last ? 1 : b.savedAt - a.savedAt));

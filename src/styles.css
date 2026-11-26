@@ -1560,3 +1560,17 @@ body.portrait #rotate {
 .pnv span { color: #a08c64; font-weight: 400; font-size: 12px; margin-left: 4px; }
 .pnote ul { margin: 2px 0 0; padding-left: 18px; }
 .pnote li { margin: 1px 0; font-size: 12.5px; line-height: 1.35; }
+/* v1.1: worn items you can't use (requirements not met) */
+.eqi.bad { background: rgba(170, 20, 10, 0.55); box-shadow: inset 0 0 0 2px #d8402a; border-radius: 3px; }
+.eqi.bad img { filter: sepia(1) saturate(4) hue-rotate(-30deg) brightness(0.8); }
+.unusable { font-weight: 700; }
+/* v1.1: buy-back row under Hilde's wares */
+.bbwrap { margin-top: 10px; }
+.bbrow { display: grid; grid-template-columns: repeat(4, 40px); gap: 4px; }
+.bbc { position: relative; width: 40px; height: 40px; border: 1px solid rgba(200, 170, 120, 0.25); border-radius: 3px; background: rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; }
+.bbc.gi { position: relative; left: auto; top: auto; }
+.bbc img { max-width: 92%; max-height: 92%; width: auto; height: auto; object-fit: contain; }
+.bbc.empty { opacity: 0.45; }
+/* v1.1: per-hero stash gold (in the stash header) */
+.sgold .sgbtns { display: flex; align-items: center; gap: 4px; }
+.sgold .gbtn { padding: 1px 7px; font-size: 11px; min-height: 0; line-height: 1.3; }

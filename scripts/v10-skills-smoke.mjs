@@ -20,6 +20,7 @@ const res = await page.evaluate(async () => {
     g.goDungeon(8);
     const p = g.player;
     p.level = 40;
+    p.base.str = Math.max(p.base.str, 150); p.base.dex = Math.max(p.base.dex, 150); // v1.1: gear needs its requirements met to work
     p.skills = {};
     for (const x of S) p.skills[x.id] = 5;
     const bow = s.tab === "bow" || ["inner_sight", "slow_missiles", "decoy", "valkyrie"].includes(s.id);

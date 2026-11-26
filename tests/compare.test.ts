@@ -10,6 +10,9 @@ const SLOT_FOR: Record<Cat, string> = { weapon: "main", armor: "chest", helm: "h
 function setup() {
   const g = new Game(events, null, 7);
   g.player.level = 30;
+  // v1.1: gear whose requirements you don't meet stops working, so this hero can wear anything here
+  g.player.base.str = 200;
+  g.player.base.dex = 200;
   g.player.skills = { bash: 1 };
   return g;
 }

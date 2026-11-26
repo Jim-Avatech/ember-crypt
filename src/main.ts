@@ -1,4 +1,4 @@
-import { SKILLS } from "./data/skills";
+import { CLASS_NAME, SKILLS } from "./data/skills";
 import "./styles.css";
 import { AFFIXES, enchant, rollDrop } from "./data/affixes";
 import { ITEM_BASES, lookOf, makeItem, migrateItem } from "./data/items";
@@ -209,7 +209,7 @@ function switchHero(n: number, hero?: { cls: HeroClass; name: string }) {
   if (!r?.data && canSave()) doSave(true);
   ui.refresh();
   lastTown = game.inTown;
-  ui.toast(hero ? `${game.player.name} the ${hero.cls === "amazon" ? "Amazon" : "Barbarian"} arrives at Ember Camp` : `Playing ${game.player.name} · level ${game.player.level}`, 3500);
+  ui.toast(hero ? `${game.player.name} the ${CLASS_NAME[hero.cls] ?? "hero"} arrives at Ember Camp` : `Playing ${game.player.name} · level ${game.player.level}`, 3500);
   if (cloud) setTimeout(() => void cloudSync(), 1500);
 }
 const heroSelect = new HeroSelect(app, {

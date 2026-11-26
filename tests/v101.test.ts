@@ -29,7 +29,7 @@ const mem = new MemStorage();
 const save = await import("../src/save");
 const { Game, FLOOR_KEEP_MS, BOSS_LEASH } = await import("../src/game");
 const { makeItem, qtyMax } = await import("../src/data/items");
-const { bfs, idx, isFloor } = await import("../src/map");
+const { bfs, idx, isFloor, lineOfSight } = await import("../src/map");
 const { PATCH_NOTES, GAME_VERSION } = await import("../src/data/patchNotes");
 type G = InstanceType<typeof Game>;
 const events = { sound() {}, toast() {}, changed() {}, died() {}, levelUp() {}, shake() {} };
@@ -165,33 +165,41 @@ describe("v1.0.1 bosses leave their room", () => {
     expect(tot).toBeGreaterThan(40);
     expect(stuck).toBe(0);
   });
-  it("past the leash the boss walks home and heals", () => {
-    const g = new Game(events, null, 303);
-    g.startFloor(4);
-    const b = g.boss!;
-    g.monsters = [b];
-    const home = bfs(g.level, Math.floor(b.homeX), Math.floor(b.homeY));
-    // stand on a tile far from the boss room (beyond the leash)
+  it("past the leash (and, v1.1, 8 s unseen and unhurt) the boss walks home, healing only once it's there", () => {
+    let g!: InstanceType<typeof Game>;
     let best = -1;
     let at = [0, 0];
-    for (let i = 0; i < home.length; i++) if (home[i] !== 65535 && home[i] > best) { best = home[i]; at = [i % g.level.w, Math.floor(i / g.level.w)]; }
+    for (const seed of [303, 304, 305, 306, 307, 308, 309, 310]) {
+      g = new Game(events, null, seed);
+      g.startFloor(4);
+      const bb = g.boss!;
+      const home = bfs(g.level, Math.floor(bb.homeX), Math.floor(bb.homeY));
+      best = -1;
+      for (let i = 0; i < home.length; i++) if (home[i] !== 65535 && home[i] > best) { best = home[i]; at = [i % g.level.w, Math.floor(i / g.level.w)]; }
+      if (best > BOSS_LEASH + 4 && !lineOfSight(g.level, bb.homeX, bb.homeY, at[0] + 0.5, at[1] + 0.5)) break;
+    }
+    const b = g.boss!;
+    g.monsters = [b];
     expect(best).toBeGreaterThan(BOSS_LEASH);
     const p = g.player;
-    p.x = at[0] + 0.5;
-    p.y = at[1] + 0.5;
-    b.x = p.x + 1;
-    b.y = p.y;
-    if (!isFloor(g.level, Math.floor(b.x), Math.floor(b.y))) b.x = p.x;
     b.hp = Math.round(b.maxHp * 0.3);
     (g as unknown as { aggroPack(m: unknown): void }).aggroPack(b);
-    p.x = at[0] + 0.5; // hero stays far away
-    for (let t = 0; t < 30 * 60 && Math.hypot(b.x - b.homeX, b.y - b.homeY) > 1.5; t++) {
+    let gaveUpAt = -1;
+    let hpWhenGaveUp = 0;
+    let healedOnWay = false;
+    for (let t = 0; t < 30 * 90; t++) {
       p.hp = 1e6;
-      p.x = at[0] + 0.5;
+      p.x = at[0] + 0.5; // hero stays far away, out of sight
       p.y = at[1] + 0.5;
       g.update(1 / 30, idle);
+      if (gaveUpAt < 0 && b.leashed) {
+        gaveUpAt = t / 30;
+        hpWhenGaveUp = b.hp;
+      } else if (gaveUpAt >= 0 && b.leashed && b.hp > hpWhenGaveUp) healedOnWay = true;
+      if (gaveUpAt >= 0 && !b.leashed && Math.hypot(b.x - b.homeX, b.y - b.homeY) < 2) break;
     }
-    for (let t = 0; t < 30 * 3; t++) g.update(1 / 30, idle);
+    expect(gaveUpAt).toBeGreaterThanOrEqual(8);
+    expect(healedOnWay).toBe(false);
     expect(Math.hypot(b.x - b.homeX, b.y - b.homeY)).toBeLessThan(2);
     expect(b.hp).toBe(b.maxHp);
   });
@@ -244,9 +252,9 @@ describe("v1.0.1 delete hero, 12 slots", () => {
 
 describe("v1.0.1 patch notes", () => {
   it("newest first, version label from the first entry", () => {
-    expect(GAME_VERSION).toBe("1.0.1");
+    expect(GAME_VERSION).toBe("1.1");
     const vs = PATCH_NOTES.map((n) => n.version);
-    for (const v of ["1.0", "0.9.4", "0.9.3", "0.9.2", "0.9.1", "0.9", "0.8.3", "0.8.2", "0.8.1"]) expect(vs).toContain(v);
+    for (const v of ["1.0.1", "1.0", "0.9.4", "0.9.3", "0.9.2", "0.9.1", "0.9", "0.8.3", "0.8.2", "0.8.1"]) expect(vs).toContain(v);
     const num = (v: string) => v.split(".").map(Number).reduce((a, x, i) => a + x * 1000 ** (2 - i), 0);
     for (let i = 1; i < vs.length; i++) expect(num(vs[i - 1])).toBeGreaterThan(num(vs[i]));
     for (const n of PATCH_NOTES) expect(n.notes.length).toBeGreaterThan(0);

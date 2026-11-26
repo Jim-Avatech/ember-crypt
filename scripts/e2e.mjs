@@ -590,7 +590,7 @@ const g0 = await ev(() => __ec.game.player.gold);
 await tap('[data-src="bag"][data-uid="6001"]');
 await wait(150);
 await tap('.cmpsheet [data-act="sell"]');
-const sold = await ev(() => ({ gold: __ec.game.player.gold, gone: !__ec.game.bagEntry(6001), inStock: __ec.game.vendorStock.some((q) => q.item.uid === 6001) }));
+const sold = await ev(() => ({ gold: __ec.game.player.gold, gone: !__ec.game.bagEntry(6001), inStock: __ec.game.buyback.some((q) => q.uid === 6001) && !__ec.game.vendorStock.some((q) => q.item.uid === 6001) }));  // v1.1: sold items go to the buy-back row
 check("Selling loot adds gold", sold.gold > g0 && sold.gone && sold.inStock, `(gold ${g0} → ${sold.gold})`);
 // sell by dragging onto Hilde's wares
 const g1 = sold.gold;

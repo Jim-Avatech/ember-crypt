@@ -98,6 +98,28 @@ const ri = (r: Rng, a: number, b: number) => a + Math.floor(r() * (b - a + 1));
 
 /** +skill rolls: any class skill (v1.0: Amazon skills too, so the loot pool stays the same for every class) */
 const SKILLABLE = () => SKILLS.filter((s) => s.implemented && s.cls !== "any").map((s) => s.id);
+/** v1.1: share of amulet +skill rolls that pick a skill of the finder's class (the rest pick any class). */
+export const AMULET_OWN_CLASS = 0.7;
+/**
+ * v1.1: which skills a +skill roll may pick, by item (like Diablo II's class items): bows only Bow & Crossbow skills,
+ * javelins and spears only Javelin & Spear skills, every other weapon and helms only Barbarian skills, amulets any
+ * class (mostly the finder's class when known).
+ */
+export function skillPoolFor(baseId: string, r: Rng = Math.random, cls?: string): string[] {
+  const b = BASE_BY_ID[baseId];
+  const ok = (f: (s: (typeof SKILLS)[number]) => boolean) => SKILLS.filter((s) => s.implemented && s.cls !== "any" && f(s)).map((s) => s.id);
+  if (b?.slot === "weapon") {
+    if (b.kind === "bow") return ok((s) => s.tab === "bow");
+    if (b.kind === "spear") return ok((s) => s.tab === "javelin");
+    return ok((s) => s.cls === "barbarian");
+  }
+  if (b?.slot === "helm") return ok((s) => s.cls === "barbarian");
+  if (cls && r() < AMULET_OWN_CLASS) {
+    const mine = ok((s) => s.cls === cls);
+    if (mine.length) return mine;
+  }
+  return SKILLABLE();
+}
 
 interface Pick {
   key: string;
@@ -132,7 +154,7 @@ export const RARE_COUNTS = [3, 3, 3, 4, 4];
 export const MAGIC_SPLIT = { prefixOnly: 0.25, suffixOnly: 0.25 };
 
 /** Roll a set of affixes. Magic: 1 prefix and/or 1 suffix. Rare: 3–4, at most 3 of each side. */
-export function rollAffixes(cat: Cat, ilvl: number, q: Quality, r: Rng = Math.random): Rolled {
+export function rollAffixes(cat: Cat, ilvl: number, q: Quality, r: Rng = Math.random, skillPool?: () => string[]): Rolled {
   const res: Rolled = { mods: [], aff: [], prefixes: [], suffixes: [] };
   if (q === "normal") return res;
   const used = new Set<string>();
@@ -146,7 +168,7 @@ export function rollAffixes(cat: Cat, ilvl: number, q: Quality, r: Rng = Math.ra
     for (const [s, a, b] of pk.tier.mods) {
       const m: Mod = { s, v: ri(r, a, b) };
       if (s === "skill") {
-        const ids = SKILLABLE();
+        const ids = skillPool ? skillPool() : SKILLABLE();
         m.sk = ids[Math.floor(r() * ids.length)];
       }
       res.mods.push(m);
@@ -198,10 +220,10 @@ export function rareName(cat: Cat, r: Rng = Math.random) {
 }
 
 /** Turn an item into a magic or rare one (rolls its affixes and name). */
-export function enchant(it: Item, q: Quality, r: Rng = Math.random): Item {
+export function enchant(it: Item, q: Quality, r: Rng = Math.random, cls?: string): Item {
   const cat = catOf(it.baseId);
   if (!cat || q === "normal") return it;
-  const rolled = rollAffixes(cat, it.ilvl ?? 1, q, r);
+  const rolled = rollAffixes(cat, it.ilvl ?? 1, q, r, () => skillPoolFor(it.baseId, r, cls));
   if (!rolled.mods.length) return it;
   it.q = q;
   it.mods = rolled.mods;
@@ -229,15 +251,15 @@ export function rollQuality(mlvl: number, mf: number, boss: boolean, r: Rng = Ma
 }
 
 /** A random dropped item for a monster level. Rings and amulets are never plain. */
-export function rollDrop(mlvl: number, mf: number, boss: boolean, r: Rng = Math.random): Item {
-  let b = rollBase(r);
+export function rollDrop(mlvl: number, mf: number, boss: boolean, r: Rng = Math.random, cls?: string): Item {
+  let b = rollBase(r, cls);
   const ilvl = Math.max(1, mlvl + (boss ? 2 : 0));
   let q = rollQuality(mlvl, mf, boss, r);
   // v1.0: arrows are never magic; a magic/rare roll that lands on them picks another class, so the quality mix is unchanged
-  for (let i = 0; i < 20 && q !== "normal" && !catHasAffixes(b.slot); i++) b = rollBase(r);
+  for (let i = 0; i < 20 && q !== "normal" && !catHasAffixes(b.slot); i++) b = rollBase(r, cls);
   const it = makeItem(b.id, ilvl);
   if (q === "normal" && (b.slot === "ring" || b.slot === "amulet")) q = "magic";
-  return enchant(it, q, r);
+  return enchant(it, q, r, cls);
 }
 const catHasAffixes = (slot: string) => AFFIXES.some((a) => (a.cats as string[]).includes(slot));
 
@@ -269,7 +291,7 @@ export function modText(m: Mod): string {
     case "mf": return `${m.v}% Better Chance of Getting Magic Items`;
     case "skill": {
       const sd = SKILL_BY_ID[m.sk ?? ""];
-      return `+${m.v} to ${sd?.name ?? "a skill"} (${sd && sd.cls !== "any" ? CLASS_NAME[sd.cls] : "Barbarian"} Only)`;
+      return sd && sd.cls !== "any" ? `+${m.v} to ${sd.name} (${CLASS_NAME[sd.cls]} Only)` : `+${m.v} to ${sd?.name ?? "a skill"}`;
     }
   }
 }

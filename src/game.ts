@@ -7,7 +7,7 @@ import {
   ELEM_COLOR, ELITE_MODS, type Elem, type EliteMod, MONSTERS, type MonsterDef, type MonsterKind, type Shot, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp, uniqueName,
 } from "./data/monsters";
 import {
-  ACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, MAX_FLOOR, actDef, actOf, floorName, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
+  ACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, hasWaypoint, MAX_FLOOR, actDef, actOf, floorName, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
 } from "./data/acts";
 import {
   FRENZY_HOLD, FRENZY_MAX_STACKS, MAX_SKILL_LVL, SKILL_BY_ID, bashAR, bashDmg, boDur, boPct, doubleSwingAR, doubleThrowAR,
@@ -30,6 +30,26 @@ import { Rng, chance, rand, randInt } from "./rng";
 /** v0.9.2: every monster (elites and bosses build on these) has +30% life and +25% damage. */
 export const MON_HP = 1.69; // v0.9.3: +30% on v0.9.2's 1.3
 export const MON_DMG = 1.875; // v0.9.3: +50% on v0.9.2's 1.25
+/**
+ * v1.1 difficulty curve: monster life and damage start lower and rise in a straight line to exactly today's values
+ * at floor CURVE_END (end of Act III); floors CURVE_END..80 are unchanged. Floor 1 = life x0.80, damage x0.90.
+ * Boss life follows the curve; boss damage is set per floor from the on-level hero's life (bossUp), not from this.
+ */
+/** v1.1: weapons that lean toward each class (drops, and Hilde's guaranteed magic weapon). */
+export const CLASS_WEAPONS: Record<HeroClass, string[]> = {
+  barbarian: ["sword", "axe", "mace", "great_sword"],
+  amazon: ["javelin", "spear", "short_bow", "long_bow"],
+};
+/** v1.1: every equipment slot, in a fixed order (for the usable-gear cache) */
+const EQUIP_ORDER: EquipSlot[] = ["main", "off", "head", "chest", "gloves", "boots", "belt", "ring1", "ring2", "amulet"];
+/** v1.1: how many sold items Hilde keeps for buy-back */
+export const BUYBACK_MAX = 8;
+export const CURVE_END = 60;
+export const CURVE_HP0 = 0.8;
+export const CURVE_DMG0 = 0.9;
+const curveAt = (f: number, start: number) => (f >= CURVE_END ? 1 : start + ((1 - start) * (Math.max(1, f) - 1)) / (CURVE_END - 1));
+export const curveHp = (floor: number) => curveAt(floor, CURVE_HP0);
+export const curveDmg = (floor: number) => curveAt(floor, CURVE_DMG0);
 /**
  * v0.9.4 bosses. Accuracy: a boss rolls 3x its attack rating and ignores the hero being above its level, so an
  * on-level hero standing still is hit about 80% of the time (defense still helps). Damage: an average hit is a set
@@ -156,6 +176,8 @@ export interface Player {
   nextHand: number;
   frenzy: { stacks: number; t: number; decay: number };
   gold: number;
+  /** v1.1: gold kept in the camp stash (this hero only); it is never lost when you die */
+  stashGold: number;
   hpPots: number;
   mpPots: number;
   action: Action | null;
@@ -237,6 +259,8 @@ export interface Monster {
   /** v1.0.1: a boss walking back to its room after you got too far away (and its path home) */
   leashed?: boolean;
   homeFlow?: Uint16Array;
+  /** v1.1: seconds the hunted hero has been out of reach and out of sight */
+  lostT?: number;
   /** v1.0 Amazon effects: slowed (Cold Arrow), frozen (Ice/Freezing Arrow, drawn blue), Inner Sight defense cut */
   chillT?: number;
   frozenT?: number;
@@ -488,7 +512,7 @@ export interface SaveData {
   floor: number;
   maxFloor: number;
   player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & {
-    stash?: BagEntry[]; artifacts?: FoundArtifact[]; cls?: HeroClass; name?: string; mainAtk?: BasicId | null;
+    stashGold?: number; stash?: BagEntry[]; artifacts?: FoundArtifact[]; cls?: HeroClass; name?: string; mainAtk?: BasicId | null;
   };
   /** v1.0: when the (shared) stash last changed; the newest copy of the stash wins across heroes */
   stashAt?: number;
@@ -753,14 +777,26 @@ export const RECALL_TIME = 1.2;
 export const FLOOR_KEEP_MS = 5 * 60 * 1000;
 /** v1.0.1: at most this many kept levels (oldest dropped first). */
 export const FLOOR_KEEP_MAX = 8;
+/** v1.0.1: a boss gives up the chase when you are this many steps (walking distance) from its room's centre. */
+export const BOSS_LEASH = 45;
+/** v1.1: a boss beyond its leash gives up only after this many seconds without being hit or seeing you. */
+export const BOSS_GIVE_UP = 8;
+/** v1.1: normal monsters give up the chase after this long out of sight while more than CHASE_LOST_DIST tiles away. */
+export const CHASE_LOST_S = 5;
+export const CHASE_LOST_DIST = 12;
+/** v1.1: Amazons shoot bows and throw javelins this much faster (1.15 = 15%) */
+export const AMAZON_SPEED = 1.15;
+/** v1.1: share of a bow shot's animation before the arrow leaves (was 0.62, which felt late) */
+export const BOW_RELEASE = 0.5;
+/** v1.1: when a Fallen dies, its packmates within this many tiles run from the body for this long */
+export const FALLEN_SCATTER_R = 9;
+export const FALLEN_SCATTER_S = 1.5;
+/** v1.0.1: share of max life per second a leashed boss healed while walking home. v1.1: 0, it heals only once home. */
+export const BOSS_RETURN_HEAL = 0;
 /**
  * v1.0.1: wall-collision radius for monsters. Bosses are drawn with a 0.5 body, which exactly filled a tile and left
  * them unable to steer through 2-wide corridors and doorways (stuck in their room). Walls now use at most 0.4.
  */
-/** v1.0.1: a boss gives up the chase when you are this many steps (walking distance) from its room's centre. */
-export const BOSS_LEASH = 28;
-/** v1.0.1: share of max life per second a leashed boss heals while walking home (full once it is back). */
-export const BOSS_RETURN_HEAL = 0.25;
 export const wallR = (m: { def: { radius: number } }) => Math.min(m.def.radius, 0.4);
 
 export class Game {
@@ -779,6 +815,8 @@ export class Game {
   inTown = true;
   maxFloor = 1;
   vendorStock: BagEntry[] = [];
+  /** v1.1: the last items you sold (newest first), kept apart from Hilde's wares for this play session */
+  buyback: Item[] = [];
   hitLog: HitLog[] = [];
   projectiles: Projectile[] = [];
   shots: MonsterShot[] = [];
@@ -825,7 +863,7 @@ export class Game {
       cls, name: (hero?.name ?? "").trim().slice(0, 16) || CLASS_NAME[cls], mainAtk: null,
       x: 0, y: 0, r: 0.28, fx: 1, fy: 1, hp: 1, mana: 1, level: 1, xp: 0,
       base: { ...CLASS_DEF[cls].stats }, statPoints: 0, skillPoints: 1, skills: {}, slots: Array(SKILL_SLOTS).fill(null),
-      bag: [], stash: [], equip: {}, nextHand: 0, frenzy: { stacks: 0, t: 0, decay: 0 }, gold: 0, hpPots: 3, mpPots: 1,
+      bag: [], stash: [], equip: {}, nextHand: 0, frenzy: { stacks: 0, t: 0, decay: 0 }, gold: 0, stashGold: 0, hpPots: 3, mpPots: 1,
       action: null, walkPhase: 0, moving: false, buffs: { shout: 0, bo: 0, conc: 0, bers: 0, bcmd: 0 }, flash: 0, z: 0,
       moveTarget: null, dead: false, healLeft: 0, manaLeft: 0, kills: 0, artifacts: [], chillT: 0, poison: { t: 0, dps: 0 },
     };
@@ -834,6 +872,9 @@ export class Game {
       this.player.bag = this.player.bag ?? [];
       this.player.stash = this.player.stash ?? [];
       this.player.artifacts = this.player.artifacts ?? [];
+      // v1.1: stash gold (saves from before v1.1 start with none)
+      const sg = Number(this.player.stashGold);
+      this.player.stashGold = Number.isFinite(sg) && sg > 0 ? Math.floor(sg) : 0;
       // v0.9.2: 3 skill buttons (a skill on the v0.9 4th button is dropped; it stays learned)
       this.player.slots = Array.isArray(this.player.slots) ? this.player.slots.slice(0, SKILL_SLOTS) : [];
       while (this.player.slots.length < SKILL_SLOTS) this.player.slots.push(null);
@@ -872,7 +913,7 @@ export class Game {
       player: {
         cls: p.cls, name: p.name, mainAtk: p.mainAtk,
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
-        skills: p.skills, slots: p.slots.slice(0, SKILL_SLOTS), bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold,
+        skills: p.skills, slots: p.slots.slice(0, SKILL_SLOTS), bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold, stashGold: p.stashGold,
         hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills, artifacts: p.artifacts,
       },
     };
@@ -979,9 +1020,13 @@ export class Game {
     // a few magic pieces (Hilde never sells rares)
     const n = 2 + Math.floor(r() * 3);
     const pool = ITEM_BASES.filter((b) => b.weight > 0 && b.slot !== "quiver"); // arrows are never magic
+    // v1.1: the first one is always a weapon for your class
+    const mine = new Set(CLASS_WEAPONS[this.player.cls] ?? []);
+    const classPool = pool.filter((b) => mine.has(b.id));
     for (let i = 0, got = 0; i < n * 4 && got < n; i++) {
-      const b = pool[Math.floor(r() * pool.length)];
-      const it = enchant(makeItem(b.id, lvl + Math.floor(r() * 3)), "magic", r);
+      const from = got === 0 && classPool.length ? classPool : pool;
+      const b = from[Math.floor(r() * from.length)];
+      const it = enchant(makeItem(b.id, lvl + Math.floor(r() * 3)), "magic", r, this.player.cls);
       if (it.q === "magic" && add(it)) got++;
     }
     this.vendorStock = stock;
@@ -1102,10 +1147,14 @@ export class Game {
 
   /** v0.9.4: boss damage set from the on-level hero's life, plus elite-style modifiers (shown on the boss bar). */
   private bossUp(m: Monster, floor: number) {
-    const avg = (m.dmgMin + m.dmgMax) / 2 || 1;
+    // v1.1: from the monster's damage before the difficulty curve, so boss hits stay exactly as in v1.0.1
+    const raw = (v: number) => Math.max(1, Math.round(scaleDmg(v, m.mlvl) * MON_DMG));
+    const lo = raw(m.def.dmgMin);
+    const hi = raw(m.def.dmgMax);
+    const avg = (lo + hi) / 2 || 1;
     const k = (bossHitShare(floor) * heroLifeRef(floor)) / avg;
-    m.dmgMin = Math.max(1, Math.round(m.dmgMin * k));
-    m.dmgMax = Math.max(m.dmgMin, Math.round(m.dmgMax * k));
+    m.dmgMin = Math.max(1, Math.round(lo * k));
+    m.dmgMax = Math.max(m.dmgMin, Math.round(hi * k));
     const mods = bossMods(floor);
     const d: MonsterDef = { ...m.def, atkInterval: m.def.atkInterval * 0.9 }; // a little quicker than before
     if (mods.includes("fast")) {
@@ -1149,10 +1198,12 @@ export class Game {
 
   private spawn(kind: MonsterKind, mlvl: number, x: number, y: number, pack: number, defOverride?: MonsterDef): Monster {
     const def = defOverride ?? MONSTERS[kind];
-    const hp = Math.round(scaleHp(def.hp, mlvl) * MON_HP);
+    const ch = curveHp(this.floor);
+    const cd = curveDmg(this.floor);
+    const hp = Math.round(scaleHp(def.hp, mlvl) * MON_HP * ch);
     const m: Monster = {
       id: this.nextId++, def, mlvl, x, y, hp, maxHp: hp,
-      dmgMin: Math.max(1, Math.round(scaleDmg(def.dmgMin, mlvl) * MON_DMG)), dmgMax: Math.max(1, Math.round(scaleDmg(def.dmgMax, mlvl) * MON_DMG)),
+      dmgMin: Math.max(1, Math.round(scaleDmg(def.dmgMin, mlvl) * MON_DMG * cd)), dmgMax: Math.max(1, Math.round(scaleDmg(def.dmgMax, mlvl) * MON_DMG * cd)),
       ar: scaleAR(def.ar, mlvl), defense: scaleDef(def.def, mlvl), xp: Math.max(1, Math.round(scaleXp(def.xp, mlvl) * actDef(Math.max(1, this.floor)).reward * XP_RATE)),
       state: "idle", atkT: 0, windT: 0, stunT: 0, fearT: 0, kx: 0, ky: 0, flash: 0, fx: 0, fy: 1,
       walkPhase: Math.random() * 6, pack, homeX: x, homeY: y, wanderT: Math.random() * 3, wx: x, wy: y,
@@ -1167,8 +1218,61 @@ export class Game {
   /** Sum of one stat over all equipped items. */
   gear(k: StatKey): number {
     let t = 0;
-    for (const it of Object.values(this.player.equip)) t += modTotal(it, k);
+    for (const it of this.worn()) t += modTotal(it, k);
     return t;
+  }
+
+  private inactiveRefs: (Item | undefined)[] = [];
+  private inactiveNums = [-1, -1, -1];
+  private inactiveSet = new Set<EquipSlot>();
+  private wornList: Item[] = [];
+  /**
+   * v1.1: worn items whose requirements you no longer meet (say a Dexterity ring came off) stop working until you
+   * meet them again, like Diablo II's red items: no stats, defense, +skills or damage. An item's own bonuses never
+   * count toward its own requirements. Cached until the gear, level or base Strength/Dexterity change.
+   */
+  inactiveSlots(): Set<EquipSlot> {
+    const p = this.player;
+    const eq = p.equip;
+    const refs = this.inactiveRefs;
+    const nums = this.inactiveNums;
+    let same = nums[0] === p.level && nums[1] === p.base.str && nums[2] === p.base.dex;
+    for (let i = 0; same && i < EQUIP_ORDER.length; i++) if (refs[i] !== eq[EQUIP_ORDER[i]]) same = false;
+    if (same) return this.inactiveSet;
+    const off = new Set<EquipSlot>();
+    for (let pass = 0; pass < 12; pass++) {
+      let str = p.base.str;
+      let dex = p.base.dex;
+      for (const sl of EQUIP_ORDER) if (eq[sl] && !off.has(sl)) { str += modTotal(eq[sl], "str"); dex += modTotal(eq[sl], "dex"); }
+      let changed = false;
+      for (const sl of EQUIP_ORDER) {
+        const it = eq[sl];
+        if (!it || off.has(sl)) continue;
+        const r = itemReqs(it);
+        if (str - modTotal(it, "str") < r.str || dex - modTotal(it, "dex") < r.dex || p.level < r.lvl) {
+          off.add(sl);
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    for (let i = 0; i < EQUIP_ORDER.length; i++) refs[i] = eq[EQUIP_ORDER[i]];
+    nums[0] = p.level;
+    nums[1] = p.base.str;
+    nums[2] = p.base.dex;
+    this.inactiveSet = off;
+    this.wornList = [];
+    for (const sl of EQUIP_ORDER) if (eq[sl] && !off.has(sl)) this.wornList.push(eq[sl]!);
+    return off;
+  }
+  /** v1.1: is the item in this slot working (worn and its requirements met)? */
+  usable(sl: EquipSlot): boolean {
+    return !!this.player.equip[sl] && !this.inactiveSlots().has(sl);
+  }
+  /** v1.1: the worn items that are working. */
+  worn(): Item[] {
+    this.inactiveSlots();
+    return this.wornList;
   }
 
   /** Attributes with gear bonuses. */
@@ -1213,13 +1317,13 @@ export class Game {
   derived(): Derived {
     const p = this.player;
     const s = this.stats();
-    const isWeapon = (sl: EquipSlot) => !!p.equip[sl] && BASE_BY_ID[p.equip[sl]!.baseId].slot === "weapon";
+    const isWeapon = (sl: EquipSlot) => this.usable(sl) && BASE_BY_ID[p.equip[sl]!.baseId].slot === "weapon";
     const hands: Hand[] = [];
     if (isWeapon("main")) hands.push(this.handFor("main"));
     if (isWeapon("off")) hands.push(this.handFor("off"));
     if (!hands.length) hands.push(this.handFor(null));
     let armor = 0;
-    for (const it of Object.values(p.equip)) if (it) armor += itemDefense(it);
+    for (const it of this.worn()) armor += itemDefense(it);
     const g = (k: StatKey) => this.gear(k);
     let defPct = 0;
     const isl = this.skillLevel("iron_skin");
@@ -1516,7 +1620,7 @@ export class Game {
     const hard = this.player.skills[id] ?? 0;
     if (!hard) return 0;
     let bonus = 0;
-    for (const it of Object.values(this.player.equip)) for (const m of it?.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
+    for (const it of this.worn()) for (const m of it.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
     if (this.player.buffs.bcmd > 0) bonus += bcmdBonus(this.gearLevel("battle_command"));
     return hard + bonus;
   }
@@ -1526,7 +1630,7 @@ export class Game {
     const hard = this.player.skills[id] ?? 0;
     if (!hard) return 0;
     let bonus = 0;
-    for (const it of Object.values(this.player.equip)) for (const m of it?.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
+    for (const it of this.worn()) for (const m of it.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
     return hard + bonus;
   }
 
@@ -1630,7 +1734,7 @@ export class Game {
   /** Hand indexes that would throw for this attack, or null to melee. */
   private throwHands(skill: string | null, d: Derived): number[] | null {
     const p = this.player;
-    const ok = (sl: EquipSlot) => isThrowing(p.equip[sl]) && (p.equip[sl]!.qty ?? 0) > 0;
+    const ok = (sl: EquipSlot) => isThrowing(p.equip[sl]) && this.usable(sl) && (p.equip[sl]!.qty ?? 0) > 0;
     if (skill === "double_throw") return d.dual && ok("main") && ok("off") ? [0, 1] : null;
     if (skill) return null;
     if (d.dual) {
@@ -1660,6 +1764,7 @@ export class Game {
     let dur = hands.reduce((a, h) => a + d.hands[Math.min(h, d.hands.length - 1)].speed, 0) / hands.length;
     if (hands.length === 2) dur *= 1.15;
     dur /= 1 + d.ias;
+    if (p.cls === "amazon" && hands.every((h) => isSpearLike(p.equip[sl(h)]))) dur /= AMAZON_SPEED;
     if (d.dual && !skill) p.nextHand = 1 - hands[0];
     p.action = { type: "throw", skill, t: 0, dur, releaseAt: hands.length === 2 ? [0.28, 0.78] : [0.55], hands, done: 0, target };
     p.moveTarget = null;
@@ -1777,7 +1882,11 @@ export class Game {
     const p = this.player;
     const id = p.mainAtk;
     if (!id) {
-      if (isBow(p.equip.main)) this.castBasic("basic_shoot", d);
+      if (isBow(p.equip.main) && this.usable("main")) this.castBasic("basic_shoot", d);
+      else if (isBow(p.equip.main)) {
+        this.unusableHint("main");
+        this.startSwing(null, d, true);
+      }
       else this.startSwing(null, d); // auto: throws a throwing weapon with a stack, else melee
       return;
     }
@@ -1786,9 +1895,13 @@ export class Game {
   /** v1.0: basic attacks (no mana, no points). Returns false when it can't be used right now. */
   castBasic(id: BasicId, d: Derived): boolean {
     const p = this.player;
-    if (id === "basic_shoot" || (id === "basic_attack" && isBow(p.equip.main))) {
+    if (id === "basic_shoot" || (id === "basic_attack" && isBow(p.equip.main) && this.usable("main"))) {
       if (!isBow(p.equip.main)) {
         this.hint("Needs a bow");
+        return false;
+      }
+      if (!this.usable("main")) {
+        this.unusableHint("main");
         return false;
       }
       if (!this.hasArrows()) {
@@ -1810,6 +1923,15 @@ export class Game {
     }
     this.startSwing(null, d, true);
     return true;
+  }
+  /** v1.1: "You can't use your Long Bow: needs 40 Dexterity". */
+  unusableHint(sl: EquipSlot) {
+    const it = this.player.equip[sl];
+    if (!it) return;
+    const r = itemReqs(it);
+    const st = this.stats();
+    const need = st.str < r.str ? `${r.str} Strength` : st.dex < r.dex ? `${r.dex} Dexterity` : `level ${r.lvl}`;
+    this.hint(`You can't use your ${itemName(it)}: needs ${need}`);
   }
   hasArrows(): boolean {
     const q = this.player.equip.off;
@@ -1883,15 +2005,16 @@ export class Game {
   startShoot(skill: string | null, d: Derived) {
     const p = this.player;
     const h = d.hands[0];
-    let dur = h.speed / (1 + d.ias);
-    let releaseAt = [0.62];
+    const amz = p.cls === "amazon" ? AMAZON_SPEED : 1;
+    let dur = h.speed / (1 + d.ias) / amz;
+    let releaseAt = [BOW_RELEASE];
     let targets: Monster[] = [];
     let target: Monster | null = null;
     if (skill === "strafe") {
       const lvl = this.skillLevel("strafe");
       targets = this.strafeTargets(lvl);
       const n = strafeArrows(lvl);
-      dur = (h.speed * (0.5 + 0.28 * n)) / (1 + d.ias);
+      dur = (h.speed * (0.5 + 0.28 * n)) / (1 + d.ias) / amz;
       releaseAt = Array.from({ length: n }, (_, i) => 0.15 + (0.78 * i) / (n - 1));
       target = targets[0] ?? null;
     } else target = this.nearestMonster(this.bowRange());
@@ -2194,6 +2317,10 @@ export class Game {
       this.hint(isThrowing(p.equip.main) && isSpearLike(p.equip.main) ? "Out of javelins (refill in camp)" : "Needs throwing javelins");
       return false;
     }
+    if ((JAV_THROWS.has(id) || BOW_SKILLS.has(id) || SPEAR_MELEE.has(id)) && p.equip.main && !this.usable("main")) {
+      this.unusableHint("main");
+      return false;
+    }
     if (BOW_SKILLS.has(id)) {
       if (!isBow(p.equip.main)) {
         this.hint("Needs a bow");
@@ -2473,7 +2600,7 @@ export class Game {
           this.events.sound("howl");
         } else if (chance(findItemChance(lvl) / 100)) {
           const mf = this.derived().mf + (actDef(this.floor).n - 1) * 20;
-          this.dropAt(best.x, best.y, { item: rollDrop(best.mlvl, mf, false) });
+          this.dropAt(best.x, best.y, { item: rollDrop(best.mlvl, mf, false, Math.random, this.player.cls) });
           this.events.sound("drop");
         } else this.floatAt(best.x, best.y, "Nothing", "#aaa", 13);
         return true;
@@ -2724,6 +2851,16 @@ export class Game {
     for (let i = 0; i < 16; i++) this.spark(m.x, m.y, m.def.blood, 4);
     m.fuse = -1;
     m.charging = 0;
+    // v1.1: like Diablo II's Fallen, the rest of a Fallen pack scatters in fear for a moment when one of them dies
+    if (m.def.species === "fallen") {
+      for (const o of this.monsters) {
+        if (o === m || o.state === "dead" || o.pack !== m.pack || o.def.species !== "fallen" || o.def.rank !== "normal") continue;
+        if (Math.hypot(o.x - m.x, o.y - m.y) > FALLEN_SCATTER_R) continue;
+        o.fearT = Math.max(o.fearT, FALLEN_SCATTER_S);
+        o.flee = { x: m.x, y: m.y };
+        if (o.state === "idle") o.state = "chase";
+      }
+    }
     this.gainXp(Math.max(1, Math.round(m.xp * xpPenalty(p.level, m.mlvl))));
     // loot: deeper acts add magic find, so blue/yellow drops get more common as you go
     const act = actDef(this.floor);
@@ -2731,7 +2868,7 @@ export class Game {
     if (m.def.rank !== "normal") {
       const final = m.def.rank === "final";
       this.events.shake(final ? 14 : 10);
-      for (let i = 0; i < (final ? 5 : 3); i++) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (final ? 50 : 0), true) });
+      for (let i = 0; i < (final ? 5 : 3); i++) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (final ? 50 : 0), true, Math.random, this.player.cls) });
       this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(40, 90) * m.mlvl * (final ? 2 : 1)) });
       this.dropAt(m.x, m.y, { item: makeItem("hp_potion") });
       this.dropAt(m.x, m.y, { item: makeItem("mp_potion") });
@@ -2740,7 +2877,7 @@ export class Game {
       if (final) {
         const art = act.artifact;
         if (!this.player.artifacts.some((a) => a.id === art.id)) this.dropArtifact(m.x, m.y, art.id);
-        else this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + 100, true) });
+        else this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + 100, true, Math.random, this.player.cls) });
       }
       // other monsters flee their dead boss's room
       for (const o of this.monsters) if (o.minion && o.state !== "dead") this.kill(o);
@@ -2757,13 +2894,13 @@ export class Game {
       // champions and uniques: better loot (uniques always drop magic or better)
       const u = m.elite === 2;
       // v0.9.1: half as many items (uniques 2 -> 1, champions 1 -> a 50% chance); each item's quality roll is unchanged
-      if (chance(u ? UNIQUE_ITEM_CHANCE : ELITE_ITEM_CHANCE)) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (u ? 100 : 50), u) });
+      if (chance(u ? UNIQUE_ITEM_CHANCE : ELITE_ITEM_CHANCE)) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + (u ? 100 : 50), u, Math.random, this.player.cls) });
       this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(8, 20) * m.mlvl * (u ? 2 : 1)) });
       if (u) this.events.sound("boss");
     } else if (!m.minion || chance(0.3)) {
       const r = Math.random();
       // v0.9.1: items 8.5% (was 17%); gold 20% and potions 9% unchanged
-      if (r < ITEM_DROP) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf, false) });
+      if (r < ITEM_DROP) this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf, false, Math.random, this.player.cls) });
       else if (r < ITEM_DROP + 0.2) this.dropAt(m.x, m.y, { gold: this.goldAmount(randInt(3, 12) * m.mlvl) });
       else if (r < ITEM_DROP + 0.29) this.dropAt(m.x, m.y, { item: makeItem(chance(0.7) ? "hp_potion" : "mp_potion") }); // v0.8: 9% (was 13%)
     }
@@ -2902,8 +3039,7 @@ export class Game {
           this.aggroPack(m);
           if (m.def.rank !== "normal") this.events.sound("boss_aggro");
         } else if (m.leashed && m.homeFlow) {
-          // v1.0.1: a leashed boss walks back to its room (around walls) and heals on the way
-          m.hp = Math.min(m.maxHp, m.hp + m.maxHp * BOSS_RETURN_HEAL * mdt);
+          // v1.0.1: a leashed boss walks back to its room (around walls); v1.1: it heals only once it is home
           const step = this.flowStep(m, m.homeFlow);
           if (!step) {
             m.leashed = false;
@@ -2944,8 +3080,12 @@ export class Game {
       if (m.def.rank !== "normal") {
         // v1.0.1: bosses chase you out of their room; they give up only when you are more than BOSS_LEASH steps
         // (walking distance) from their room, then walk home and heal back to full on the way
+        // v1.1: ...and only after BOSS_GIVE_UP seconds without being hit and without seeing you
         const hd = this.flow[idx(Math.floor(m.homeX), Math.floor(m.homeY))];
-        if (hd > BOSS_LEASH) {
+        const unseen = hd > BOSS_LEASH && !lineOfSight(this.level, m.x, m.y, p.x, p.y);
+        m.lostT = unseen ? (m.lostT ?? 0) + mdt : 0;
+        if (m.lostT >= BOSS_GIVE_UP && this.time - m.lastHurt >= BOSS_GIVE_UP) {
+          m.lostT = 0;
           m.state = "idle";
           m.wx = m.homeX;
           m.wy = m.homeY;
@@ -2954,11 +3094,18 @@ export class Game {
           continue;
         }
         m.leashed = false;
-      } else if (dist > 20) {
-        m.state = "idle";
-        m.wx = m.homeX;
-        m.wy = m.homeY;
-        continue;
+      } else {
+        // v1.1: monsters give up once you have been out of sight for CHASE_LOST_S seconds and are more than
+        // CHASE_LOST_DIST tiles away (was: any time you were more than 20 tiles away)
+        const far = dist > CHASE_LOST_DIST && this.time - m.lastHurt > 1 && !lineOfSight(this.level, m.x, m.y, p.x, p.y);
+        m.lostT = far ? (m.lostT ?? 0) + mdt : 0;
+        if (m.lostT >= CHASE_LOST_S) {
+          m.lostT = 0;
+          m.state = "idle";
+          m.wx = m.homeX;
+          m.wy = m.homeY;
+          continue;
+        }
       }
       const ranged = m.def.behavior === "ranged";
       const reach = ranged ? m.def.reach : m.def.reach + m.def.radius + p.r;
@@ -3326,7 +3473,7 @@ export class Game {
     this.events.died();
   }
 
-  /** After death you wake up in town, like Diablo II, minus 10% of your gold. */
+  /** After death you wake up in town, like Diablo II, minus 10% of the gold you carry (stash gold is safe). */
   respawn() {
     const p = this.player;
     const lost = Math.floor(p.gold * 0.1);
@@ -3669,6 +3816,40 @@ export class Game {
     this.events.changed();
   }
 
+  /** v1.1: top the belt up with potions of this kind from the backpack (after drinking from the belt). */
+  refillBelt(kind: "hp" | "mp") {
+    const p = this.player;
+    const cap = this.beltCap();
+    while ((kind === "hp" ? p.hpPots : p.mpPots) < cap) {
+      const e = p.bag.find((q) => BASE_BY_ID[q.item.baseId].potion === kind);
+      if (!e) break;
+      p.bag = p.bag.filter((q) => q !== e);
+      if (kind === "hp") p.hpPots++;
+      else p.mpPots++;
+    }
+  }
+
+  /** v1.1: "To belt": move a potion from the backpack or stash onto the belt. */
+  toBelt(uid: number): string | null {
+    const p = this.player;
+    const inBag = this.bagEntry(uid);
+    const e = inBag ?? this.stashEntry(uid);
+    if (!e) return "Not found";
+    const pk = BASE_BY_ID[e.item.baseId].potion;
+    if (!pk) return "Only potions go on the belt";
+    if ((pk === "hp" ? p.hpPots : p.mpPots) >= this.beltCap()) return "Your belt is full";
+    if (!inBag && !this.inTown) return "The stash is in Ember Camp";
+    if (inBag) p.bag = p.bag.filter((q) => q !== e);
+    else {
+      p.stash = p.stash.filter((q) => q !== e);
+      this.stashAt = Date.now();
+    }
+    if (pk === "hp") p.hpPots++;
+    else p.mpPots++;
+    this.events.changed();
+    return null;
+  }
+
   drinkFromBag(uid: number) {
     const p = this.player;
     const e = this.bagEntry(uid);
@@ -3688,18 +3869,28 @@ export class Game {
     p.bag = p.bag.filter((q) => q !== e);
     p.gold += price;
     if (!BASE_BY_ID[e.item.baseId].potion) {
-      // keep sold items for buy-back: if the shop is full, push out the oldest plain piece (then magic)
-      const st = this.vendorStock;
-      while (!addItem(st, e.item, VENDOR_W, VENDOR_H)) {
-        const i = st.findIndex((q) => qualityOf(q.item) === "normal" && !BASE_BY_ID[q.item.baseId].potion);
-        const j = i >= 0 ? i : st.findIndex((q) => !BASE_BY_ID[q.item.baseId].potion);
-        if (j < 0) break;
-        st.splice(j, 1);
-      }
+      // v1.1: sold items go to their own buy-back row (the last 8, newest first) and never push out Hilde's wares
+      this.buyback.unshift(e.item);
+      this.buyback.length = Math.min(this.buyback.length, BUYBACK_MAX);
     }
     this.events.sound("gold");
     this.events.changed();
     return price;
+  }
+
+  /** v1.1: buy back something you sold, for what Hilde paid you. */
+  buyBack(uid: number): string | null {
+    const p = this.player;
+    const it = this.buyback.find((q) => q.uid === uid);
+    if (!it) return "Not for sale";
+    const price = sellPrice(it);
+    if (p.gold < price) return "Not enough gold";
+    if (!addItem(p.bag, it)) return "Not enough room in your bag";
+    this.buyback = this.buyback.filter((q) => q !== it);
+    p.gold -= price;
+    this.events.sound("gold");
+    this.events.changed();
+    return null;
   }
 
   /** Buy from the vendor. Potions are unlimited and go to the belt first. */
@@ -3723,6 +3914,19 @@ export class Game {
     return null;
   }
 
+  /** v1.1: put gold into (n > 0) or take it out of (n < 0) this hero's camp stash. Returns the amount moved. */
+  moveStashGold(n: number): number {
+    const p = this.player;
+    if (!this.inTown) return 0;
+    const amt = n > 0 ? Math.min(Math.floor(n), p.gold) : -Math.min(Math.floor(-n), p.stashGold);
+    if (!amt) return 0;
+    p.gold -= amt;
+    p.stashGold += amt;
+    this.events.sound("gold");
+    this.events.changed();
+    return amt;
+  }
+
   /** Belt button: drink from the belt, or from the bag when the belt is empty. */
   usePotion(kind: "hp" | "mp") {
     const p = this.player;
@@ -3732,6 +3936,7 @@ export class Game {
       if (kind === "hp") p.hpPots--;
       else p.mpPots--;
       this.drink(kind);
+      this.refillBelt(kind);
       return;
     }
     const e = p.bag.find((q) => BASE_BY_ID[q.item.baseId].potion === kind);
@@ -3783,9 +3988,14 @@ export class Game {
     return Math.hypot(this.stairs.x - this.player.x, this.stairs.y - this.player.y) < 1.6;
   }
 
+  /** v1.1: only camp and waypoint levels (level 1 and every 5th of an act) show a waypoint stone */
+  waypointHere(): boolean {
+    return this.inTown || hasWaypoint(this.floor);
+  }
+
   nearWaypoint(): boolean {
     const w = this.level.waypoint;
-    return !this.player.dead && Math.hypot(w.x - this.player.x, w.y - this.player.y) < 1.7;
+    return !this.player.dead && this.waypointHere() && Math.hypot(w.x - this.player.x, w.y - this.player.y) < 1.7;
   }
 
   nearVendor(): boolean {

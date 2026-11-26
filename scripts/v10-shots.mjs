@@ -119,6 +119,8 @@ async function arena(main, off, opts = {}) {
     if (g.__upd) g.update = g.__upd;
     g.goTown(true); g.floorCache.clear(); // v1.0.1: a fresh level each time (levels are kept 5 min)
     g.goDungeon(opts.floor ?? 6);
+    // v1.1: gear only works when its requirements are met
+    p.level = Math.max(p.level, 20); p.base.str = Math.max(p.base.str, 150); p.base.dex = Math.max(p.base.dex, 150);
     p.equip.main = mk(main, 20);
     p.equip.off = off ? mk(off, 20) : undefined;
     if (opts.chest !== undefined) p.equip.chest = opts.chest ? mk(opts.chest, 20) : undefined;

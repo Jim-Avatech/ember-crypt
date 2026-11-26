@@ -10,6 +10,23 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.1",
+    title: "Gentler early levels, class loot, stash gold, buy-back",
+    notes: [
+      "Early levels are easier: on level 1 monsters have 20% less life and deal 10% less damage, easing back to normal by level 60. Levels 60–80 are unchanged; boss damage is unchanged everywhere.",
+      "Loot leans to your class (Amazons find more bows, javelins and spears; Barbarians more swords, axes and maces). Hilde always stocks a magic weapon for your class.",
+      "+skill items match the item: bows give Bow skills, javelins and spears give Javelin skills, other weapons and helms give Barbarian skills, amulets mostly your own class.",
+      "Gear you no longer meet the requirements for turns red and stops working until you do.",
+      "Stash gold: each hero can keep gold in the camp stash. It's yours only and safe when you die (you still lose 10% of the gold you carry).",
+      "Hilde's buy-back row: your last 8 sales, kept separate from her wares.",
+      "Potions: a To belt button, and the belt refills from your backpack after you drink.",
+      "Amazons shoot and throw javelins 15% faster, and arrows leave the bow sooner.",
+      "Bosses chase further (45 steps) and give up only after 8 seconds without being hit or seeing you; they heal once home. Other monsters give up after 5 seconds out of sight. Fallen scatter when a packmate dies.",
+      "Corridors are 3 tiles wide. Only waypoint levels (1 and every 5th) show a waypoint stone. The Character panel says which stat adds damage for your weapon.",
+      "The Character screen shows your hero's name and class (it always said Barbarian).",
+    ],
+  },
+  {
     version: "1.0.1",
     title: "Bigger stacks, levels that stay cleared, delete hero, bosses that chase",
     notes: [

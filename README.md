@@ -3,6 +3,18 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.1: gentler early levels, class loot, red items, stash gold, buy-back
+
+- Difficulty curve: level 1 monsters have 80% life / 90% damage of v1.0.1, rising linearly to 100% at level 60 (`CURVE_*`, `curveHp`, `curveDmg` in `src/game.ts`). Levels 60–80 and boss damage are exactly v1.0.1 (tested against `tests/fixtures/v101-monsters.json`).
+- Class-leaning weapon drops (`CLASS_DROP_WEIGHTS`; overall item rate and armor share unchanged); Hilde always stocks a magic weapon for your class.
+- Gear whose requirements you no longer meet is red and gives nothing (`inactiveSlots`, `usable`, `worn`); bows/javelins you can't use refuse to fire with a hint.
+- +skill rolls match the item (`skillPoolFor`): bows → Bow & Crossbow, javelins/spears → Javelin & Spear, other weapons and helms → Barbarian, amulets mostly the finder's class.
+- Buy-back row (last 8 sales, `buyback`, `BUYBACK_MAX`), separate from Hilde's wares. Stash gold per hero (`stashGold`, saved with the hero; death costs 10% of carried gold only).
+- Potions: To belt, belt refills from the backpack. Amazon bows/javelins 15% faster (`AMAZON_SPEED`), arrows leave at 50% of the draw (`BOW_RELEASE`).
+- Bosses: leash 45 steps, give up only after 8 s unhit and unseen, heal only once home. Normal monsters give up after 5 s out of sight beyond 12 tiles; Fallen scatter 1.5 s when a packmate dies.
+- 3-wide corridors (`CORRIDOR_W`); waypoint stone only on waypoint levels (`waypointHere`); Character header shows name and class; weapon-aware stat text.
+- Tests: `tests/v11.test.ts`, `scripts/v11-shots.mjs` (Chromium + WebKit, 852×393). SW cache `ember-crypt-shell-v21`.
+
 ## v1.0.1: bigger stacks, levels that stay cleared, delete hero, bosses that chase, patch notes
 
 - **Bigger stacks (×2):** Arrows 600 → 1,200 per quiver; Javelins 100 → 200; Throwing Axes 120 → 240; Throwing Knives 160 → 320. Existing stacks fill to the new max the next time you're in camp (which includes opening the game).

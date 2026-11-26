@@ -146,6 +146,7 @@ describe("stat application", () => {
 
   it("gear stats flow into the character", () => {
     const g = new Game(events, null, 123);
+    g.player.level = 10; // v1.1: the rare ring needs level 3 to work
     const before = g.derived();
     expect(before.speed).toBeCloseTo(BASE_RUN);
     g.player.equip.ring1 = { ...makeItem("ring", 5), q: "rare", name: "Test Band", mods: [
@@ -168,6 +169,7 @@ describe("stat application", () => {
 
   it("+skill gear raises learned skills only", () => {
     const g = new Game(events, null, 5);
+    g.player.level = 10; // v1.1: the magic helm needs level 7 to work
     g.player.equip.head = { ...makeItem("helm", 10), q: "magic", mods: [{ s: "skill", v: 2, sk: "bash" }] };
     expect(g.skillLevel("bash")).toBe(0);
     g.player.skills.bash = 1;
