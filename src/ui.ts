@@ -5,8 +5,8 @@ import {
   isBow, isThrowing, offBlocked, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
 } from "./data/items";
 import type { SaveData } from "./game";
-import { type BasicId, CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
-import { BUYBACK_MAX, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
+import { CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
+import { BUYBACK_MAX, CLASS_DEF, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
 import type { Settings } from "./save";
@@ -311,7 +311,8 @@ export class Ui {
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
       Math.ceil(p.buffs.shout), Math.ceil(p.buffs.bo), Math.ceil(p.buffs.bcmd), p.buffs.conc > 0, p.buffs.bers > 0, p.frenzy.stacks, Math.ceil(p.frenzy.t), g.maxFloor,
       g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
-      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, p.equip.off?.baseId, p.mainAtk, p.cls, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
+      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, p.equip.off?.baseId, p.mainAtk, p.cls,
+      g.mainSkill() ? (SKILL_BY_ID[g.mainSkill()!].mana?.(g.skillLevel(g.mainSkill()!)) ?? 0) <= p.mana : -1, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
     ].join("|");
     if (key === this.lastHud) return;
     this.lastHud = key;
@@ -328,7 +329,12 @@ export class Ui {
     const bowArrows = BASE_BY_ID[p.equip.main?.baseId ?? ""]?.kind === "bow" ? (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.kind === "quiver" ? p.equip.off!.qty ?? 0 : 0) : -1;
     const throwing = !!thr && (thr.qty ?? 0) > 0 && (mb === "basic_throw" || (!p.mainAtk && mb === "basic_attack"));
     ab.classList.toggle("throw", throwing || (mb === "basic_shoot" && bowArrows > 0));
-    $(ab, "span").textContent = mb === "basic_shoot" ? "↟" : throwing ? "➶" : "⚔";
+    // v1.2: a skill on ⚔ shows its glyph (same button, same size), dimmed while you lack the mana
+    const msk = g.mainSkill();
+    const mskDef = msk ? SKILL_BY_ID[msk] : null;
+    ab.classList.toggle("skill", !!mskDef);
+    ab.classList.toggle("nomana", !!mskDef && (mskDef.mana?.(g.skillLevel(msk!)) ?? 0) > p.mana);
+    $(ab, "span").textContent = mskDef ? mskDef.glyph : mb === "basic_shoot" ? "↟" : throwing ? "➶" : "⚔";
     $(ab, ".ammo").textContent = mb === "basic_shoot" && bowArrows >= 0 ? `${bowArrows}` : thr && mb !== "basic_attack" ? `${(thr.qty ?? 0) + (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.thrown ? p.equip.off!.qty ?? 0 : 0)}` : thr && !p.mainAtk ? `${(thr.qty ?? 0) + (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.thrown ? p.equip.off!.qty ?? 0 : 0)}` : "";
     $(r, "#btn-hp b").textContent = `${p.hpPots}`;
     $(r, "#btn-mp b").textContent = `${p.mpPots}`;
@@ -435,6 +441,7 @@ export class Ui {
   }
 
   close() {
+    this.respecAsk = null;
     this.cancelDrag();
     this.openTab = null;
     this.input.enabled = true;
@@ -495,6 +502,7 @@ export class Ui {
         </div>
         <div class="pbody pbody-${tab}">${body}</div>
         ${this.sheetHtml()}
+        ${tab === "char" || tab === "skills" ? this.respecHtml() : ""}
       </div>`;
     this.panel.querySelectorAll<HTMLElement>(".ccard").forEach((c) => Ui.markMore(c));
   }
@@ -508,7 +516,9 @@ export class Ui {
   private nearButton(x: number, y: number, r: number): HTMLElement | null {
     let best: HTMLElement | null = null;
     let bd = r;
-    for (const el of this.panel.querySelectorAll<HTMLElement>("[data-act]")) {
+    // v1.2: while the respec confirm is open, only its own buttons count
+    const scope = this.panel.querySelector<HTMLElement>(".rsp") ?? this.panel;
+    for (const el of scope.querySelectorAll<HTMLElement>("[data-act]")) {
       const b = el.getBoundingClientRect();
       if (!b.width) continue;
       const d = Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom));
@@ -589,17 +599,37 @@ export class Ui {
       case "tab":
         this.openTab = el.dataset.tab as PanelTab;
         this.sel = null;
+        this.respecAsk = null;
         this.confirmReset = false;
         break;
       case "stat":
         g.addStat(el.dataset.stat as keyof Stats);
         break;
+      case "unstat":
+        this.respecAsk = { kind: "stat", k: el.dataset.stat as keyof Stats };
+        break;
+      case "unskill":
+        this.respecAsk = { kind: "skill", id: el.dataset.id! };
+        break;
+      case "respec-no":
+        this.respecAsk = null;
+        break;
+      case "respec-yes": {
+        const a = this.respecAsk;
+        if (a) {
+          const err = a.kind === "stat" ? g.unstat(a.k) : g.unlearn(a.id);
+          if (err) this.toast(err);
+          else this.toast(`Point removed for ${respecCost(g.player.level).toLocaleString()} gold`);
+        }
+        this.respecAsk = null;
+        break;
+      }
       case "stree":
         this.skillTab = el.dataset.tree as Tab;
         this.selSkill = SKILLS.find((s) => s.tab === this.skillTab)!.id;
         break;
       case "mainatk":
-        g.setMainAtk((el.dataset.id || null) as BasicId | null);
+        g.setMainAtk(el.dataset.id || null);
         break;
       case "skill":
         this.selSkill = el.dataset.id!;
@@ -1002,6 +1032,29 @@ export class Ui {
     this.sel = null;
   }
 
+  // ------------------------------------------------------------ v1.2: respec confirm
+  private respecAsk: { kind: "stat"; k: keyof Stats } | { kind: "skill"; id: string } | null = null;
+  private respecHtml(): string {
+    const a = this.respecAsk;
+    if (!a) return "";
+    const g = this.game();
+    const p = g.player;
+    const STAT_NAME: Record<keyof Stats, string> = { str: "Strength", dex: "Dexterity", vit: "Vitality", ene: "Energy" };
+    const c = a.kind === "stat" ? g.canUnstat(a.k) : g.canUnlearn(a.id);
+    const what =
+      a.kind === "stat"
+        ? `1 point of ${STAT_NAME[a.k]} <span class="muted">(${p.base[a.k]} → ${p.base[a.k] - 1})</span>`
+        : `1 point of ${esc(SKILL_BY_ID[a.id].name)} <span class="muted">(${p.skills[a.id] ?? 0} → ${(p.skills[a.id] ?? 0) - 1})</span>`;
+    const funds = g.respecFunds();
+    const where = g.inTown && p.stashGold ? `you have ${funds.toLocaleString()} with your stash gold` : `you carry ${p.gold.toLocaleString()}`;
+    return `<div class="rsp-back"><div class="rsp" role="dialog" aria-label="Remove a point">
+      <div class="rsp-t">Remove ${what}?</div>
+      <div class="rsp-c">Costs <b class="gold">${c.cost.toLocaleString()} gold</b> (${where}). You get the ${a.kind === "stat" ? "stat" : "skill"} point back to spend again.</div>
+      ${c.ok ? "" : `<div class="rsp-why bad">${esc(c.why ?? "")}</div>`}
+      <div class="ibtns"><button class="gbtn" data-act="respec-yes" ${c.ok ? "" : "disabled"}>Remove for ${c.cost.toLocaleString()} gold</button><button class="gbtn dim" data-act="respec-no">Cancel</button></div>
+    </div></div>`;
+  }
+
   // ------------------------------------------------------------ character
   private charHtml() {
     const g = this.game();
@@ -1017,10 +1070,12 @@ export class Ui {
       : isThrowing(mw)
         ? { str: "+0.75% throwing damage each", dex: "+0.75% throwing damage each, attack rating, defense" }
         : { str: "+1% melee damage each", dex: "attack rating, defense" };
+    const minStat = CLASS_DEF[p.cls].stats; // v1.2: respec never goes below the class's starting stats
     const row = (k: keyof Stats, name: string, note: string) => `
       <div class="srow">
         <div class="sname">${name}<small>${note}</small></div>
         <div class="sval ${tot[k] !== s[k] ? "mod" : ""}">${tot[k]}${tot[k] !== s[k] ? `<small> (${s[k]}+${tot[k] - s[k]})</small>` : ""}</div>
+        ${s[k] > minStat[k] ? `<button class="sminus" data-act="unstat" data-stat="${k}" aria-label="Remove a ${name} point">−</button>` : `<span class="sminus off"></span>`}
         ${p.statPoints ? `<button class="splus" data-act="stat" data-stat="${k}" aria-label="Add ${name}">+</button>` : `<span class="splus off"></span>`}
       </div>`;
     const hands = d.hands
@@ -1456,15 +1511,18 @@ export class Ui {
       const can = g.canLearn(s.id);
       const pre = s.prereq.length ? `Requires: ${s.prereq.map((q) => SKILL_BY_ID[q].name).join(", ")}` : "";
       const basic = isBasic(s.id);
+      // v1.2: any learned active skill can go on the main ⚔ button too (tap ⚔ again for Auto)
+      const onMain = p.mainAtk === s.id;
+      const mainBtn = !basic ? `<button class="slotb mainb ${onMain ? "on" : ""}" data-act="mainatk" data-id="${onMain ? "" : s.id}" aria-label="Main attack button">⚔${onMain ? " ✓" : ""}</button>` : "";
       const slotBtns =
         s.kind === "active" && s.implemented && (lvl || basic)
-          ? `<div class="assign"><span>Skill button:</span>${Array.from({ length: SKILL_SLOTS }, (_, i) => i)
+          ? `<div class="assign"><span>Button:</span>${Array.from({ length: SKILL_SLOTS }, (_, i) => i)
               .map((i) =>
                 p.slots[i] === s.id
                   ? `<button class="slotb on" data-act="unassign" data-slot="${i}">${i + 1} ✓</button>`
                   : `<button class="slotb" data-act="assign" data-slot="${i}" data-id="${s.id}">${i + 1}</button>`,
               )
-              .join("")}</div>`
+              .join("")}${mainBtn}</div>`
           : "";
       if (basic) {
         const main = g.mainBasic();
@@ -1480,7 +1538,7 @@ export class Ui {
           <button class="slotb wide ${auto ? "on" : ""}" data-act="mainatk" data-id="">Auto${auto ? " ✓" : ""}</button>
           <button class="slotb wide ${p.mainAtk === s.id ? "on" : ""}" data-act="mainatk" data-id="${s.id}">${esc(s.name)}${p.mainAtk === s.id ? " ✓" : ""}</button>
         </div>
-        <div class="hint">Now ⚔ ${auto ? `is on Auto: ${esc(autoText)}` : `uses ${esc(SKILL_BY_ID[main].name)}`}.</div>
+        <div class="hint">Now ⚔ ${auto ? `is on Auto: ${esc(autoText)}` : `uses ${esc(SKILL_BY_ID[g.mainSkill() ?? main].name)}`}.${g.mainSkill() ? " (Pick Auto or a basic attack to change it.)" : ""}</div>
         ${slotBtns}`;
       } else
       detail = `
@@ -1492,6 +1550,7 @@ export class Ui {
         ${pre ? `<div class="sreq">${esc(pre)}</div>` : ""}
         <div class="ibtns">
           <button class="gbtn" data-act="learn" data-id="${s.id}" ${can.ok ? "" : "disabled"}>${can.ok ? (lvl ? "Add point" : "Learn") : esc(can.why ?? "")}</button>
+          ${(p.skills[s.id] ?? 0) > 0 ? `<button class="gbtn dim" data-act="unskill" data-id="${s.id}" aria-label="Remove a point">− Point</button>` : ""}
         </div>
         ${slotBtns}`;
     }

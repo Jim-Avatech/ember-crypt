@@ -10,6 +10,15 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.2",
+    title: "Respec one point at a time, any skill on ⚔",
+    notes: [
+      "Respec: take one point out of a skill (Skills → − Point) or a stat (Character → −) and get it back to spend again. Each point costs 50 gold × your level (level 20: 1,000 gold), paid from the gold you carry, then your stash gold when you're in camp.",
+      "You can't remove a point a learned skill depends on, go below your class's starting stats, or drop a stat your worn gear needs.",
+      "Any learned skill can go on the main ⚔ button (Skills → pick a skill → ⚔). It works like a skill button: attack skills repeat while held and swing normally when you're out of mana; warcries and other helpers fire once per press, then holding ⚔ keeps attacking.",
+    ],
+  },
+  {
     version: "1.1",
     title: "Gentler early levels, class loot, stash gold, buy-back",
     notes: [

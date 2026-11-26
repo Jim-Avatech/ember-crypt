@@ -10,7 +10,7 @@ import {
   ACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, hasWaypoint, MAX_FLOOR, actDef, actOf, floorName, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
 } from "./data/acts";
 import {
-  FRENZY_HOLD, FRENZY_MAX_STACKS, MAX_SKILL_LVL, SKILL_BY_ID, bashAR, bashDmg, boDur, boPct, doubleSwingAR, doubleThrowAR,
+  FRENZY_HOLD, FRENZY_MAX_STACKS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, bashAR, bashDmg, boDur, boPct, doubleSwingAR, doubleThrowAR,
   findPotionChance, frenzyAR, frenzyDmg, frenzyIas, frenzyMove, howlDur,
   incSpeed, ironSkinDef, leapAttackDmg, leapRange, masteryAR, masteryCrit, masteryDmg, shoutDef, shoutDur,
   stunAR, stunDur, skillCap,
@@ -154,7 +154,8 @@ export interface Player {
   cls: HeroClass;
   name: string;
   /** v1.0: the basic attack the main ⚔ button uses (null = automatic: shoot with a bow, throw a throwing weapon, else attack) */
-  mainAtk: BasicId | null;
+  /** what the main ⚔ button does: null = automatic basic attack, a basic attack id, or (v1.2) any active skill */
+  mainAtk: string | null;
   x: number;
   y: number;
   r: number;
@@ -512,7 +513,7 @@ export interface SaveData {
   floor: number;
   maxFloor: number;
   player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & {
-    stashGold?: number; stash?: BagEntry[]; artifacts?: FoundArtifact[]; cls?: HeroClass; name?: string; mainAtk?: BasicId | null;
+    stashGold?: number; stash?: BagEntry[]; artifacts?: FoundArtifact[]; cls?: HeroClass; name?: string; mainAtk?: string | null;
   };
   /** v1.0: when the (shared) stash last changed; the newest copy of the stash wins across heroes */
   stashAt?: number;
@@ -589,6 +590,21 @@ const SPEAR_MELEE = new Set(["jab", "power_strike", "impale", "charged_strike", 
 const JAV_THROWS = new Set(["poison_javelin", "lightning_bolt", "plague_javelin", "lightning_fury"]);
 const BOW_SKILLS = new Set(["magic_arrow", "fire_arrow", "cold_arrow", "multiple_shot", "exploding_arrow", "guided_arrow", "ice_arrow", "strafe", "immolation_arrow", "freezing_arrow"]);
 const TWO_HIT = new Set(["double_swing", "frenzy"]);
+/** v1.2: the main ⚔ button can hold a basic attack or any active skill of the hero's class */
+export function mainAtkOk(id: unknown, cls: HeroClass): id is string {
+  if (typeof id !== "string") return false;
+  if (isBasic(id)) return true;
+  const s = SKILL_BY_ID[id];
+  return !!s && s.kind === "active" && s.implemented && s.cls === cls;
+}
+/**
+ * v1.2: skills that don't attack (warcries, Leap, Amazon helpers). On ⚔ they fire once per press; holding ⚔ after
+ * that keeps attacking normally, so a held button never burns mana re-casting a buff.
+ */
+export const ONCE_PER_PRESS = new Set(["leap", "howl", "find_potion", "taunt", "shout", "find_item", "battle_cry", "battle_orders", "grim_ward", "war_cry", "battle_command", "inner_sight", "slow_missiles", "decoy", "valkyrie"]);
+/** v1.2: removing one skill or stat point costs this much gold per character level (level 20: 1,000 gold) */
+export const RESPEC_GOLD_PER_LEVEL = 50;
+export const respecCost = (level: number) => RESPEC_GOLD_PER_LEVEL * Math.max(1, level);
 
 /** Drop anything that would crash the game (unknown item classes, broken bag entries). */
 function sanitizeV3(d: SaveData): SaveData {
@@ -642,7 +658,7 @@ function sanitizeV7(d: SaveData): SaveData {
   if (!isHeroClass(p.cls)) p.cls = "barbarian";
   if (typeof p.name !== "string" || !p.name.trim()) p.name = CLASS_NAME[p.cls];
   p.name = p.name.slice(0, 16);
-  if (p.mainAtk !== null && p.mainAtk !== undefined && !isBasic(p.mainAtk)) p.mainAtk = null;
+  if (p.mainAtk !== null && p.mainAtk !== undefined && !mainAtkOk(p.mainAtk, p.cls)) p.mainAtk = null;
   // points in another class's skills (hand-edited or mixed-up save) go back to the pool, never lost
   if (p.skills && typeof p.skills === "object")
     for (const [id, n] of Object.entries(p.skills)) {
@@ -815,6 +831,9 @@ export class Game {
   inTown = true;
   maxFloor = 1;
   vendorStock: BagEntry[] = [];
+  private prevAttack = false;
+  /** v1.2: ⚔ was pressed and hasn't started an action yet (a press during another action still counts) */
+  private atkPressPending = false;
   /** v1.1: the last items you sold (newest first), kept apart from Hilde's wares for this play session */
   buyback: Item[] = [];
   hitLog: HitLog[] = [];
@@ -882,7 +901,7 @@ export class Game {
       this.player.poison = { t: 0, dps: 0 };
       if (!isHeroClass(this.player.cls)) this.player.cls = "barbarian";
       if (!this.player.name) this.player.name = CLASS_NAME[this.player.cls];
-      if (!isBasic(this.player.mainAtk)) this.player.mainAtk = null;
+      if (!mainAtkOk(this.player.mainAtk, this.player.cls)) this.player.mainAtk = null;
       this.stashAt = save.stashAt ?? 0;
       this.floor = save.floor;
       this.maxFloor = Math.max(save.maxFloor ?? save.floor, save.floor);
@@ -1559,7 +1578,16 @@ export class Game {
         }
       }
     }
-    if (!p.action && input.attack) this.mainAttack(d);
+    // v1.2: a fresh press of ⚔ (for once-per-press skills on it)
+    const freshAtk = input.attack && !this.prevAttack;
+    if (freshAtk) this.atkPressPending = true;
+    if (!input.attack) this.atkPressPending = false;
+    this.prevAttack = input.attack;
+    if (!p.action && input.attack) {
+      const fresh = this.atkPressPending;
+      this.atkPressPending = false;
+      this.mainAttack(d, fresh);
+    }
 
     // run current action
     p.moving = false;
@@ -1684,10 +1712,92 @@ export class Game {
     this.events.changed();
   }
 
-  /** v1.0: which basic attack the main ⚔ button uses (null = automatic). */
-  setMainAtk(id: BasicId | null) {
-    this.player.mainAtk = id && isBasic(id) ? id : null;
+  /** Which attack the main ⚔ button uses (null = automatic). v1.2: any learned active skill of your class too. */
+  setMainAtk(id: string | null) {
+    const p = this.player;
+    p.mainAtk = id && mainAtkOk(id, p.cls) && (isBasic(id) || this.skillLevel(id) > 0) ? id : null;
     this.events.changed();
+  }
+
+  // ------------------------------------------------------------------ v1.2: respec one point at a time
+  /** Gold you can pay a respec with: carried gold, plus the stash's gold while you are in camp (where the stash is). */
+  respecFunds(): number {
+    return this.player.gold + (this.inTown ? this.player.stashGold : 0);
+  }
+  private payRespec(): boolean {
+    const p = this.player;
+    const cost = respecCost(p.level);
+    if (this.respecFunds() < cost) return false;
+    const fromBag = Math.min(p.gold, cost);
+    p.gold -= fromBag;
+    p.stashGold -= cost - fromBag;
+    return true;
+  }
+  /** Can one hard point come out of this skill? (Not if a skill you've learned needs it, like D2's tree.) */
+  canUnlearn(id: string): { ok: boolean; why?: string; cost: number } {
+    const p = this.player;
+    const cost = respecCost(p.level);
+    const s = SKILL_BY_ID[id];
+    const hard = p.skills[id] ?? 0;
+    if (!s || s.cls !== p.cls || hard <= 0) return { ok: false, why: "No points to remove", cost };
+    if (hard === 1) {
+      const needs = SKILLS.filter((o) => (p.skills[o.id] ?? 0) > 0 && o.prereq.includes(id));
+      if (needs.length) return { ok: false, why: `${needs.map((o) => o.name).join(" and ")} need${needs.length === 1 ? "s" : ""} it`, cost };
+    }
+    if (this.respecFunds() < cost) return { ok: false, why: `Needs ${cost.toLocaleString()} gold`, cost };
+    return { ok: true, cost };
+  }
+  /** Take one point out of a skill for gold; the skill point comes back to spend again. */
+  unlearn(id: string): string | null {
+    const c = this.canUnlearn(id);
+    if (!c.ok) return c.why ?? "Can't";
+    const p = this.player;
+    this.payRespec();
+    p.skills[id]--;
+    p.skillPoints++;
+    if (p.skills[id] <= 0) {
+      delete p.skills[id];
+      if (this.skillLevel(id) <= 0) {
+        // fully unlearned (no +skill gear keeps it): off the buttons
+        p.slots = p.slots.map((q) => (q === id ? null : q));
+        if (p.mainAtk === id) p.mainAtk = null;
+      }
+    }
+    this.clampVitals();
+    this.events.sound("gold");
+    this.events.changed();
+    return null;
+  }
+  /** Can one point come out of this stat? Never below the class's starting value or below what worn gear needs. */
+  canUnstat(k: keyof Stats): { ok: boolean; why?: string; cost: number } {
+    const p = this.player;
+    const cost = respecCost(p.level);
+    const min = (CLASS_DEF[p.cls] ?? CLASS_DEF.barbarian).stats[k];
+    if (p.base[k] <= min) return { ok: false, why: `Starts at ${min}`, cost };
+    if (k === "str" || k === "dex") {
+      const before = new Set(this.inactiveSlots());
+      p.base[k]--;
+      const after = this.inactiveSlots();
+      p.base[k]++;
+      this.inactiveSlots();
+      const lost = [...after].filter((sl) => !before.has(sl));
+      if (lost.length) return { ok: false, why: `Your ${itemName(p.equip[lost[0]]!)} needs it`, cost };
+    }
+    if (this.respecFunds() < cost) return { ok: false, why: `Needs ${cost.toLocaleString()} gold`, cost };
+    return { ok: true, cost };
+  }
+  /** Take one point out of a stat for gold; the stat point comes back to spend again. */
+  unstat(k: keyof Stats): string | null {
+    const c = this.canUnstat(k);
+    if (!c.ok) return c.why ?? "Can't";
+    const p = this.player;
+    this.payRespec();
+    p.base[k]--;
+    p.statPoints++;
+    this.clampVitals();
+    this.events.sound("gold");
+    this.events.changed();
+    return null;
   }
 
   /** The closest unsearched corpse within reach (Find Potion, Find Item, Grim Ward). */
@@ -1874,23 +1984,46 @@ export class Game {
   /** v1.0: the main ⚔ button: the chosen basic attack, or automatic (shoot with a bow, throw a throwing weapon, else attack). */
   mainBasic(): BasicId {
     const p = this.player;
-    if (p.mainAtk) return p.mainAtk;
+    if (p.mainAtk && isBasic(p.mainAtk)) return p.mainAtk;
     if (isBow(p.equip.main)) return "basic_shoot";
     return "basic_attack"; // "attack" still throws a throwing weapon automatically, like before v1.0
   }
-  private mainAttack(d: Derived) {
+  /** v1.2: the skill on ⚔ (null when ⚔ holds a basic attack or Auto) */
+  mainSkill(): string | null {
+    const id = this.player.mainAtk;
+    return id && !isBasic(id) ? id : null;
+  }
+  private mainAttack(d: Derived, fresh: boolean) {
     const p = this.player;
-    const id = p.mainAtk;
-    if (!id) {
-      if (isBow(p.equip.main) && this.usable("main")) this.castBasic("basic_shoot", d);
-      else if (isBow(p.equip.main)) {
-        this.unusableHint("main");
-        this.startSwing(null, d, true);
+    const sk = this.mainSkill();
+    if (sk) {
+      // v1.2: a skill on ⚔ works like on a skill button. Attack skills repeat while held and, out of mana, fall
+      // back to a normal attack (as on the skill buttons); buffs, warcries and helpers fire once per press, and a
+      // held ⚔ then keeps attacking. If the skill can't be used (no mana, wrong weapon), ⚔ attacks normally.
+      if (this.skillLevel(sk) <= 0) {
+        p.mainAtk = null; // unlearned (gear with the +skill came off): back to Auto
+      } else if (!ONCE_PER_PRESS.has(sk) || fresh) {
+        this.castSlot = -1;
+        if (this.castSkill(sk, d)) return;
       }
-      else this.startSwing(null, d); // auto: throws a throwing weapon with a stack, else melee
+      this.autoAttack(d);
+      return;
+    }
+    const id = p.mainAtk as BasicId | null;
+    if (!id) {
+      this.autoAttack(d);
       return;
     }
     if (!this.castBasic(id, d) && id !== "basic_attack") this.startSwing(null, d, true);
+  }
+  /** Auto: shoot with a bow, throw a throwing weapon with a stack, else melee. */
+  private autoAttack(d: Derived) {
+    const p = this.player;
+    if (isBow(p.equip.main) && this.usable("main")) this.castBasic("basic_shoot", d);
+    else if (isBow(p.equip.main)) {
+      this.unusableHint("main");
+      this.startSwing(null, d, true);
+    } else this.startSwing(null, d); // throws a throwing weapon with a stack, else melee
   }
   /** v1.0: basic attacks (no mana, no points). Returns false when it can't be used right now. */
   castBasic(id: BasicId, d: Derived): boolean {

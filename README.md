@@ -3,6 +3,12 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.2: respec one point at a time, any skill on ⚔
+
+- Respec (`canUnstat`/`unstat`, `canUnlearn`/`unlearn`, `respecCost` in `src/game.ts`): one stat or skill point back for 50 gold × level (`RESPEC_GOLD_PER_LEVEL`), paid from carried gold, then stash gold in camp. Never below class starting stats, never a prerequisite of a learned skill, never a stat worn gear needs (refused rather than turning gear red). UI: − on the Character page, − Point on the Skills page, with a confirm showing the cost.
+- Any learned active skill on ⚔ (`mainAtk`, `mainAtkOk`, `mainSkill`): attack skills repeat while held and fall back to a normal attack without mana; `ONCE_PER_PRESS` skills (warcries, Leap, Amazon helpers) fire once per press, then a held ⚔ attacks normally. The button shows the skill's glyph, dimmed without mana; it never moves or resizes.
+- Tests: `tests/v12.test.ts`, `scripts/v12-shots.mjs`. SW cache `ember-crypt-shell-v22`.
+
 ## v1.1: gentler early levels, class loot, red items, stash gold, buy-back
 
 - Difficulty curve: level 1 monsters have 80% life / 90% damage of v1.0.1, rising linearly to 100% at level 60 (`CURVE_*`, `curveHp`, `curveDmg` in `src/game.ts`). Levels 60–80 and boss damage are exactly v1.0.1 (tested against `tests/fixtures/v101-monsters.json`).

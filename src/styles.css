@@ -1574,3 +1574,16 @@ body.portrait #rotate {
 /* v1.1: per-hero stash gold (in the stash header) */
 .sgold .sgbtns { display: flex; align-items: center; gap: 4px; }
 .sgold .gbtn { padding: 1px 7px; font-size: 11px; min-height: 0; line-height: 1.3; }
+/* v1.2: respec (remove one point for gold) */
+.sminus { width: 30px; height: 30px; font-size: 18px; border: 1px solid #5a4630; border-radius: 4px; background: linear-gradient(#2e2216, #1a1108); color: #c8a878; }
+.sminus.off { display: inline-block; border: none; background: none; }
+.rsp-back { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.rsp { width: min(440px, 90%); background: linear-gradient(#2a1e12, #160e06); border: 1px solid #a07c44; border-radius: 6px; padding: 14px 16px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7); }
+.rsp-t { font-size: 17px; color: #ffe08a; margin-bottom: 6px; }
+.rsp-c { font-size: 13px; color: #d8c8a8; line-height: 1.4; }
+.rsp-why { margin-top: 6px; font-size: 13px; }
+.rsp .ibtns { margin-top: 10px; }
+/* v1.2: a skill on the main ⚔ button (same size and place) */
+.slotb.mainb { min-width: 44px; }
+#btn-attack.skill span { font-size: 30px; }
+#btn-attack.nomana { filter: saturate(0.4) brightness(0.75); }
