@@ -19,7 +19,7 @@ import {
   type BasicId, type HeroClass, CLASS_NAME, isBasic, avoidChance, chargedStrikeBolts, chargedStrikeDmg, coldArrowChill, coldArrowDmg, critStrike, decoyDur,
   dodgeChance, evadeChance, explodingDmg, fendAR, fendDmg, fireArrowDmg, freezingDmg, freezingFreeze, furyBolts, furyDmg, guidedDmg, iceArrowDmg,
   iceArrowFreeze, immolationDmg, immolationDps, immolationDur, impaleAR, impaleDmg, innerSightDef, innerSightDur, jabAR, jabDmg, lightningBoltDmg,
-  lightningStrikeDmg, lightningStrikeHits, magicArrowDmg, MULTI_DMG, multiShotArrows, penetrateAR, pierceChance, plagueDps, poisonJavDps,
+  lightningStrikeDmg, lightningStrikeHits, magicArrowDmg, multiShotArrows, multiShotPer, penetrateAR, pierceChance, plagueDps, poisonJavDps,
   powerStrikeLight, slowMissilesDur, strafeArrows, strafeDmg, valkDmg, valkLife,
 } from "./data/skills";
 import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
@@ -2316,7 +2316,7 @@ export class Game {
         case "fire_arrow": this.playerHit(m, q.hand, { elem: { e: "fire", pct: fireArrowDmg(lvl) }, knock: 1 }); break;
         case "cold_arrow": this.playerHit(m, q.hand, { elem: { e: "cold", pct: coldArrowDmg(lvl) }, chill: coldArrowChill(lvl), knock: 1 }); break;
         case "ice_arrow": this.playerHit(m, q.hand, { elem: { e: "cold", pct: iceArrowDmg(lvl) }, freeze: iceArrowFreeze(lvl), knock: 1 }); break;
-        case "multiple_shot": this.playerHit(m, q.hand, { dmgPct: MULTI_DMG, knock: 1 }); break;
+        case "multiple_shot": this.playerHit(m, q.hand, { mult: multiShotPer(lvl) / 100, knock: 1 }); break; // v1.2.1: volley total split per arrow
         case "guided_arrow": this.playerHit(m, q.hand, { dmgPct: guidedDmg(lvl), sure: true, knock: 1.5 }); break;
         case "strafe": this.playerHit(m, q.hand, { dmgPct: strafeDmg(lvl), knock: 1 }); break;
         case "exploding_arrow":
@@ -2921,7 +2921,7 @@ export class Game {
 
   private playerHit(
     m: Monster, d: Hand,
-    o: { dmgPct?: number; arPct?: number; knock?: number; stun?: number; magic?: boolean; elem?: { e: Elem; pct: number }; sure?: boolean; chill?: number; freeze?: number; noLeech?: boolean },
+    o: { dmgPct?: number; mult?: number; arPct?: number; knock?: number; stun?: number; magic?: boolean; elem?: { e: Elem; pct: number }; sure?: boolean; chill?: number; freeze?: number; noLeech?: boolean },
   ): boolean {
     const p = this.player;
     const ar = d.ar * (1 + (o.arPct ?? 0) / 100);
@@ -2939,7 +2939,9 @@ export class Game {
     if (crit) dmg *= 2;
     // v1.0: elemental part (Fire/Cold/Ice Arrow, Power Strike): a share of the weapon's average hit, never doubled by crits
     const extra = o.elem ? Math.max(1, Math.round(((d.min + d.max) / 2) * (1 + d.dmgPct / 100) * (o.elem.pct / 100) * rand(0.85, 1.15))) : 0;
-    dmg = Math.max(1, Math.round(dmg)) + extra;
+    // v1.2.1: a whole-hit multiplier (Multiple Shot's share of the volley), physical and elemental alike
+    const k = o.mult ?? 1;
+    dmg = Math.max(1, Math.round(dmg * k)) + (extra ? Math.max(1, Math.round(extra * k)) : 0);
     m.hp -= dmg;
     m.flash = 1;
     m.lastHurt = this.time;

@@ -10,6 +10,14 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.2.1",
+    title: "Multiple Shot rebalance",
+    notes: [
+      "Multiple Shot's arrows now share one volley's damage: the whole volley is 125% of a normal shot at level 1, +5% per level (level 10: 170%, level 20: 220%), split evenly over the arrows (still +1 arrow per level, up to 12).",
+      "Point-blank shotgunning still works (every arrow can hit the same monster), it just pays off less wildly. The tooltip shows damage per arrow and the volley total.",
+    ],
+  },
+  {
     version: "1.2",
     title: "Respec one point at a time, any skill on ⚔",
     notes: [

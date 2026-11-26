@@ -3,6 +3,11 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.2.1: Multiple Shot rebalance
+
+- A volley's total damage is `multiShotTotal(l)` = 125% + 5% × (level − 1) of a normal hit, split evenly over `multiShotArrows(l)` arrows (`multiShotPer`), applied as a whole-hit multiplier (physical and elemental) in `playerHit`. Every arrow can still hit the same monster.
+- Tests: `tests/v121.test.ts` (formula at levels 1/10/20, point-blank ≈ 1.25× / 1.7× a normal shot), `scripts/v121-shots.mjs` (tooltip). SW cache `ember-crypt-shell-v23`.
+
 ## v1.2: respec one point at a time, any skill on ⚔
 
 - Respec (`canUnstat`/`unstat`, `canUnlearn`/`unlearn`, `respecCost` in `src/game.ts`): one stat or skill point back for 50 gold × level (`RESPEC_GOLD_PER_LEVEL`), paid from carried gold, then stash gold in camp. Never below class starting stats, never a prerequisite of a learned skill, never a stat worn gear needs (refused rather than turning gear red). UI: − on the Character page, − Point on the Skills page, with a confirm showing the cost.

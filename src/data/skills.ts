@@ -149,7 +149,13 @@ export const fireArrowDmg = (l: number) => 35 + (l - 1) * 15;
 export const coldArrowDmg = (l: number) => 25 + (l - 1) * 12;
 export const coldArrowChill = (l: number) => 2 + l * 0.4;
 export const multiShotArrows = (l: number) => Math.min(12, 2 + l);
+/** v1.0–v1.2: each arrow −25% damage (kept for reference; v1.2.1 splits a volley total instead) */
 export const MULTI_DMG = -25;
+/** v1.2.1: a whole Multiple Shot volley deals this % of your normal hit (125% at level 1, +5% per level)... */
+export const multiShotTotal = (l: number) => 125 + 5 * (Math.max(1, l) - 1);
+/** ...split evenly over its arrows, so point-blank (every arrow on one monster) is about 1.25× a normal shot */
+export const multiShotPer = (l: number) => multiShotTotal(l) / multiShotArrows(l);
+const pct1 = (v: number) => `${Math.round(v * 10) / 10}`;
 export const explodingDmg = (l: number) => 45 + (l - 1) * 20;
 export const guidedDmg = (l: number) => 50 + (l - 1) * 10;
 export const iceArrowDmg = (l: number) => 35 + (l - 1) * 12;
@@ -361,9 +367,9 @@ export const SKILLS: SkillDef[] = [
   }),
   S({
     id: "multiple_shot", name: "Multiple Shot", tab: "bow", reqLvl: 6, row: 1, col: 0, glyph: "⋔", prereq: ["magic_arrow"], implemented: true,
-    blurb: "Splits one arrow into a fan of arrows (each deals 3/4 damage, like D2).",
+    blurb: "Splits one shot into a fan of arrows that share its damage: all of them on one monster is a bit more than a normal shot.",
     mana: (l) => 4 + Math.floor(l / 2),
-    effect: (l) => `${multiShotArrows(l)} arrows, ${MULTI_DMG}% damage each`,
+    effect: (l) => `${multiShotArrows(l)} arrows, ${pct1(multiShotPer(l))}% damage each (volley total ${multiShotTotal(l)}%)`,
   }),
   S({
     id: "exploding_arrow", name: "Exploding Arrow", tab: "bow", reqLvl: 12, row: 2, col: 2, glyph: "✸", prereq: ["multiple_shot", "fire_arrow"], implemented: true,
