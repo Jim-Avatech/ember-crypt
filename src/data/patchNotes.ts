@@ -10,6 +10,14 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.2.2",
+    title: "Guided Arrow really homes",
+    notes: [
+      "Guided Arrow now seeks like it should: it locks onto the monster you aim at (even one around a corner), and if there isn't one it grabs the nearest monster it can see while flying, so a shot down a hall curves into the room instead of hitting the back wall.",
+      "It turns smoothly, follows the way around corners, never passes through walls, and picks a new target if its first one dies.",
+    ],
+  },
+  {
     version: "1.2.1",
     title: "Multiple Shot rebalance",
     notes: [

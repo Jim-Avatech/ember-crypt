@@ -107,6 +107,14 @@ export interface Projectile {
   hits?: number[];
   /** Guided Arrow: the monster it steers toward */
   homing?: Monster | null;
+  /** v1.2.2: Guided Arrow seeks a target in flight (and re-acquires one when its target dies) */
+  seek?: boolean;
+  /** v1.2.2: walking-distance field to the target, to curve around corners; when it was made and for whom */
+  seekFlow?: Uint16Array;
+  seekFlowT?: number;
+  seekFlowFor?: number;
+  /** v1.2.2: the furthest a seeking arrow may fly */
+  maxRange?: number;
   /** Poison Javelin: distance since the last poison puff */
   trail?: number;
 }
@@ -602,6 +610,12 @@ export function mainAtkOk(id: unknown, cls: HeroClass): id is string {
  * that keeps attacking normally, so a held button never burns mana re-casting a buff.
  */
 export const ONCE_PER_PRESS = new Set(["leap", "howl", "find_potion", "taunt", "shout", "find_item", "battle_cry", "battle_orders", "grim_ward", "war_cry", "battle_command", "inner_sight", "slow_missiles", "decoy", "valkyrie"]);
+/** v1.2.2: Guided Arrow homing: lock-on radius in flight (tiles), turn rate (rad/s), aim cone at release (rad), and how much
+ * further than the bow's range it may fly while chasing */
+export const GUIDED_SEEK_R = 9;
+export const GUIDED_TURN = 9;
+export const GUIDED_AIM_CONE = 0.61;
+export const GUIDED_RANGE_MUL = 2.5;
 /** v1.2: removing one skill or stat point costs this much gold per character level (level 20: 1,000 gold) */
 export const RESPEC_GOLD_PER_LEVEL = 50;
 export const respecCost = (level: number) => RESPEC_GOLD_PER_LEVEL * Math.max(1, level);
@@ -1920,19 +1934,9 @@ export class Game {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const q = this.projectiles[i];
       q.t += dt;
-      // Guided Arrow steers toward its target; charged bolts wander
-      if (q.homing) {
-        if (q.homing.state === "dead") q.homing = null;
-        else {
-          const sp = Math.hypot(q.vx, q.vy);
-          const dx = q.homing.x - q.x;
-          const dy = q.homing.y - q.y;
-          const l = Math.hypot(dx, dy) || 1;
-          q.vx = (dx / l) * sp;
-          q.vy = (dy / l) * sp;
-          q.range = Math.max(q.range, q.dist + 2);
-        }
-      } else if (q.kind === "cbolt" && Math.random() < dt * 8) {
+      // Guided Arrow seeks and steers toward a target (v1.2.2); charged bolts wander
+      if (q.seek) this.steerGuided(q, dt);
+      else if (q.kind === "cbolt" && Math.random() < dt * 8) {
         const an = Math.atan2(q.vy, q.vx) + rand(-0.9, 0.9);
         const sp = Math.hypot(q.vx, q.vy);
         q.vx = Math.cos(an) * sp;
@@ -1979,6 +1983,103 @@ export class Game {
       }
       if (gone) this.projectiles.splice(i, 1);
     }
+  }
+
+  /**
+   * v1.2.2: Guided Arrow homing, like D2. Before v1.2.2 it only followed a target picked when it was shot (the
+   * nearest monster in the hero's sight) and turned instantly toward it; shot down a hall at monsters around the
+   * corner it had no target, flew straight and hit the wall, and it stopped homing when its target died.
+   * Now, in flight, it locks onto the nearest monster it can see within GUIDED_SEEK_R (preferring ones ahead),
+   * re-acquires when its target dies, and turns at up to GUIDED_TURN rad/s toward it; when the target is around a
+   * corner it follows the walking path to it, and it turns harder when a wall is just ahead.
+   */
+  private steerGuided(q: Projectile, dt: number) {
+    if (q.homing && q.homing.state === "dead") q.homing = null;
+    if (!q.homing) q.homing = this.guidedAcquire(q);
+    const m = q.homing;
+    if (!m) return;
+    const sp = Math.hypot(q.vx, q.vy) || 1;
+    let ax = m.x;
+    let ay = m.y;
+    if (!lineOfSight(this.level, q.x, q.y, m.x, m.y)) {
+      // around a corner: follow the walking path toward the target, two tiles ahead
+      if (!q.seekFlow || q.seekFlowFor !== m.id || this.time - (q.seekFlowT ?? 0) > 0.25) {
+        q.seekFlow = bfs(this.level, Math.floor(m.x), Math.floor(m.y), q.seekFlow);
+        q.seekFlowT = this.time;
+        q.seekFlowFor = m.id;
+      }
+      const f = q.seekFlow;
+      let tx = Math.floor(q.x);
+      let ty = Math.floor(q.y);
+      if (f[idx(tx, ty)] === 65535 || f[idx(tx, ty)] > GUIDED_SEEK_R * 3) {
+        q.homing = null; // unreachable or too far by path: fly on and look again
+        return;
+      }
+      for (let k = 0; k < 2; k++) {
+        const st = this.flowStep({ x: tx + 0.5, y: ty + 0.5 }, f);
+        if (!st) break;
+        tx += Math.round(st.x);
+        ty += Math.round(st.y);
+      }
+      ax = tx + 0.5;
+      ay = ty + 0.5;
+    }
+    const want = Math.atan2(ay - q.y, ax - q.x);
+    const cur = Math.atan2(q.vy, q.vx);
+    let diff = want - cur;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    // a wall just ahead: turn harder so it curves into the room instead of hitting the wall
+    const wallAhead = this.blocked(q.x + (q.vx / sp) * 0.9, q.y + (q.vy / sp) * 0.9, 0.05);
+    const maxTurn = GUIDED_TURN * (wallAhead ? 2.2 : 1) * dt;
+    const an = cur + Math.max(-maxTurn, Math.min(maxTurn, diff));
+    q.vx = Math.cos(an) * sp;
+    q.vy = Math.sin(an) * sp;
+    q.range = Math.min(q.maxRange ?? q.range, Math.max(q.range, q.dist + 2));
+  }
+  /** v1.2.2: the monster a Guided Arrow locks onto: in sight of the arrow, within GUIDED_SEEK_R, ahead preferred. */
+  private guidedAcquire(q: { x: number; y: number; vx: number; vy: number }): Monster | null {
+    const sp = Math.hypot(q.vx, q.vy) || 1;
+    let best: Monster | null = null;
+    let bs = Infinity;
+    for (const m of this.monsters) {
+      if (m.state === "dead" || m.hidden) continue;
+      const dx = m.x - q.x;
+      const dy = m.y - q.y;
+      const d = Math.hypot(dx, dy);
+      if (d > GUIDED_SEEK_R || !lineOfSight(this.level, q.x, q.y, m.x, m.y)) continue;
+      const cos = (dx * q.vx + dy * q.vy) / (d * sp || 1);
+      const score = d * (1 + 0.6 * (1 - cos)); // a monster behind counts as up to 2.2× further
+      if (score < bs) {
+        bs = score;
+        best = m;
+      }
+    }
+    return best;
+  }
+  /** v1.2.2: Guided Arrow at release: the monster nearest the aim line (within 35°, in bow range), seen or not. */
+  private guidedAim(ang: number): Monster | null {
+    const p = this.player;
+    const R = this.bowRange();
+    let best: Monster | null = null;
+    let bs = Infinity;
+    for (const m of this.monsters) {
+      if (m.state === "dead" || m.hidden) continue;
+      const dx = m.x - p.x;
+      const dy = m.y - p.y;
+      const d = Math.hypot(dx, dy);
+      if (d > R || d < 0.01) continue;
+      let off = Math.atan2(dy, dx) - ang;
+      while (off > Math.PI) off -= Math.PI * 2;
+      while (off < -Math.PI) off += Math.PI * 2;
+      if (Math.abs(off) > GUIDED_AIM_CONE) continue;
+      const score = d * (1 + 2 * Math.abs(off));
+      if (score < bs) {
+        bs = score;
+        best = m;
+      }
+    }
+    return best;
   }
 
   /** v1.0: the main ⚔ button: the chosen basic attack, or automatic (shoot with a bow, throw a throwing weapon, else attack). */
@@ -2195,7 +2296,9 @@ export class Game {
       this.projectiles.push({
         x: p.x + Math.cos(an) * 0.4, y: p.y + Math.sin(an) * 0.4, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp, dist: 0, range: this.bowRange() + 1,
         hand, handIdx: 0, skill: a.skill, cls: a.skill === "magic_arrow" ? "magic_arrow" : "arrow", t: 0, kind: "arrow", elem, hits: [],
-        homing: a.skill === "guided_arrow" ? t : null,
+        homing: a.skill === "guided_arrow" ? t ?? this.guidedAim(an) : null,
+        seek: a.skill === "guided_arrow",
+        maxRange: a.skill === "guided_arrow" ? this.bowRange() * GUIDED_RANGE_MUL : undefined,
       });
     }
     this.hitLog.push({ hand: 0, skill: a.skill ?? "shoot", t: this.time });

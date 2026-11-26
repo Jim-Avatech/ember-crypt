@@ -30,7 +30,7 @@ const res = await page.evaluate(async () => {
     p.slots = [s.id, null, null];
     const ms = g.monsters.filter((m) => m.state !== "dead").sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y)).slice(0, 4);
     let k = 0;
-    for (const m of ms) { const a = -0.8 + k++ * 0.4; m.x = p.x + Math.cos(a) * (bow || s.id.includes("bolt") || s.id.includes("fury") || s.id.includes("plague") || s.id.includes("poison") ? 4 : 1.3); m.y = p.y + Math.sin(a) * (bow ? 4 : 1.3); m.hp = m.maxHp = 5000; m.dmgMin = 0; m.dmgMax = 0; m.def = { ...m.def, speed: 0 }; }
+    for (const m of ms) { const a = -0.8 + k++ * 0.4; m.x = p.x + Math.cos(a) * (bow || s.id.includes("bolt") || s.id.includes("fury") || s.id.includes("plague") || s.id.includes("poison") ? 4 : 1.3); m.y = p.y + Math.sin(a) * (bow ? 4 : 1.3); m.hp = m.maxHp = 5000; m.defense = 0; m.dmgMin = 0; m.dmgMax = 0; m.def = { ...m.def, speed: 0 }; }
     g.monsters = ms;
     const hp0 = ms.reduce((a, m) => a + m.hp, 0);
     const mana0 = p.mana;

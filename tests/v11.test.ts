@@ -22,7 +22,7 @@ const priv = (g: Game) => g as unknown as { kill(m: Mon): void; aggroPack(m: Mon
 
 describe("v1.1 difficulty curve", () => {
   it("floor 1 is 80% life / 90% damage, rising in a straight line to 100% at floor 60 and after", () => {
-    expect(GAME_VERSION).toBe("1.2.1");
+    expect(GAME_VERSION).toBe("1.2.2");
     expect(CURVE_END).toBe(60);
     expect(curveHp(1)).toBeCloseTo(0.8);
     expect(curveDmg(1)).toBeCloseTo(0.9);

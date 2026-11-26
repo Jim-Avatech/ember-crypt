@@ -3,6 +3,13 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.2.2: Guided Arrow really homes
+
+- Guided Arrow used to steer only toward the monster picked when it was shot (the nearest one the hero could see), and snapped straight at it. Shot down a hall at monsters around the corner, it had no target, flew straight and hit the back wall; it also stopped homing if its target died.
+- Now it locks onto the monster nearest the aim line (within 35°, in bow range, even out of sight); otherwise, in flight, it acquires the nearest monster it can see within 9 tiles (preferring ones ahead) and re-acquires when its target dies.
+- It turns at up to 9 rad/s (harder when a wall is just ahead), follows the walking path when its target is around a corner, never passes through walls, and may fly up to 2.5× the bow's range while chasing.
+- Guided Arrow is the only homing projectile (Charged Bolt sparks wander on purpose).
+
 ## v1.2.1: Multiple Shot rebalance
 
 - A volley's total damage is `multiShotTotal(l)` = 125% + 5% × (level − 1) of a normal hit, split evenly over `multiShotArrows(l)` arrows (`multiShotPer`), applied as a whole-hit multiplier (physical and elemental) in `playerHit`. Every arrow can still hit the same monster.
