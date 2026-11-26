@@ -642,6 +642,14 @@ const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy", "concent
 /** v1.0 Amazon skill groups */
 const SPEAR_MELEE = new Set(["jab", "power_strike", "impale", "charged_strike", "fend", "lightning_strike"]);
 const JAV_THROWS = new Set(["poison_javelin", "lightning_bolt", "plague_javelin", "lightning_fury"]);
+/** v1.3.1: the colour of a pierce (tag, sparks, arrow streak): used by no element, crit or magic, so it shows on any arrow */
+export const PIERCE_COLOR = "#ff5ce1";
+/**
+ * v1.3.1: which arrow and throw skills can pierce (roll the Pierce passive on each monster they hit). Exploding,
+ * Immolation and Freezing Arrow burst and stop, Guided Arrow stops on its target; Plague Javelin and Lightning Fury
+ * burst; Lightning Bolt always passes through (no roll). null = a normal shot or throw.
+ */
+export const PIERCING_SKILLS = new Set<string | null>([null, "magic_arrow", "fire_arrow", "cold_arrow", "ice_arrow", "multiple_shot", "strafe", "poison_javelin", "double_throw"]);
 const BOW_SKILLS = new Set(["magic_arrow", "fire_arrow", "cold_arrow", "multiple_shot", "exploding_arrow", "guided_arrow", "ice_arrow", "strafe", "immolation_arrow", "freezing_arrow"]);
 const TWO_HIT = new Set(["double_swing", "frenzy"]);
 /** v1.2: the main ⚔ button can hold a basic attack or any active skill of the hero's class */
@@ -2652,7 +2660,7 @@ export class Game {
           return false;
         default: this.playerHit(m, q.hand, { knock: 1.2 });
       }
-      return sk !== "guided_arrow" && this.pierceMark(q, m, pierce());
+      return PIERCING_SKILLS.has(sk) && this.pierceMark(q, m, pierce());
     }
     // thrown weapons
     const dtl = sk === "double_throw" ? this.skillLevel("double_throw") : 0;
@@ -2667,15 +2675,20 @@ export class Game {
       return false;
     }
     this.playerHit(m, q.hand, { arPct: dtl ? doubleThrowAR(dtl) : 0, knock: 1.2 });
-    return this.pierceMark(q, m, pierce());
+    return PIERCING_SKILLS.has(sk) && this.pierceMark(q, m, pierce());
   }
-  /** v1.3: a pierce shows: a "Pierce" tag and sparks on the monster, and the arrow flies on with a glowing streak. */
+  /**
+   * v1.3: a pierce shows: a "Pierce" tag and sparks on the monster, and the arrow flies on with a glowing streak.
+   * v1.3.1: in v1.3 all three were ice cyan (#8ff0ff), the same colour as Cold/Ice Arrow's damage numbers, sparks and
+   * glow and as a frozen monster's ice block, so on an Ice Arrow (which freezes what it hits) the pierce could not be
+   * seen at all. Now they are PIERCE_COLOR (magenta, used by nothing else), lifted above the damage number, bigger.
+   */
   private pierceMark(q: Projectile, m: Monster, ok: boolean): boolean {
     if (!ok) return false;
     q.pierced = (q.pierced ?? 0) + 1;
     this.pierces++;
-    this.floaters.push({ x: m.x + 0.25, y: m.y + 0.25, text: "Pierce", color: "#8ff0ff", t: 0, life: 0.8, size: 12 });
-    for (let i = 0; i < 6; i++) this.spark(m.x, m.y, "#bff6ff", 3.5);
+    this.floaters.push({ x: m.x - 0.35, y: m.y - 0.35, text: "⇶ Pierce", color: PIERCE_COLOR, t: 0, life: 1, size: 14 });
+    for (let i = 0; i < 8; i++) this.spark(m.x, m.y, PIERCE_COLOR, 3.5);
     return true;
   }
   private plague(x: number, y: number, lvl: number, avg: number) {

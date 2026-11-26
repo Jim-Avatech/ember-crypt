@@ -3,6 +3,12 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.3.1: Ice Arrow pierces you can see
+
+- Ice Arrow always pierced as often as other arrows (real game loop: ~51% at Pierce 5), but v1.3's pierce cue (tag, sparks, streak) was ice cyan, the colour of Ice Arrow's damage numbers and of the frozen monster's ice block, so it was invisible. The cue is now magenta "⇶ Pierce" (`PIERCE_COLOR`), above the damage number, with a magenta/white streak.
+- `PIERCING_SKILLS` lists what rolls Pierce: normal shot/throw, Magic, Fire, Cold, Ice Arrow, Multiple Shot, Strafe, Poison Javelin, Double Throw. Exploding/Immolation/Freezing Arrow, Guided Arrow, Plague Javelin, Lightning Fury stop; Lightning Bolt always passes through.
+- Tests: `tests/v131.test.ts` (one per skill, through Game.update), `scripts/v131-shots.mjs` (screenshots/v131). SW cache v26.
+
 ## v1.3: Buff bar, freeze resistance, visible Pierce, DPS, training dummy
 
 - **Buff bar:** every timed effect shows along the top (no rings on the skill buttons, since thumbs cover them). Barbarian: Battle Orders, Shout, Battle Command, Frenzy (stacks), Concentrate, Berserk, Grim Ward, Battle Cry, Taunt. Amazon: Slow Missiles, Decoy, Inner Sight. Both: chilled and poisoned. Each shows its icon, seconds left and a draining bar. Strafe (a single volley) and Valkyrie (no time limit) have no timer.

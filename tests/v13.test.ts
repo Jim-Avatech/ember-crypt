@@ -29,7 +29,7 @@ function dummyMon(g: Game, x: number, y: number, extra: Partial<Monster> = {}): 
 }
 
 describe("v1.3 version", () => {
-  it("label", () => expect(GAME_VERSION).toBe("1.3"));
+  it("label", () => expect(GAME_VERSION).toBe("1.3.1"));
 });
 
 describe("v1.3 buff bar: every timed effect, both classes", () => {
@@ -211,7 +211,7 @@ describe("v1.3 Pierce", () => {
       }
     }
     expect(saw).toBeGreaterThan(0);
-    expect(g.floaters.some((f) => f.text === "Pierce")).toBe(true);
+    expect(g.floaters.some((f) => /Pierce/.test(f.text))).toBe(true);
   });
 });
 

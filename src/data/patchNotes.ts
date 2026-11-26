@@ -10,6 +10,14 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.3.1",
+    title: "Ice Arrow pierces you can see",
+    notes: [
+      "Ice Arrow always pierced as often as any other arrow, but the Pierce tag, sparks and glow were ice blue, the same colour as its damage numbers and the frozen monster, so you couldn't see it. Pierces are now bright magenta \"⇶ Pierce\" above the damage number, with a magenta streak on the arrow, on every arrow.",
+      "Checked every arrow and throw: a normal shot, Magic, Fire, Cold and Ice Arrow, Multiple Shot, Strafe, thrown weapons and Poison Javelin pierce; Exploding, Immolation and Freezing Arrow burst and stop, Guided Arrow stops on its target, Lightning Bolt always passes through.",
+    ],
+  },
+  {
     version: "1.3",
     title: "Buff bar, freeze resistance, Pierce you can see, DPS, training dummy",
     notes: [

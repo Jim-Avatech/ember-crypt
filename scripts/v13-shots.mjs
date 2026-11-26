@@ -120,7 +120,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   }
   await page.waitForTimeout(150);
   C("a piercing arrow flies through into the next monster", !!got && got.pierced >= 1 && got.hits[0] > 0, JSON.stringify(got));
-  const tag = await page.evaluate(() => __ec.game.floaters.some((f) => f.text === "Pierce"));
+  const tag = await page.evaluate(() => __ec.game.floaters.some((f) => /Pierce/.test(f.text)));
   C("the pierced monster shows 'Pierce'", tag);
   await shot("03-pierce");
 

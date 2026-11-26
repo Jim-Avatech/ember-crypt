@@ -7,7 +7,7 @@ import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, qualityOf } from "./data/i
 import { ARTIFACT_BY_ID, ARTIFACT_COLOR, type Theme, actDef } from "./data/acts";
 import { ELEM_COLOR, ELITE_MODS } from "./data/monsters";
 import type { Ally, Game, GroundItem, Monster, MonsterShot, Nova, Projectile } from "./game";
-import { fmtDps } from "./game";
+import { PIERCE_COLOR, fmtDps } from "./game";
 import { artifactIcon } from "./sprites/artifacts";
 import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
@@ -709,8 +709,11 @@ export class Renderer {
     const ec = q.elem && q.elem !== "phys" ? ELEM_COLOR[q.elem] : null;
     if (q.pierced && (q.kind === "arrow" || q.kind === "weapon")) {
       // v1.3: a piercing arrow leaves a pale glowing streak
-      ctx.globalAlpha = 0.55;
-      line(-26, 2, "#8ff0ff", 3.4);
+      // v1.3.1: magenta with a white core (was ice cyan, invisible on Cold/Ice Arrows and frozen monsters)
+      ctx.globalAlpha = 0.7;
+      line(-28, 2, PIERCE_COLOR, 4);
+      ctx.globalAlpha = 0.9;
+      line(-22, 1, "#fff0fb", 1.3);
       ctx.globalAlpha = 1;
     }
     if (q.kind === "arrow") {
