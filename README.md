@@ -3,6 +3,15 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.3: Buff bar, freeze resistance, visible Pierce, DPS, training dummy
+
+- **Buff bar:** every timed effect shows along the top (no rings on the skill buttons, since thumbs cover them). Barbarian: Battle Orders, Shout, Battle Command, Frenzy (stacks), Concentrate, Berserk, Grim Ward, Battle Cry, Taunt. Amazon: Slow Missiles, Decoy, Inner Sight. Both: chilled and poisoned. Each shows its icon, seconds left and a draining bar. Strafe (a single volley) and Valkyrie (no time limit) have no timer.
+- **Freeze resistance** (`freezeResFor`, `FREEZE_*` in src/game.ts): a freeze lasts (1 − res) as long and a chill (1 − res/2); after a freeze wears off the monster can't be frozen again for a while. Base res: normal 0, champion 20%, unique 35%, boss 55%, act boss 60%; +0.4% per floor past the first (not normal monsters), capped at 80%. Thaw window: champion 0.75 s, unique 1.5 s, boss 3 s. Act bosses are never hard-frozen (chill only). Chilled speed: normal/champion 50%, unique 55%, boss 65%, act boss 70%.
+- **Pierce** rolled correctly before (51% at level 5) but was invisible. A piercing arrow now glows, the monster shows "Pierce", and the arrow carries on into the next one.
+- **DPS** (`Derived.dps`/`aps`, `Game.basicDps`, `weaponDps`): the ⚔ normal attack's average hit × (1 + crit) over its real attack time (bow: speed / (1 + IAS) / 1.15 for an Amazon; swings and throws speed / (1 + IAS); dual wield alternates). Misses are not counted. A bag or shop weapon shows the DPS you'd have with it equipped, next to your worn weapon's DPS in the compare sheet (cards keep no deltas). DPS is also on the Character screen and first in `Game.compare`'s stat list.
+- **Training dummy** in camp at (9.5, 17.5), west of the campfire, off the paths. It never dies, moves or fights back, gives no XP, gold, loot or leech, and the Valkyrie ignores it. Every hit lands 95% of the time. The meter shows rolling DPS over the last 5 s, total damage, hits and time; after 4 s idle the session ends and its average stays up as "Last".
+- **Strafe:** −30% +4%/level per arrow (was −20% +5%), draw time 0.5 + 0.32 per arrow (was 0.28). On one target at level 10 that's about 2.8 normal shots' worth per volley time (was 3.7).
+
 ## v1.2.2: Guided Arrow really homes
 
 - Guided Arrow used to steer only toward the monster picked when it was shot (the nearest one the hero could see), and snapped straight at it. Shot down a hall at monsters around the corner, it had no target, flew straight and hit the back wall; it also stopped homing if its target died.

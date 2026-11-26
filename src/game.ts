@@ -19,7 +19,7 @@ import {
   type BasicId, type HeroClass, CLASS_NAME, isBasic, avoidChance, chargedStrikeBolts, chargedStrikeDmg, coldArrowChill, coldArrowDmg, critStrike, decoyDur,
   dodgeChance, evadeChance, explodingDmg, fendAR, fendDmg, fireArrowDmg, freezingDmg, freezingFreeze, furyBolts, furyDmg, guidedDmg, iceArrowDmg,
   iceArrowFreeze, immolationDmg, immolationDps, immolationDur, impaleAR, impaleDmg, innerSightDef, innerSightDur, jabAR, jabDmg, lightningBoltDmg,
-  lightningStrikeDmg, lightningStrikeHits, magicArrowDmg, multiShotArrows, multiShotPer, penetrateAR, pierceChance, plagueDps, poisonJavDps,
+  lightningStrikeDmg, lightningStrikeHits, magicArrowDmg, multiShotArrows, multiShotPer, strafeDur, penetrateAR, pierceChance, plagueDps, poisonJavDps,
   powerStrikeLight, slowMissilesDur, strafeArrows, strafeDmg, valkDmg, valkLife,
 } from "./data/skills";
 import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
@@ -115,6 +115,8 @@ export interface Projectile {
   seekFlowFor?: number;
   /** v1.2.2: the furthest a seeking arrow may fly */
   maxRange?: number;
+  /** v1.3: how many monsters it has pierced (drawn with a glowing streak) */
+  pierced?: number;
   /** Poison Javelin: distance since the last poison puff */
   trail?: number;
 }
@@ -273,6 +275,10 @@ export interface Monster {
   /** v1.0 Amazon effects: slowed (Cold Arrow), frozen (Ice/Freezing Arrow, drawn blue), Inner Sight defense cut */
   chillT?: number;
   frozenT?: number;
+  /** v1.3: game time until which a thawed champion/unique/boss can't be frozen again */
+  freezeImmuneUntil?: number;
+  /** v1.3: the camp's training dummy (never dies, never fights, gives nothing) */
+  dummy?: boolean;
   sight?: { t: number; def: number };
 }
 
@@ -428,6 +434,10 @@ export interface Derived {
   ar: number;
   crit: number;
   swing: number;
+  /** v1.3: the ⚔ normal attack's damage per second (average hit with crits, over its real attack time; before misses) */
+  dps: number;
+  /** v1.3: and its attacks per second */
+  aps: number;
   weaponKind: Kind | "fist";
   /** resistances in % (capped at 75) against elemental monster attacks */
   res: { fire: number; cold: number; light: number; poison: number };
@@ -454,8 +464,44 @@ export interface CompareRow {
 
 const avgHit = (h: Hand | undefined) => (h ? ((h.min + h.max) / 2) * (1 + h.dmgPct / 100) : 0);
 
+/**
+ * v1.3 camp training dummy: where it stands (open grass west of the campfire, off the paths), the rolling DPS window
+ * (s) and how long without a hit before a session ends (its numbers stay up as "last" until the next hit).
+ */
+export const DUMMY_POS = { x: 9.5, y: 17.5 };
+export const DUMMY_WINDOW = 5;
+export const DUMMY_IDLE_RESET = 4;
+export interface DummyMeter {
+  /** rolling DPS over the last DUMMY_WINDOW seconds (or since the first hit, at least 1 s) */
+  dps: number;
+  total: number;
+  hits: number;
+  /** seconds from the first hit to now (or to the last hit once the session ended) */
+  secs: number;
+  /** total / secs */
+  avg: number;
+  /** the session ended (idle); these are its final numbers */
+  done: boolean;
+}
+
+/** v1.3: one entry of the buff bar */
+export interface TimedBuff {
+  id: string;
+  label: string;
+  glyph: string;
+  /** seconds left and the full length */
+  left: number;
+  full: number;
+  kind: "buff" | "debuff" | "ailment";
+  stacks?: number;
+}
+
+/** v1.3: DPS shown with one decimal under 100, whole numbers above, thousands separated */
+export const fmtDps = (v: number) => (v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString("en-US"));
+
 /** The stats the compare tooltip diffs, all read from derived(). */
 export const COMPARE_METRICS: { id: string; label: string; get: (d: Derived) => number; digits?: number; unit?: string; lowerBetter?: boolean }[] = [
+  { id: "dps", label: "DPS", get: (d) => d.dps, digits: 1 },
   { id: "dmg", label: "damage", get: (d) => avgHit(d.hands[0]), digits: 1 },
   { id: "dmg2", label: "off-hand damage", get: (d) => (d.dual ? avgHit(d.hands[1]) : 0), digits: 1 },
   { id: "aps", label: "attacks/s", get: (d) => 1 / d.swing, digits: 2 },
@@ -610,6 +656,27 @@ export function mainAtkOk(id: unknown, cls: HeroClass): id is string {
  * that keeps attacking normally, so a held button never burns mana re-casting a buff.
  */
 export const ONCE_PER_PRESS = new Set(["leap", "howl", "find_potion", "taunt", "shout", "find_item", "battle_cry", "battle_orders", "grim_ward", "war_cry", "battle_command", "inner_sight", "slow_missiles", "decoy", "valkyrie"]);
+/**
+ * v1.3 freeze resistance by monster tier: base share of a freeze (and half of it for chill) shaved off, plus
+ * FREEZE_RES_PER_FLOOR per floor past the first for everything but normal monsters, capped at FREEZE_RES_CAP; and how
+ * long (s) after a freeze wears off before that monster can be frozen again. Act bosses ("final") are never frozen.
+ */
+export type FreezeTier = "normal" | "champion" | "unique" | "boss" | "final";
+export const FREEZE_RES_BASE: Record<FreezeTier, number> = { normal: 0, champion: 0.2, unique: 0.35, boss: 0.55, final: 0.6 };
+export const FREEZE_IMMUNE: Record<FreezeTier, number> = { normal: 0, champion: 0.75, unique: 1.5, boss: 3, final: 0 };
+/** chilled monsters move and act at this share of their speed (cold resistance makes bosses shake it off sooner) */
+export const CHILL_SPEED: Record<FreezeTier, number> = { normal: 0.5, champion: 0.5, unique: 0.55, boss: 0.65, final: 0.7 };
+export const FREEZE_RES_PER_FLOOR = 0.004;
+export const FREEZE_RES_CAP = 0.8;
+export function freezeTier(rank: string, elite: number): FreezeTier {
+  return rank === "final" ? "final" : rank === "boss" ? "boss" : elite === 2 ? "unique" : elite === 1 ? "champion" : "normal";
+}
+export function freezeResFor(rank: string, elite: number, floor: number): number {
+  const t = freezeTier(rank, elite);
+  if (t === "normal") return 0;
+  return Math.min(FREEZE_RES_CAP, FREEZE_RES_BASE[t] + FREEZE_RES_PER_FLOOR * Math.max(0, floor - 1));
+}
+
 /** v1.2.2: Guided Arrow homing: lock-on radius in flight (tiles), turn rate (rad/s), aim cone at release (rad), and how much
  * further than the bow's range it may fly while chasing */
 export const GUIDED_SEEK_R = 9;
@@ -852,6 +919,13 @@ export class Game {
   buyback: Item[] = [];
   hitLog: HitLog[] = [];
   projectiles: Projectile[] = [];
+  /** v1.3: the longest each timed effect has had since it started (the buff bar's full length) */
+  private buffFull = new Map<string, number>();
+  /** v1.3: the training dummy's hits this session */
+  private dummyHits: { t: number; dmg: number }[] = [];
+  private dummySess: { start: number; last: number; total: number; hits: number } | null = null;
+  /** v1.3: pierces this session (tests and the dummy) */
+  pierces = 0;
   shots: MonsterShot[] = [];
   novas: Nova[] = [];
   /** set when Malakar falls */
@@ -1010,6 +1084,7 @@ export class Game {
     this.shots = [];
     this.novas = [];
     this.wards = [];
+    this.addDummy();
     this.restock();
     // throwing weapons (v1.0: and quivers) refill for free in camp
     let refilled = 0;
@@ -1376,7 +1451,9 @@ export class Game {
     const m = hands[0];
     const all = g("ares") + natRes(this.skillLevel("natural_resistance"));
     const cap = (v: number) => Math.min(75, v);
+    const bd = this.basicDps(hands, ias);
     return {
+      dps: bd.dps, aps: bd.aps,
       maxHp, maxMana, hands, dual: hands.length === 2,
       def: p.buffs.bers > 0 ? 0 : Math.round((armor + s.dex / 4) * (1 + defPct / 100)),
       speed: BASE_RUN * (1 + incSpeed(this.skillLevel("increased_speed")) / 100 + move + frw / 100) * (p.chillT > 0 ? 0.65 : 1),
@@ -1385,6 +1462,123 @@ export class Game {
       res: { fire: cap(g("fres") + all), cold: cap(g("cres") + all), light: cap(g("lres") + all), poison: cap(g("pres") + all) },
       ll: g("ll"), ml: g("ml"), frw, gearIas, gf: g("gf"), mf: g("mf"), stats: s,
     };
+  }
+
+  /**
+   * v1.3: DPS of the ⚔ normal attack with these hands, from the same numbers the game plays with: the average hit
+   * (weapon damage × (1 + damage%)), crits doubling it (× (1 + crit%)), over the attack's time: a bow shot is
+   * speed / (1 + IAS) / Amazon bow speed, a swing or throw speed / (1 + IAS) (an Amazon throws spears and javelins
+   * faster); dual wielding alternates hands. Not counted: misses (they depend on the monster) and skills.
+   */
+  basicDps(hands: Hand[], ias: number): { dps: number; aps: number } {
+    const p = this.player;
+    const hit = (h: Hand) => avgHit(h) * (1 + Math.min(100, h.crit) / 100);
+    const main = this.usable("main") ? p.equip.main : undefined;
+    const amz = p.cls === "amazon" ? AMAZON_SPEED : 1;
+    const durOf = (h: Hand) => {
+      const it = h.slot ? p.equip[h.slot] : undefined;
+      let t = h.speed / (1 + ias);
+      if (isBow(it)) t /= amz;
+      else if (isSpearLike(it) && BASE_BY_ID[it!.baseId].thrown && (it!.qty ?? 0) > 0 && p.mainAtk !== "basic_attack") t /= amz;
+      return t;
+    };
+    if (isBow(main)) {
+      const t = durOf(hands[0]);
+      return { dps: hit(hands[0]) / t, aps: 1 / t };
+    }
+    const hs = hands.length === 2 ? hands : [hands[0]];
+    const tot = hs.reduce((a, h) => a + durOf(h), 0);
+    return { dps: hs.reduce((a, h) => a + hit(h), 0) / tot, aps: hs.length / tot };
+  }
+
+  /**
+   * v1.3: every timed effect running now, for the buff bar along the top: your buffs (warcries, Frenzy, Concentrate,
+   * Berserk, Slow Missiles), your timed helpers (Decoy, Grim Ward), the timed debuffs you put on monsters (Inner Sight,
+   * Battle Cry, Taunt: the longest still running) and what's ailing you (chill, poison). Seconds left and the full
+   * length (the longest it has had since it started, so a recast refills the bar).
+   */
+  timedBuffs(): TimedBuff[] {
+    const p = this.player;
+    const out: TimedBuff[] = [];
+    const add = (id: string, label: string, left: number, kind: TimedBuff["kind"], extra: Partial<TimedBuff> = {}) => {
+      if (!(left > 0) || !isFinite(left)) {
+        this.buffFull.delete(id);
+        return;
+      }
+      const full = Math.max(this.buffFull.get(id) ?? 0, left);
+      this.buffFull.set(id, full);
+      out.push({ id, label, glyph: SKILL_BY_ID[id]?.glyph ?? "•", left, full, kind, ...extra });
+    };
+    const most = (f: (m: Monster) => number) => this.monsters.reduce((a, m) => (m.state === "dead" || m.dummy ? a : Math.max(a, f(m))), 0);
+    add("battle_orders", "Battle Orders", p.buffs.bo, "buff");
+    add("shout", "Shout", p.buffs.shout, "buff");
+    add("battle_command", "Battle Command", p.buffs.bcmd, "buff");
+    add("frenzy", "Frenzy", p.frenzy.stacks > 0 ? p.frenzy.t : 0, "buff", { stacks: p.frenzy.stacks });
+    // Frenzy past its hold time: the stacks wear off one by one (no timer, just the count)
+    if (p.frenzy.stacks > 0 && !(p.frenzy.t > 0)) out.push({ id: "frenzy", label: "Frenzy", glyph: SKILL_BY_ID.frenzy.glyph, left: 0, full: 0, kind: "buff", stacks: p.frenzy.stacks });
+    add("concentrate", "Concentrate", p.buffs.conc, "buff");
+    add("berserk", "Berserk: no defense", p.buffs.bers, "buff");
+    add("slow_missiles", "Slow Missiles", p.buffs.slowm ?? 0, "buff");
+    add("decoy", "Decoy", this.allies.reduce((a, al) => (al.kind === "decoy" ? Math.max(a, al.life - al.t) : a), 0), "buff");
+    add("grim_ward", "Grim Ward", this.wards.reduce((a, w) => Math.max(a, w.life - w.t), 0), "buff");
+    add("inner_sight", "Inner Sight", most((m) => m.sight?.t ?? 0), "debuff");
+    add("battle_cry", "Battle Cry", most((m) => m.bcry.t), "debuff");
+    add("taunt", "Taunt", most((m) => m.taunt.t), "debuff");
+    add("chill", "Chilled", p.chillT, "ailment", { glyph: "❄" });
+    add("poison", "Poisoned", p.poison.t, "ailment", { glyph: "☠" });
+    return out;
+  }
+
+  /** v1.3: the camp's training dummy: a monster that never moves, attacks, dies or gives anything; hits always land 95%. */
+  private addDummy() {
+    if (this.monsters.some((m) => m.dummy)) return;
+    const base = MONSTERS.zombie;
+    const def: MonsterDef = { ...base, name: "Training Dummy", blurb: "", speed: 0, dmgMin: 0, dmgMax: 0, def: 0, xp: 0, aggro: 0, radius: 0.36, pack: [1, 1], blood: "#c8a060", behavior: "melee", shot: undefined, specials: undefined };
+    const m = this.spawn("zombie", 1, DUMMY_POS.x, DUMMY_POS.y, -1, def); // level 1, defense 0: every attack lands 95% of the time
+    m.dummy = true;
+    m.hp = m.maxHp = 1_000_000;
+    m.defense = 0;
+    m.xp = 0;
+    m.dmgMin = m.dmgMax = 0;
+    this.dummyHits = [];
+    this.dummySess = null;
+  }
+  /** v1.3: the dummy took a hit: log it for the meter and heal it back to full (it never dies). */
+  private dummyHit(m: Monster, dmg: number) {
+    m.hp = m.maxHp;
+    if (dmg <= 0) return;
+    const t = this.time;
+    if (!this.dummySess || t - this.dummySess.last > DUMMY_IDLE_RESET) {
+      this.dummySess = { start: t, last: t, total: 0, hits: 0 };
+      this.dummyHits = [];
+    }
+    this.dummySess.last = t;
+    this.dummySess.total += dmg;
+    this.dummySess.hits++;
+    this.dummyHits.push({ t, dmg });
+    while (this.dummyHits.length && this.dummyHits[0].t < t - DUMMY_WINDOW) this.dummyHits.shift();
+  }
+  /** v1.3: the DPS meter over the dummy (null before the first hit). */
+  dummyMeter(): DummyMeter | null {
+    const s = this.dummySess;
+    if (!s) return null;
+    const t = this.time;
+    const done = t - s.last > DUMMY_IDLE_RESET;
+    const end = done ? s.last : t;
+    const secs = Math.max(0, end - s.start);
+    const from = Math.max(s.start, end - DUMMY_WINDOW);
+    const recent = this.dummyHits.filter((h) => h.t >= from && h.t <= end).reduce((a, h) => a + h.dmg, 0);
+    const span = Math.max(1, Math.min(DUMMY_WINDOW, end - s.start));
+    return { dps: recent / span, total: s.total, hits: s.hits, secs, avg: s.total / Math.max(1, secs), done };
+  }
+
+  /** v1.3: the ⚔ normal attack's DPS with this weapon (worn: as now; otherwise as if it replaced your main hand). */
+  weaponDps(it: Item): { dps: number; aps: number } | null {
+    const b = BASE_BY_ID[it.baseId];
+    if (!b || b.slot !== "weapon") return null;
+    const p = this.player;
+    const d = p.equip.main === it || p.equip.off === it ? this.derived() : this.previewEquip(it, "main");
+    return { dps: d.dps, aps: d.aps };
   }
 
   /** What derived stats would be with an item put in a slot (for tooltips). */
@@ -1835,6 +2029,7 @@ export class Game {
     m.hp -= dmg;
     m.flash = 1;
     m.lastHurt = this.time;
+    if (m.dummy) this.dummyHit(m, dmg);
     this.floatAt(m.x, m.y, `${dmg}`, color, 15);
     for (let i = 0; i < 5; i++) this.spark(m.x, m.y, m.def.blood, 3);
     if (m.hp <= 0) this.kill(m);
@@ -2248,7 +2443,7 @@ export class Game {
       const lvl = this.skillLevel("strafe");
       targets = this.strafeTargets(lvl);
       const n = strafeArrows(lvl);
-      dur = (h.speed * (0.5 + 0.28 * n)) / (1 + d.ias) / amz;
+      dur = (h.speed * strafeDur(n)) / (1 + d.ias) / amz;
       releaseAt = Array.from({ length: n }, (_, i) => 0.15 + (0.78 * i) / (n - 1));
       target = targets[0] ?? null;
     } else target = this.nearestMonster(this.bowRange());
@@ -2319,20 +2514,40 @@ export class Game {
     m.hp -= n;
     m.flash = 1;
     m.lastHurt = this.time;
+    if (m.dummy) this.dummyHit(m, n);
     this.chillOrFreeze(m, o.chill, o.freeze);
     this.floatAt(m.x, m.y, `${n}`, ELEM_COLOR[elem], o.quiet ? 11 : 14);
     if (!o.quiet) for (let i = 0; i < 4; i++) this.spark(m.x, m.y, ELEM_COLOR[elem], 2.5);
     if (m.hp <= 0) this.kill(m);
   }
+  /** v1.3: freeze resistance (0..FREEZE_RES_CAP) of a monster on this floor; see freezeResFor */
+  freezeRes(m: Monster): number {
+    return freezeResFor(m.def.rank, m.elite, this.floor);
+  }
+  /**
+   * v1.3: chill and freeze go through freeze resistance: a freeze lasts (1 − res) as long and a chill (1 − res/2);
+   * after a freeze wears off the monster can't be frozen again for a moment (FREEZE_IMMUNE by tier), so nothing tougher
+   * than a normal monster can be chain-frozen; act bosses are never hard-frozen, a freeze only chills them.
+   */
   private chillOrFreeze(m: Monster, chill?: number, freeze?: number) {
-    const k = m.def.rank === "final" ? 1 / 3 : m.def.rank === "boss" ? 1 / 2 : 1;
-    if (chill) m.chillT = Math.max(m.chillT ?? 0, chill * (k < 1 ? 0.6 : 1));
-    if (freeze) {
-      m.stunT = Math.max(m.stunT, freeze * k);
-      m.frozenT = Math.max(m.frozenT ?? 0, freeze * k);
-      m.chillT = Math.max(m.chillT ?? 0, freeze * k + 1);
-      if (m.state === "attack") m.state = "chase";
-    }
+    if (m.dummy) return;
+    const res = this.freezeRes(m);
+    const tier = freezeTier(m.def.rank, m.elite);
+    if (chill) m.chillT = Math.max(m.chillT ?? 0, chill * (1 - res / 2));
+    if (!freeze) return;
+    // normal monsters freeze as before (a new freeze can extend one); tougher ones only when not frozen and not in
+    // their thaw window; act bosses never: for them, and during that window, the freeze only chills
+    const can = tier === "normal" || (tier !== "final" && (m.frozenT ?? 0) <= 0 && (m.freezeImmuneUntil ?? -1) <= this.time);
+    if (can) this.applyFreeze(m, freeze, res, tier);
+    else m.chillT = Math.max(m.chillT ?? 0, (freeze + 1) * (1 - res / 2));
+  }
+  private applyFreeze(m: Monster, freeze: number, res: number, tier: FreezeTier) {
+    const t = freeze * (1 - res);
+    m.stunT = Math.max(m.stunT, t);
+    m.frozenT = Math.max(m.frozenT ?? 0, t);
+    m.chillT = Math.max(m.chillT ?? 0, t + 1);
+    if (FREEZE_IMMUNE[tier] > 0) m.freezeImmuneUntil = this.time + t + FREEZE_IMMUNE[tier];
+    if (m.state === "attack") m.state = "chase";
   }
   /** Fire/cold burst around a point (Exploding, Immolation, Freezing Arrow). */
   private burst(x: number, y: number, r: number, dmg: number, elem: Elem, o: { freeze?: number } = {}) {
@@ -2437,7 +2652,7 @@ export class Game {
           return false;
         default: this.playerHit(m, q.hand, { knock: 1.2 });
       }
-      return sk !== "guided_arrow" && pierce();
+      return sk !== "guided_arrow" && this.pierceMark(q, m, pierce());
     }
     // thrown weapons
     const dtl = sk === "double_throw" ? this.skillLevel("double_throw") : 0;
@@ -2452,7 +2667,16 @@ export class Game {
       return false;
     }
     this.playerHit(m, q.hand, { arPct: dtl ? doubleThrowAR(dtl) : 0, knock: 1.2 });
-    return pierce();
+    return this.pierceMark(q, m, pierce());
+  }
+  /** v1.3: a pierce shows: a "Pierce" tag and sparks on the monster, and the arrow flies on with a glowing streak. */
+  private pierceMark(q: Projectile, m: Monster, ok: boolean): boolean {
+    if (!ok) return false;
+    q.pierced = (q.pierced ?? 0) + 1;
+    this.pierces++;
+    this.floaters.push({ x: m.x + 0.25, y: m.y + 0.25, text: "Pierce", color: "#8ff0ff", t: 0, life: 0.8, size: 12 });
+    for (let i = 0; i < 6; i++) this.spark(m.x, m.y, "#bff6ff", 3.5);
+    return true;
   }
   private plague(x: number, y: number, lvl: number, avg: number) {
     this.addPatch(x, y, 2.2, 3, avg * (plagueDps(lvl) / 100), "poison");
@@ -2478,7 +2702,7 @@ export class Game {
       let tgt: Monster | null = null;
       let bd = 7;
       for (const m of this.monsters) {
-        if (m.state === "dead") continue;
+        if (m.state === "dead" || m.dummy) continue; // v1.3: the Valkyrie leaves the training dummy to you
         const dd = Math.min(Math.hypot(m.x - a.x, m.y - a.y), Math.hypot(m.x - p.x, m.y - p.y) + 1);
         if (dd < bd) {
           bd = dd;
@@ -3048,9 +3272,11 @@ export class Game {
     m.hp -= dmg;
     m.flash = 1;
     m.lastHurt = this.time;
+    if (m.dummy) this.dummyHit(m, dmg);
     if (o.chill || o.freeze) this.chillOrFreeze(m, o.chill, o.freeze);
-    // life / mana leech from gear
+    // life / mana leech from gear (never from the training dummy)
     const dv = this.derived();
+    if (m.dummy) o = { ...o, noLeech: true };
     if (dv.ll > 0 && !o.noLeech) p.hp = Math.min(dv.maxHp, p.hp + (dmg * dv.ll) / 100);
     if (dv.ml > 0 && !o.noLeech) p.mana = Math.min(dv.maxMana, p.mana + (dmg * dv.ml) / 100);
     const dx = m.x - p.x;
@@ -3077,6 +3303,10 @@ export class Game {
   }
 
   private kill(m: Monster) {
+    if (m.dummy) {
+      m.hp = m.maxHp; // the training dummy never dies (and so never gives experience or loot)
+      return;
+    }
     m.hp = 0;
     m.state = "dead";
     m.deadT = 0;
@@ -3192,8 +3422,20 @@ export class Game {
       this.flowFrom = pi;
     }
     for (const m of this.monsters) {
+      if (m.dummy) {
+        // v1.3: the training dummy stands still and never fights; hits only wobble it
+        m.flash = Math.max(0, m.flash - dt * 5);
+        m.kx = m.ky = 0;
+        m.x = DUMMY_POS.x;
+        m.y = DUMMY_POS.y;
+        m.stunT = m.fearT = 0;
+        m.chillT = m.frozenT = 0;
+        m.state = "idle";
+        m.hp = m.maxHp;
+        continue;
+      }
       // v1.0: Cold Arrow slows a monster to half speed (all its timers too); freezes and Inner Sight wear off
-      const mdt = m.chillT && m.chillT > 0 ? dt * 0.5 : dt;
+      const mdt = m.chillT && m.chillT > 0 ? dt * CHILL_SPEED[freezeTier(m.def.rank, m.elite)] : dt;
       if (m.chillT) m.chillT = Math.max(0, m.chillT - dt);
       if (m.frozenT) m.frozenT = Math.max(0, m.frozenT - dt);
       if (m.sight && m.sight.t > 0) m.sight.t -= dt;

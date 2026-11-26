@@ -3,7 +3,7 @@
    - Hashed build files (assets/) live in their own cache that survives SW updates, and the files a
      page needs are cached at install, before the new worker takes over. A cached page can never
      point at a bundle that was thrown away (the cause of a black screen after an update offline). */
-const SHELL = "ember-crypt-shell-v24";
+const SHELL = "ember-crypt-shell-v25";
 const ASSETS = "ember-crypt-assets";
 const KEEP = [SHELL, ASSETS];
 const scopeUrl = (p) => new URL(p, self.registration.scope).href;

@@ -1587,3 +1587,27 @@ body.portrait #rotate {
 .slotb.mainb { min-width: 44px; }
 #btn-attack.skill span { font-size: 30px; }
 #btn-attack.nomana { filter: saturate(0.4) brightness(0.75); }
+
+/* v1.3: one buff bar along the top for every timed effect: icon, seconds left, a draining bar */
+#buffs { flex-wrap: wrap; gap: 4px; max-width: min(46vw, 420px); }
+.buff.tbuff {
+  position: relative; display: inline-flex; align-items: center; gap: 3px; height: 24px; min-width: 34px;
+  padding: 0 6px 3px 5px; border-radius: 4px; background: rgba(0, 0, 0, 0.7); border: 1px solid #8a6a2a;
+  color: #ffd890; font-size: 11px; overflow: hidden; box-sizing: border-box;
+}
+.tbuff .tg { font-style: normal; font-size: 15px; line-height: 1; }
+.tbuff .tx { font-style: normal; font-size: 10px; font-weight: 700; color: #ffb080; }
+.tbuff .ts { font: 800 11px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 2px #000; }
+.tbuff .tbar { position: absolute; left: 0; bottom: 0; height: 3px; background: currentColor; opacity: 0.9; }
+.tbuff.k-debuff { border-color: #7a4aa8; color: #d8a0ff; }
+.tbuff.b-chill { border-color: #3a6a8a; color: #bfe6ff; }
+.tbuff.b-poison { border-color: #4a7a2a; color: #b8f07a; }
+.tbuff.b-frenzy { border-color: #c85a20; color: #ffb080; }
+.tbuff.b-berserk { border-color: #8a2a5a; color: #ff7ab0; }
+.tbuff.b-concentrate, .tbuff.b-slow_missiles { border-color: #3a5a8a; color: #9cc0ff; }
+/* v1.3: DPS lines */
+.dpsl b { color: #ffe9a8; }
+.dpsl b.up { color: #6ad06a; }
+.dpsl b.down { color: #ff6a5a; }
+.kv.dpsrow b { color: #ffe9a8; }
+.kv.dpsrow > span { color: #e8d9a0; }

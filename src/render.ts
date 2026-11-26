@@ -7,6 +7,7 @@ import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, qualityOf } from "./data/i
 import { ARTIFACT_BY_ID, ARTIFACT_COLOR, type Theme, actDef } from "./data/acts";
 import { ELEM_COLOR, ELITE_MODS } from "./data/monsters";
 import type { Ally, Game, GroundItem, Monster, MonsterShot, Nova, Projectile } from "./game";
+import { fmtDps } from "./game";
 import { artifactIcon } from "./sprites/artifacts";
 import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
@@ -433,7 +434,7 @@ export class Renderer {
 
     // health bars (crisp art pixels)
     for (const m of game.monsters) {
-      if (m.state === "dead" || m === game.boss) continue;
+      if (m.state === "dead" || m === game.boss || m.dummy) continue;
       if (m.hp >= m.maxHp && m.state === "idle" && !m.elite) continue;
       const sx = this.ax(m.x, m.y);
       const sy = this.ay(m.x, m.y) - Math.round(spriteTop(m.def.species) * 1.6);
@@ -450,6 +451,7 @@ export class Renderer {
     this.labels = [];
     this.drawLabels(game, showLabels);
     this.drawEliteNames(game);
+    this.drawDummyMeter(game);
     if (L.vendor) {
       const v = L.vendor;
       const near = game.nearVendor();
@@ -705,6 +707,12 @@ export class Renderer {
     ctx.save();
     ctx.lineCap = "round";
     const ec = q.elem && q.elem !== "phys" ? ELEM_COLOR[q.elem] : null;
+    if (q.pierced && (q.kind === "arrow" || q.kind === "weapon")) {
+      // v1.3: a piercing arrow leaves a pale glowing streak
+      ctx.globalAlpha = 0.55;
+      line(-26, 2, "#8ff0ff", 3.4);
+      ctx.globalAlpha = 1;
+    }
     if (q.kind === "arrow") {
       if (q.cls === "magic_arrow") {
         ctx.globalAlpha = 0.45;
@@ -962,7 +970,54 @@ export class Renderer {
     ctx.fillRect(sx - 8, top, Math.max(0, Math.round(16 * (al.hp / al.maxHp))), 2);
   }
 
+  /** v1.3: the camp training dummy: a straw sack on a post with a painted target; it wobbles when hit. */
+  private drawDummy(m: Monster) {
+    const c = this.ctx;
+    const sx = this.ax(m.x, m.y);
+    const sy = this.ay(m.x, m.y);
+    this.shadow(sx, sy, 10);
+    const w = m.flash > 0 ? Math.sin(m.flash * 18) * 2 * m.flash : 0;
+    c.save();
+    c.translate(sx, sy);
+    // post and base
+    c.fillStyle = "#4a3020";
+    c.fillRect(-6, -2, 12, 3);
+    c.fillStyle = "#6a4a2a";
+    c.fillRect(-1, -34, 3, 33);
+    c.translate(w, 0);
+    // arms (a cross bar)
+    c.fillStyle = "#7a5632";
+    c.fillRect(-11, -27, 22, 3);
+    // straw body
+    c.fillStyle = "#c8a060";
+    c.fillRect(-6, -30, 13, 18);
+    c.fillStyle = "#a8803e";
+    for (let i = -5; i < 7; i += 3) c.fillRect(i, -30, 1, 18);
+    c.fillStyle = "#8a6a3a";
+    c.fillRect(-6, -21, 13, 2); // rope
+    // target on the chest
+    c.fillStyle = "#e8e0d0";
+    c.fillRect(-3, -27, 7, 6);
+    c.fillStyle = "#c8281c";
+    c.fillRect(-2, -26, 5, 4);
+    c.fillStyle = "#e8e0d0";
+    c.fillRect(0, -25, 1, 2);
+    // sack head
+    c.fillStyle = "#d8b878";
+    c.fillRect(-4, -38, 9, 8);
+    c.fillStyle = "#5a4024";
+    c.fillRect(-2, -35, 1, 1);
+    c.fillRect(2, -35, 1, 1);
+    if (m.flash > 0.5) {
+      c.globalAlpha = (m.flash - 0.5) * 1.2;
+      c.fillStyle = "#fff";
+      c.fillRect(-6, -38, 13, 26);
+    }
+    c.restore();
+  }
+
   private drawMonster(m: Monster) {
+    if (m.dummy) return this.drawDummy(m);
     const model = m.def.species;
     const sx = this.ax(m.x, m.y);
     const sy = this.ay(m.x, m.y);
@@ -1165,6 +1220,35 @@ export class Renderer {
 
   // -------------------------------------------------------------- labels / hit tests (CSS px)
   /** Item labels (when shown); artifact labels always. */
+  /** v1.3: the training dummy's name and DPS meter (rolling DPS, total, hits; the last session's numbers stay up). */
+  private drawDummyMeter(game: Game) {
+    const m = game.monsters.find((q) => q.dummy);
+    if (!m) return;
+    const p = game.player;
+    if (Math.hypot(m.x - p.x, m.y - p.y) > 16) return;
+    const f = this.fctx;
+    const x = this.cx(m.x, m.y);
+    let y = this.cy(m.x, m.y) - 46 * this.ascale;
+    const mt = game.dummyMeter();
+    f.textAlign = "center";
+    f.lineWidth = 3;
+    f.strokeStyle = "rgba(0,0,0,.85)";
+    const text = (s: string, font: string, color: string) => {
+      f.font = font;
+      f.strokeText(s, x, y);
+      f.fillStyle = color;
+      f.fillText(s, x, y);
+    };
+    const y0 = y;
+    y = mt ? y0 - 30 * Math.min(1, this.ascale / 2.2) - 4 : y0;
+    text("Training Dummy", "bold 11px Georgia, 'Times New Roman', serif", "#d8c8a0");
+    if (!mt) return;
+    y = y0 - 14 * Math.min(1, this.ascale / 2.2);
+    text(`${mt.done ? "Last: " : ""}DPS ${fmtDps(mt.done ? mt.avg : mt.dps)}`, "bold 15px Georgia, 'Times New Roman', serif", mt.done ? "#c8b88a" : "#ffe08a");
+    y = y0;
+    text(`${mt.total.toLocaleString("en-US")} damage · ${mt.hits} hits · ${mt.secs.toFixed(1)}s`, "bold 10px system-ui, sans-serif", "#e8dcc0");
+  }
+
   /** Names (and modifiers) over champions and uniques near the hero. */
   private drawEliteNames(game: Game) {
     const f = this.fctx;
@@ -1295,7 +1379,7 @@ export class Renderer {
     for (const m of game.monsters) {
       if (m.state === "dead" || !L.explored[idx(Math.floor(m.x), Math.floor(m.y))]) continue;
       if (Math.hypot(m.x - p.x, m.y - p.y) > 9) continue;
-      dot(m.x, m.y, m.def.rank !== "normal" ? "#ff40ff" : "#ff3a2a", m.def.rank !== "normal" ? 4 : 3);
+      dot(m.x, m.y, m.dummy ? "#d8b070" : m.def.rank !== "normal" ? "#ff40ff" : "#ff3a2a", m.def.rank !== "normal" || m.dummy ? 4 : 3);
     }
     g.fillStyle = "#4aa0ff";
     g.fillRect(W / 2 - 2, H / 2 - 2, 4, 4);

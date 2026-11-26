@@ -10,6 +10,18 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.3",
+    title: "Buff bar, freeze resistance, Pierce you can see, DPS, training dummy",
+    notes: [
+      "Every timed effect now shows in one buff bar along the top, both classes: warcries, Frenzy, Concentrate, Berserk, Slow Missiles, Decoy, Grim Ward, Inner Sight, Battle Cry, Taunt, plus chill and poison, each with seconds left and a draining bar.",
+      "Freeze resistance: champions, uniques and bosses resist freezes more the deeper you go, and after a freeze they can't be frozen again for a moment, so nothing tough can be freeze-locked. Act bosses are only chilled. Normal monsters freeze as before.",
+      "Pierce always worked (about half your arrows at 51%), but you couldn't tell. A piercing arrow now glows, the monster shows \"Pierce\", and the arrow flies on into the next one.",
+      "DPS: weapon tooltips, the compare sheet and the Character screen show your normal attack's damage per second (damage, attack speed and crits together), so a Short Bow vs a Long Bow is easy to compare.",
+      "A training dummy stands in camp, west of the campfire. It never dies or fights back and gives nothing; hit it to see every hit and a live DPS meter (last 5 seconds, total, hits).",
+      "Strafe toned down a little: −30% damage per arrow at level 1, +4% per level (was −20%, +5%), and its volley takes slightly longer. It's still the strongest single-target bow skill.",
+    ],
+  },
+  {
     version: "1.2.2",
     title: "Guided Arrow really homes",
     notes: [

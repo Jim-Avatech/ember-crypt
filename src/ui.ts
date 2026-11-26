@@ -6,7 +6,7 @@ import {
 } from "./data/items";
 import type { SaveData } from "./game";
 import { CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
-import { BUYBACK_MAX, CLASS_DEF, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
+import { AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
 import type { Settings } from "./save";
@@ -306,10 +306,11 @@ export class Ui {
     const xpPct = (p.xp - prev) / Math.max(1, next - prev);
     const slots = p.slots.map((s) => (s ? `${s}:${(SKILL_BY_ID[s].mana?.(g.skillLevel(s)) ?? 0) <= p.mana ? 1 : 0}` : "-")).join(",");
     const ctx = g.contextAction();
+    const tbuffs = g.timedBuffs();
     const key = [
       Math.round(hpPct * 200), Math.round(mpPct * 200), Math.round(xpPct * 300), Math.ceil(p.hp), Math.ceil(p.mana),
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
-      Math.ceil(p.buffs.shout), Math.ceil(p.buffs.bo), Math.ceil(p.buffs.bcmd), p.buffs.conc > 0, p.buffs.bers > 0, p.frenzy.stacks, Math.ceil(p.frenzy.t), g.maxFloor,
+      tbuffs.map((b) => `${b.id}${Math.ceil(b.left)}/${b.full ? Math.round((b.left / b.full) * 24) : 0}x${b.stacks ?? 0}`).join(), g.maxFloor,
       g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
       p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, p.equip.off?.baseId, p.mainAtk, p.cls,
       g.mainSkill() ? (SKILL_BY_ID[g.mainSkill()!].mana?.(g.skillLevel(g.mainSkill()!)) ?? 0) <= p.mana : -1, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
@@ -371,19 +372,16 @@ export class Ui {
     btn.dataset.kind = ctx ?? "";
     const nx = g.floor + 1;
     btn.textContent = ctx === "descend" ? (levelInAct(nx) === 1 ? `▼ Enter Act ${actDef(nx).roman}: ${actDef(nx).area}` : `▼ Descend to Level ${levelInAct(nx)}`) : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)}` : "";
-    const buffs: string[] = [];
-    if (p.chillT > 0) buffs.push(`<span class="buff chill">❄ Chilled</span>`);
-    if (p.poison.t > 0) buffs.push(`<span class="buff poison">☠ Poisoned</span>`);
-    if (p.frenzy.stacks > 0) {
-      const left = p.frenzy.t > 0 ? Math.ceil(p.frenzy.t) : 0;
-      buffs.push(`<span class="buff frenzy">⚡ Frenzy ×${p.frenzy.stacks}${left ? ` ${left}s` : ""}</span>`);
-    }
-    if (p.buffs.shout > 0) buffs.push(`<span class="buff shout">◈ ${Math.ceil(p.buffs.shout)}s</span>`);
-    if (p.buffs.bo > 0) buffs.push(`<span class="buff bo">⚑ ${Math.ceil(p.buffs.bo)}s</span>`);
-    if (p.buffs.bcmd > 0) buffs.push(`<span class="buff bo">✪ Command ${Math.ceil(p.buffs.bcmd)}s</span>`);
-    if (p.buffs.conc > 0) buffs.push(`<span class="buff conc">◎ Focus</span>`);
-    if (p.buffs.bers > 0) buffs.push(`<span class="buff bers">✖ Berserk: no defense</span>`);
-    $(r, "#buffs").innerHTML = buffs.join("");
+    // v1.3: one buff bar for everything timed, both classes: icon, seconds left and a draining bar (no rings on the
+    // skill buttons: thumbs cover them)
+    $(r, "#buffs").innerHTML = tbuffs
+      .map((b) => {
+        const secs = b.full > 0 ? `${Math.ceil(b.left)}s` : "";
+        const pct = b.full > 0 ? Math.max(0, Math.min(100, (b.left / b.full) * 100)) : 100;
+        return `<span class="buff tbuff k-${b.kind} b-${b.id}" data-id="${b.id}" title="${esc(b.label)}" aria-label="${esc(b.label)}${secs ? `, ${secs} left` : ""}">
+          <i class="tg">${b.glyph}</i>${b.stacks ? `<i class="tx">×${b.stacks}</i>` : ""}<b class="ts">${secs}</b><i class="tbar" style="width:${pct.toFixed(1)}%"></i></span>`;
+      })
+      .join("");
   }
 
   updateJoystick() {
@@ -1084,7 +1082,7 @@ export class Ui {
         const name = it ? itemName(it) : "Fists";
         const lo = Math.round(h.min * (1 + h.dmgPct / 100));
         const hi = Math.round(h.max * (1 + h.dmgPct / 100));
-        const aps = (1 + d.ias) / h.speed;
+        const aps = ((1 + d.ias) / h.speed) * (isBow(it) && p.cls === "amazon" ? AMAZON_SPEED : 1);
         return `<div class="kv"><span>${d.hands.length > 1 ? (i ? "Off-hand" : "Main hand") : "Damage"} <small>${esc(name)}</small></span><b>${lo} – ${hi}</b></div>
           <div class="kv sub"><span>Attack rating · speed</span><b>${h.ar} · ${aps.toFixed(1)}/s</b></div>`;
       })
@@ -1103,6 +1101,7 @@ export class Ui {
         <div class="spoints ${p.statPoints ? "has" : ""}">${p.statPoints ? `${p.statPoints} stat points to spend` : "Gain 5 stat points each level"}</div>
       </div>
       <div class="char-right">
+        <div class="kv dpsrow"><span>DPS <small>⚔ normal attack, crits in, before misses</small></span><b>${fmtDps(d.dps)} <small>· ${d.aps.toFixed(2)}/s</small></b></div>
         ${d.dual ? `<div class="kv dualtag"><span>Dual wielding</span><b>attacks alternate hands</b></div>` : ""}
         ${hands}
         ${fz}
@@ -1143,6 +1142,10 @@ export class Ui {
       if (b.kind === "bow") lines.push(`Shoots arrows from a quiver in the off-hand · range ${b.range ?? 11} · damage grows with Dexterity`);
       if (b.reach) lines.push(`Long reach · two-handed thrust · Spear Mastery`);
       lines.push(`Speed: ${b.speedLabel}${b.hands === 1 ? " · can dual wield" : ""}`);
+      // v1.3: DPS of your ⚔ normal attack with this weapon (your stats and skills, crits in; misses not)
+      const wd = g.weaponDps(it);
+      // (item cards list their own stats with no deltas; the DPS difference is in the compare stat list)
+      if (wd) lines.push(`<span class="dpsl">DPS: <b>${fmtDps(wd.dps)}</b> · ${wd.aps.toFixed(2)} attacks/s${worn ? "" : " if equipped"}</span>`);
       if (b.kind === "staff") lines.push(`Uses Pole Arm Mastery`);
     } else if (b.ammo) {
       lines.push(`Quantity: <b class="${(it.qty ?? 0) === 0 ? "bad" : ""}">${it.qty ?? 0} of ${b.ammo}</b> arrows · refills in camp`);

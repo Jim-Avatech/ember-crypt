@@ -161,7 +161,10 @@ export const guidedDmg = (l: number) => 50 + (l - 1) * 10;
 export const iceArrowDmg = (l: number) => 35 + (l - 1) * 12;
 export const iceArrowFreeze = (l: number) => Math.min(3, 1 + l * 0.1);
 export const strafeArrows = (l: number) => Math.min(10, 4 + Math.ceil(l / 2));
-export const strafeDmg = (l: number) => -20 + (l - 1) * 5;
+/** v1.3: modest nerf (was -20% +5%/level with a 0.5 + 0.28/arrow draw): on one target Strafe out-damaged every other bow skill 2-3× */
+export const strafeDmg = (l: number) => -30 + (l - 1) * 4;
+/** v1.3: Strafe's draw time in weapon-speed units: 0.5 + 0.32 per arrow (was 0.28) */
+export const strafeDur = (n: number) => 0.5 + 0.32 * n;
 export const immolationDmg = (l: number) => 60 + (l - 1) * 20;
 export const immolationDps = (l: number) => 25 + (l - 1) * 8;
 export const immolationDur = (l: number) => 3 + l * 0.2;
