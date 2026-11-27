@@ -1215,7 +1215,7 @@ export class Ui {
           const sp = g.spellBaseParts();
           return `<div class="kv spellbase"><span>Base spell damage <small>level ${Math.round(sp.level)} + Energy ${Math.round(sp.energy)} + items ${Math.round(sp.items)}</small></span><b>${Math.round(sp.total)}</b></div>`;
         })()}
-        ${p.cls === "sorceress" ? `<div class="kv casttime"><span>Cast time <small>${d.fcr ? `+${d.fcr}% faster cast rate` : "no faster cast rate"}</small></span><b>${g.castTime().toFixed(2)} s</b></div>` : ""}
+        ${spell ? `<div class="kv casttime"><span>Cast time <small>${d.fcr ? `+${d.fcr}% faster cast rate` : "no faster cast rate"}</small></span><b>${g.castTime().toFixed(2)} s</b></div>` : ""}
         ${spell ? `<div class="kv dpsrow spelldps"><span>Spell DPS <small>${esc(SKILL_BY_ID[spell.id].name)} lv ${spell.lvl}, one target</small></span><b>${fmtDps(spell.dps)}</b></div>` : ""}
         <div class="kv dpsrow"><span>DPS <small>⚔ normal attack, crits in, before misses</small></span><b>${fmtDps(d.dps)} <small>· ${d.aps.toFixed(2)}/s</small></b></div>
         ${d.dual ? `<div class="kv dualtag"><span>Dual wielding</span><b>attacks alternate hands</b></div>` : ""}
@@ -1227,7 +1227,7 @@ export class Ui {
         <div class="kv"><span>Critical strike</span><b>${d.crit}%</b></div>
         <div class="kv resrow"><span>Resistances</span><b>${RES_ORDER.map((k) => `<i class="r-${k}" title="${RES_LABEL[k]}" aria-label="${RES_LABEL[k]} ${d.res[k]}%">${d.res[k]}%</i>`).join(" ")}</b></div>
         ${d.ll || d.ml ? `<div class="kv leechrow"><span>Life · mana leech</span><b><i class="lleech" title="Life leech">${d.ll}%</i> · <i class="mleech" title="Mana leech">${d.ml}%</i></b></div>
-        <div class="kv leechnote"><span>Spells leech at ${SPELL_LEECH_PCT}%</span><b>up to <i class="lleech">${Math.round(spellLeechCap(d.maxHp))}</i> life · <i class="mleech">${Math.round(spellLeechCap(d.maxMana))}</i> mana a second</b></div>` : ""}
+        <div class="kv leechnote"><span>Spells &amp; skill effects leech at ${SPELL_LEECH_PCT}%</span><b>up to <i class="lleech">${Math.round(spellLeechCap(d.maxHp))}</i> life · <i class="mleech">${Math.round(spellLeechCap(d.maxMana))}</i> mana a second</b></div>` : ""}
         ${d.gearIas || d.frw ? `<div class="kv"><span>Attack speed · run speed</span><b class="mod">+${d.gearIas}% · +${d.frw}%</b></div>` : ""}
         ${d.gf || d.mf ? `<div class="kv"><span>Gold find · magic find</span><b class="mod">+${d.gf}% · +${d.mf}%</b></div>` : ""}
         <div class="kv"><span>Gold</span><b class="gold">${p.gold.toLocaleString()}</b></div>
@@ -1286,7 +1286,7 @@ export class Ui {
     }
     for (const m of it.mods ?? []) lines.push(modLine(m));
     // v1.6.4: spells and skill effects leech at a reduced, capped rate
-    if ((it.mods ?? []).some((m) => m.s === "ll" || m.s === "ml")) lines.push(`<span class="leechnote">Spells leech at ${SPELL_LEECH_PCT}%, up to ${SPELL_LEECH_CAP}% of max life / mana a second</span>`);
+    if ((it.mods ?? []).some((m) => m.s === "ll" || m.s === "ml")) lines.push(`<span class="leechnote">Spells and skill effects leech at ${SPELL_LEECH_PCT}%, up to ${SPELL_LEECH_CAP}% of max life / mana a second</span>`);
     return lines.map((l) => `<div>${l}</div>`).join("");
   }
 

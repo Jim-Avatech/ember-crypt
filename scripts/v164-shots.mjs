@@ -46,7 +46,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await page.waitForTimeout(400);
   const row = await ev(() => ({ t: document.querySelector(".leechnote")?.textContent.replace(/\s+/g, " ").trim() ?? "", hp: __ec.game.derived().maxHp, mp: __ec.game.derived().maxMana }));
   const capH = Math.round(Math.max(1, row.hp * 0.04)), capM = Math.round(Math.max(1, row.mp * 0.04));
-  C("Character screen: 'Spells leech at 35%, up to X life · Y mana a second'", new RegExp(`Spells leech at 35%.*up to ${capH} life · ${capM} mana a second`).test(row.t), JSON.stringify(row));
+  C("Character screen: 'Spells (?:and|&) skill effects leech at 35%, up to X life · Y mana a second'", new RegExp(`Spells (?:and|&) skill effects leech at 35%.*up to ${capH} life · ${capM} mana a second`).test(row.t), JSON.stringify(row));
   await page.locator(".leechnote").first().scrollIntoViewIfNeeded().catch(() => {});
   await page.screenshot({ path: `${out}/01-character-spell-leech${sfx}.png` });
   await ev(() => __ec.ui.close?.());
@@ -56,7 +56,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await page.locator('[data-src="bag"][data-uid="9902"]').first().click();
   await page.waitForTimeout(400);
   const card = await ev(() => [...document.querySelectorAll(".leechnote")].map((e) => e.textContent).join(" | ").replace(/\s+/g, " "));
-  C("leech item card: 'Spells leech at 35%, up to 4% of max life / mana a second'", /Spells leech at 35%, up to 4% of max life \/ mana a second/.test(card), card.slice(0, 260));
+  C("leech item card: 'Spells (?:and|&) skill effects leech at 35%, up to 4% of max life / mana a second'", /Spells (?:and|&) skill effects leech at 35%, up to 4% of max life \/ mana a second/.test(card), card.slice(0, 260));
   await page.screenshot({ path: `${out}/02-item-card-spell-leech${sfx}.png` });
   await page.locator('[data-act="cmp-close"]').click().catch(() => {});
   await ev(() => __ec.ui.close?.());

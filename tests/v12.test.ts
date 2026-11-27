@@ -15,7 +15,7 @@ function hero(cls: "barbarian" | "amazon" = "barbarian", level = 20) {
 
 describe("v1.2 respec costs", () => {
   it("50 gold × level per point", () => {
-    expect(GAME_VERSION).toBe("1.7");
+    expect(GAME_VERSION).toBe("1.7.1");
     expect(RESPEC_GOLD_PER_LEVEL).toBe(50);
     expect([1, 10, 20, 40, 60, 80].map(respecCost)).toEqual([50, 500, 1000, 2000, 3000, 4000]);
   });

@@ -37,11 +37,10 @@ const SK30 = { fire_bolt: 10, fire_ball: 20, warmth: 1 };
 const SK60 = { ice_bolt: 1, ice_blast: 1, frost_nova: 1, glacial_spike: 1, blizzard: 1, frozen_armor: 1, frozen_orb: 20, cold_mastery: 20, warmth: 14 };
 
 describe("v1.7 release", () => {
-  it("version, patch note, cache v38", () => {
-    expect(GAME_VERSION).toBe("1.7");
-    expect(PATCH_NOTES[0].version).toBe("1.7");
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/spell damage/i);
-    expect(swSrc).toContain("ember-crypt-shell-v38");
+  it("version, patch note, cache", () => {
+    expect(GAME_VERSION).toBe("1.7.1");
+    expect(PATCH_NOTES.find((n) => n.version === "1.7")!.notes.join(" ")).toMatch(/spell damage/i);
+    expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
   });
 });
 

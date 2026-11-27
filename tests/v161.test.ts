@@ -50,7 +50,7 @@ function castRun(g: Game, id: string, secs = 0.7) {
 
 describe("v1.6.1 version, cache", () => {
   it("version 1.6.1 with a patch note on top; service worker cache v34", () => {
-    expect(GAME_VERSION).toBe("1.7");
+    expect(GAME_VERSION).toBe("1.7.1");
     const n161 = PATCH_NOTES.find((q) => q.version === "1.6.1")!;
     expect(n161.version).toBe("1.6.1");
     expect(n161.notes.length).toBe(5);

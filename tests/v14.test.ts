@@ -27,7 +27,7 @@ const noDupes = (it: Item) => {
 };
 
 describe("v1.4 version", () => {
-  it("label", () => expect(GAME_VERSION).toBe("1.7"));
+  it("label", () => expect(GAME_VERSION).toBe("1.7.1"));
 });
 
 describe("v1.4 no affix or stat twice, from any source", () => {

@@ -10,6 +10,14 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.7.1",
+    title: "One rule for every hero",
+    notes: [
+      "Leech now follows one rule for every hero, set by what deals the damage: weapon hits leech in full; spells and skill effects (War Cry too, which didn't leech before) leech at 35%, capped; Valkyries never leech for you.",
+      "The Character screen's Spell DPS and Cast time rows now show for any hero with a damaging spell learned, not just the Sorceress.",
+    ],
+  },
+  {
     version: "1.7",
     title: "Base spell damage",
     notes: [

@@ -575,9 +575,11 @@ export const BASE_RUN = 4.6;
 
 export const BASE_POTS = 4;
 /**
- * v1.6.4: damage from spells and skill effects (everything through Game.elemHit: Sorceress spells, Amazon bursts,
- * bolts, chains, Plague and Immolation clouds) leeches at this % of the gear's life / mana leech. Weapon hits
- * (playerHit) leech in full as before.
+ * Leech by damage source, the same for every class (v1.7.1 audit):
+ * - weapon hits (playerHit: melee, thrown, arrows, incl. the skills that swing or throw the weapon) leech in full;
+ * - skill effects (elemHit and directHit: spells, bursts, bolts, chains, clouds, War Cry) leech at SPELL_LEECH_PCT,
+ *   capped at SPELL_LEECH_CAP % of max life / mana a second;
+ * - minions (Valkyrie) never leech for the hero.
  */
 export const SPELL_LEECH_PCT = 35;
 /** v1.6.4: spell leech returns at most this % of max life (and of max mana) per second, with a 1 s reserve */
@@ -591,7 +593,7 @@ export const CLASS_DEF: Record<HeroClass, { stats: Stats; life: number; lifePerV
   barbarian: { stats: BASE_STATS, life: 55, lifePerVit: 4, mana: 10, manaPerEne: 1.5 },
   amazon: { stats: { str: 20, dex: 25, vit: 20, ene: 15 }, life: 50, lifePerVit: 3, mana: 15, manaPerEne: 1.5 },
   // v1.6: D2 Sorceress: 10 Str, 25 Dex, 10 Vit, 35 Energy; 40 life (+1 a level, +2 per Vitality), 35 mana (+2 a level,
-  // +2 per Energy). Her mana also comes back 1.5× as fast as the others' (more with Warmth).
+  // +2 per Energy). Her mana also comes back 2× as fast as the others' (more with Warmth).
   sorceress: { stats: { str: 10, dex: 25, vit: 10, ene: 35 }, life: 40, lifePerVit: 2, mana: 35, manaPerEne: 2, lifePerLvl: 1, manaPerLvl: 2, manaRegen: 2 },
 };
 export const isHeroClass = (c: unknown): c is HeroClass => c === "barbarian" || c === "amazon" || c === "sorceress";
@@ -1708,12 +1710,12 @@ export class Game {
   }
 
   /**
-   * v1.6: the Sorceress's main spell for the character screen: the damaging spell on ⚔, else the first on a skill button,
-   * else her strongest learned one; with its single-target DPS (spellDps). null for other classes or with none learned.
+   * v1.6: the hero's main spell for the character screen: the damaging spell on ⚔, else the first on a skill button,
+   * else the strongest learned one; with its single-target DPS (spellDps). null with none learned (v1.7.1: no class
+   * check; only Sorceress skills are spells today).
    */
   mainSpell(): { id: string; lvl: number; dps: number } | null {
     const p = this.player;
-    if (p.cls !== "sorceress") return null;
     const host = this as unknown as SorcHost;
     const ok = (id: string | null | undefined): id is string => !!id && DAMAGE_SPELLS.includes(id) && this.skillLevel(id) > 0;
     const pick = ok(p.mainAtk) ? p.mainAtk : p.slots.find(ok) ?? DAMAGE_SPELLS.filter(ok).sort((a, b) => spellDps(host, b) - spellDps(host, a))[0];
@@ -1920,7 +1922,7 @@ export class Game {
     const p = this.player;
     // regen + potions
     // v0.8: slower natural regen (was full mana in 22 s, full life in 160 s)
-    // v1.6: the Sorceress regenerates mana 1.5× as fast, and Warmth adds to it
+    // v1.6: the per-class manaRegen multiplier (Sorceress 2×, class data), and Warmth adds to it
     const regen = (CLASS_DEF[p.cls]?.manaRegen ?? 1) * (1 + warmthRegen(this.skillLevel("warmth")) / 100);
     p.mana = Math.min(d.maxMana, p.mana + (d.maxMana / 45) * regen * dt);
     p.hp = Math.min(d.maxHp, p.hp + (d.maxHp / 300) * (1 + stamRegen(this.skillLevel("increased_stamina")) / 100) * dt);
@@ -2335,8 +2337,12 @@ export class Game {
     return best;
   }
 
-  /** Non-weapon damage (War Cry): always hits, no leech. */
+  /**
+   * Non-weapon damage (War Cry): always hits. v1.7.1: it is skill-effect damage, so it leeches like every other skill
+   * effect (SPELL_LEECH_PCT of gear leech, capped), the same rule for every class.
+   */
   private directHit(m: Monster, dmg: number, color: string) {
+    if (!m.dummy && m.state !== "dead") this.spellLeech(Math.min(dmg, Math.max(0, m.hp)));
     m.hp -= dmg;
     m.flash = 1;
     m.lastHurt = this.time;

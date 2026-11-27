@@ -3,6 +3,13 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.7.1: One rule for every hero (class audit)
+
+- Leech is set by the damage source, never the class: weapon hits (`playerHit`: melee, throws, arrows, and the skills that swing or throw the weapon, e.g. Whirlwind, Multishot) leech in full, uncapped; skill effects (`elemHit` and `directHit`: spells, bursts, bolts, chains, clouds, and now War Cry) leech at `SPELL_LEECH_PCT` 35%, capped at `SPELL_LEECH_CAP` 4% of max life / mana a second; minions (Valkyrie, `noLeech`) never leech for the hero. War Cry level 20 into 6 monsters (level 30, 6% leech): 0 → 13.3 life (the cap; uncapped 35% would be 33.9).
+- `Game.mainSpell()` (Character-screen Spell DPS) and the Cast time row no longer check the class: they show for any hero with a damaging spell learned (today only Sorceress skills are spells, so nothing visible changes).
+- Audit: the remaining class checks are class content (skill trees and which skills are spells/cast, starting stats and kits, the per-class `CLASS_DEF` numbers including the Sorceress `manaRegen` 2×, Amazon bow/spear speed, Barbarian dual wield, class-leaning drops and "+skills" pools, Warmth, Static Field's boss floor). Faster cast rate still speeds up only spells; applying it to Barbarian cries / Amazon buffs is left for a decision (see the v1.7.1 report).
+- Saves: nothing stored changes. Tests: `tests/v171.test.ts`, `scripts/v171-shots.mjs` (screenshots/v171). SW cache v39.
+
 ## v1.7: Base spell damage
 
 - `spellBaseParts(level, energy, items)` (src/data/sorc.ts), `Game.spellBaseParts()`, `Derived.sbase`: every hero's base spell damage = level part `spellBase(L) × 0.6` (`SPELL_LEVEL_SHARE`) + Energy part `spellBase(L) × ene / (ene + 250)` (`SPELL_ENE_HALF`, diminishing; Energy with gear) + caster items worn and usable `casterSpellDmg(base, ilvl) = spellBase(ilvl) × share` (`CASTER_SPELL_SHARE`: wand 0.25, orb 0.25, battle staff 0.5). Other weapons add nothing.
