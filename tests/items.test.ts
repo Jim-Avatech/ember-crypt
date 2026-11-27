@@ -49,7 +49,7 @@ describe("item classes", () => {
 });
 
 describe("affix rolling", () => {
-  it("magic items get 1–2 affixes, at most one per side, with a prefix/suffix name", () => {
+  it("magic items get 1–2 affixes from the one pool (v1.4: no prefix/suffix sides), named from them", () => {
     const r = rng(1);
     for (let i = 0; i < 400; i++) {
       const cat = CATS[i % CATS.length];
@@ -57,15 +57,13 @@ describe("affix rolling", () => {
       const res = rollAffixes(cat, ilvl, "magic", r);
       expect(res.aff.length).toBeGreaterThanOrEqual(1);
       expect(res.aff.length).toBeLessThanOrEqual(2);
-      expect(res.prefixes.length).toBeLessThanOrEqual(1);
-      expect(res.suffixes.length).toBeLessThanOrEqual(1);
     }
     const it2 = enchant(makeItem("axe", 12), "magic", rng(7));
     expect(it2.q).toBe("magic");
     expect(it2.name).toContain("Axe");
   });
 
-  it("rare items get 3–4 affixes, at most 3 prefixes and 3 suffixes, no duplicate groups", () => {
+  it("rare items get 3–4 affixes, no duplicate affixes or stats", () => {
     const r = rng(2);
     for (let i = 0; i < 600; i++) {
       const cat = CATS[i % CATS.length];
@@ -73,10 +71,9 @@ describe("affix rolling", () => {
       const res = rollAffixes(cat, ilvl, "rare", r);
       expect(res.aff.length, `${cat} ilvl ${ilvl}`).toBeGreaterThanOrEqual(3);
       expect(res.aff.length).toBeLessThanOrEqual(4);
-      expect(res.prefixes.length).toBeLessThanOrEqual(3);
-      expect(res.suffixes.length).toBeLessThanOrEqual(3);
       expect(new Set(res.aff).size).toBe(res.aff.length);
-      expect(res.aff.includes("p:edmg") && res.aff.includes("p:edmg_ar")).toBe(false);
+      expect(res.aff.includes("edmg") && res.aff.includes("edmg_ar")).toBe(false);
+      expect(new Set(res.mods.map((m) => m.s)).size).toBe(res.mods.length);
     }
     const rare = enchant(makeItem("sword", 15), "rare", rng(3));
     expect(rare.name).toMatch(/^\S+ \S+$/); // two-word name

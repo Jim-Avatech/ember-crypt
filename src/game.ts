@@ -1,7 +1,8 @@
-import { enchant, rollDrop } from "./data/affixes";
+import { MAX_AFFIXES, affixCount, craftAffix, craftBlock, craftCost, enchant, mergeDuplicateMods, rollDrop } from "./data/affixes";
 import {
   BASE_BY_ID, type EquipSlot, ITEM_BASES, type Item, type Kind, type StatKey, beltSlotsOf, isTwoHanded, itemDamage, isBow, isQuiver, isSpearLike, offBlocked,
   isThrowing, itemDefense, itemName, itemPrice, itemReqs, makeItem, migrateItem, modTotal, QUALITY_COLOR, qtyMax, qualityOf, sellPrice,
+  type Mod, type Quality, ilvlOf,
 } from "./data/items";
 import {
   ELEM_COLOR, ELITE_MODS, type Elem, type EliteMod, MONSTERS, type MonsterDef, type MonsterKind, type Shot, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp, uniqueName,
@@ -1011,6 +1012,7 @@ export class Game {
       if (!mainAtkOk(this.player.mainAtk, this.player.cls)) this.player.mainAtk = null;
       this.player.unclaimed = this.player.unclaimed ?? [];
       this.clearAmazonOffhand();
+      this.mergedItems = this.mergeDuplicates();
       this.stashAt = save.stashAt ?? 0;
       this.floor = save.floor;
       this.maxFloor = Math.max(save.maxFloor ?? save.floor, save.floor);
@@ -1957,8 +1959,11 @@ export class Game {
     return this.player.gold + (this.inTown ? this.player.stashGold : 0);
   }
   private payRespec(): boolean {
+    return this.payGold(respecCost(this.player.level));
+  }
+  /** Pay from carried gold first, then (in camp) the stash's gold. False (nothing paid) if that isn't enough. */
+  private payGold(cost: number): boolean {
     const p = this.player;
-    const cost = respecCost(p.level);
     if (this.respecFunds() < cost) return false;
     const fromBag = Math.min(p.gold, cost);
     p.gold -= fromBag;
@@ -4090,6 +4095,19 @@ export class Game {
     }
     return this.offhandMoved;
   }
+  /**
+   * v1.4: items from before v1.4 could carry the same stat twice; merge them (keeping the higher value) everywhere the
+   * hero keeps items. Returns how many items changed. Runs on every load (and on the shared stash in main.ts).
+   */
+  mergeDuplicates(): number {
+    const p = this.player;
+    const items = [...Object.values(p.equip), ...p.bag.map((e) => e.item), ...p.stash.map((e) => e.item), ...(p.unclaimed ?? [])];
+    let n = 0;
+    for (const it of items) if (it && mergeDuplicateMods(it) > 0) n++;
+    return n;
+  }
+  /** v1.4: how many of this hero's items had a duplicate stat merged on load (for a one-time note) */
+  mergedItems = 0;
   /** v1.3.2: set when clearAmazonOffhand moved something; main.ts shows a toast once (takeOffhandNote) */
   offhandMoved: { item: Item; to: "bag" | "unclaimed" | "stash" | "ground" } | null = null;
   /**
@@ -4576,15 +4594,61 @@ export class Game {
     return !this.player.dead && this.waypointHere() && Math.hypot(w.x - this.player.x, w.y - this.player.y) < 1.7;
   }
 
+  /** v1.4: standing by Brann the Runesmith (camp) */
+  nearCrafter(): boolean {
+    const v = this.level.crafter;
+    return !!v && this.inTown && !this.player.dead && Math.hypot(v.x - this.player.x, v.y - this.player.y) < 2.3;
+  }
+
+  // ------------------------------------------------------------------ v1.4 crafting
+  /** an item the crafter can work on: a bag item (uid) or an equipped one (slot) */
+  craftItem(at: { uid?: number; slot?: EquipSlot }): Item | null {
+    if (at.slot) return this.player.equip[at.slot] ?? null;
+    return at.uid !== undefined ? this.bagEntry(at.uid)?.item ?? null : null;
+  }
+  /** v1.4: what one more affix would cost on this item, what it becomes, and why it can't (if it can't) */
+  craftQuote(it: Item): { ok: boolean; why?: string; cost: number; count: number; from: Quality; to: Quality } {
+    const count = affixCount(it);
+    const from = qualityOf(it);
+    const to: Quality = count + 1 >= 3 ? "rare" : "magic";
+    const cost = craftCost(ilvlOf(it), Math.min(count, MAX_AFFIXES - 1));
+    const block = craftBlock(it);
+    if (block) return { ok: false, why: block, cost, count, from, to };
+    if (!this.inTown) return { ok: false, why: "Brann works in Ember Camp", cost, count, from, to };
+    if (this.respecFunds() < cost) return { ok: false, why: `Not enough gold (${cost.toLocaleString()} needed)`, cost, count, from, to };
+    return { ok: true, cost, count, from, to };
+  }
+  /**
+   * v1.4: pay and add one random affix (see craftAffix). Gold comes from what you carry first, then the stash (camp
+   * only), like a respec. Returns an error, or null and the rows that were added in lastCraft.
+   */
+  craft(at: { uid?: number; slot?: EquipSlot }, r: () => number = Math.random): string | null {
+    const it = this.craftItem(at);
+    if (!it) return "Item not found";
+    const q = this.craftQuote(it);
+    if (!q.ok) return q.why ?? "Can't craft that";
+    const res = craftAffix(it, r, this.player.cls);
+    if (!res.ok) return res.why ?? "Can't craft that";
+    this.payGold(q.cost);
+    this.lastCraft = { uid: it.uid, added: res.added, cost: q.cost };
+    this.events.sound("gold");
+    this.clampVitals();
+    this.events.changed();
+    return null;
+  }
+  /** v1.4: the last craft (for the UI to highlight the new rows) */
+  lastCraft: { uid: number; added: Mod[]; cost: number } | null = null;
+
   nearVendor(): boolean {
     const v = this.level.vendor;
     return !!v && this.inTown && Math.hypot(v.x - this.player.x, v.y - this.player.y) < 2.3;
   }
 
   /** The one context action shown above the controls. */
-  contextAction(): "descend" | "waypoint" | "trade" | "stash" | "portal" | null {
+  contextAction(): "descend" | "waypoint" | "trade" | "craft" | "stash" | "portal" | null {
     if (this.nearStairs()) return "descend";
     if (this.nearVendor()) return "trade";
+    if (this.nearCrafter()) return "craft";
     if (this.nearStash()) return "stash";
     if (this.nearPortal()) return "portal";
     if (this.nearWaypoint()) return "waypoint";

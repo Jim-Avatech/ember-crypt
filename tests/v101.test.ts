@@ -252,7 +252,7 @@ describe("v1.0.1 delete hero, 12 slots", () => {
 
 describe("v1.0.1 patch notes", () => {
   it("newest first, version label from the first entry", () => {
-    expect(GAME_VERSION).toBe("1.3.2");
+    expect(GAME_VERSION).toBe("1.4");
     const vs = PATCH_NOTES.map((n) => n.version);
     for (const v of ["1.0.1", "1.0", "0.9.4", "0.9.3", "0.9.2", "0.9.1", "0.9", "0.8.3", "0.8.2", "0.8.1"]) expect(vs).toContain(v);
     const num = (v: string) => v.split(".").map(Number).reduce((a, x, i) => a + x * 1000 ** (2 - i), 0);

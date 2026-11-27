@@ -10,6 +10,15 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.4",
+    title: "Brann the Runesmith, one affix pool, no doubled affixes",
+    notes: [
+      "New in camp: Brann the Runesmith, northwest of the campfire. For gold he adds one random affix to an item in your backpack or one you're wearing: normal → magic (1 affix) → magic (2) → rare (3) → rare (4). Four is the most an item can hold. Each step costs more (and more for higher item levels); he shows the price and asks first, and takes carried gold before stash gold.",
+      "Affixes are one pool now: any affix can roll in any slot, with no prefix/suffix limits. Magic items still get 1–2 and rares 3–4.",
+      "The same stat can never roll twice on one item (before, two Magic Find rows or two Attack Rating rows could). Items you already have with a doubled stat were merged into one row, keeping the higher value. Nothing was removed.",
+    ],
+  },
+  {
     version: "1.3.2",
     title: "Amazons don't dual wield",
     notes: [

@@ -49,6 +49,8 @@ export interface Level {
   vendor: { x: number; y: number } | null;
   /** camp stash chest (town only) */
   stash: { x: number; y: number } | null;
+  /** v1.4: Brann the Runesmith, the crafter (town only) */
+  crafter?: { x: number; y: number } | null;
   spawn: { x: number; y: number };
   /** 1 = floor, 0 = solid */
   tiles: Uint8Array;
@@ -312,6 +314,8 @@ export function generateTown(): Level {
     waypoint: { x: 21.5, y: 18.5 },
     vendor: { x: 25.5, y: 8.6 },
     stash: { x: 14.5, y: 17.5 },
+    // v1.4: northwest of the campfire, on open grass between the tent and the paths (blocks nothing)
+    crafter: { x: 10.5, y: 8.5 },
     spawn: { x: 19.5, y: 17.5 },
   };
 }

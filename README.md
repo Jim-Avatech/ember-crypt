@@ -3,6 +3,13 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.4: Brann the Runesmith, one affix pool, no doubled affixes
+
+- `src/data/affixes.ts`: one flat pool (`AffixDef` has no side any more). `rollMore` picks uniformly over the (affix, tier) pairs that fit the item type and level and share no stat with the item (`statsOf`). Magic: 1–2 (`MAGIC_TWO`), rare: 3–4 (`RARE_COUNTS`). The magic-find prefix and suffix are one `mf` affix now. Names (`magicName`, `rareName`) come from what rolled and never decide it.
+- Old items: `mergeDuplicateMods` (every load: equipped, bag, stash, unclaimed, and the shared stash in main.ts) merges a doubled stat into one row with the higher value and turns `p:`/`s:` affix keys into plain ids. A one-time toast says how many items changed.
+- Crafting: Brann the Runesmith (town `crafter` at 10.5, 8.5), Craft tab. `craftAffix` adds one affix with the same rules as drops (+skill locks by item via `skillPoolFor`); 1–2 affixes → magic (renamed), 3 → rare (new rare name), 4 is `MAX_AFFIXES`. Cost `craftCost(ilvl, n) = (50 + 20·ilvl) × [1, 3, 8, 20][n]` (rounded to 10), paid carried gold first, then stash gold (`Game.payGold`).
+- Tests: `tests/v14.test.ts`, `scripts/v14-shots.mjs` (screenshots/v14). SW cache v28.
+
 ## v1.3.2: Amazons don't dual wield
 
 - D2 rule: only the Barbarian dual wields (`Game.canDualWield()`). For an Amazon, `slotsFor` gives a one-hander the main hand only, `equipError`/`swapEquip` refuse a weapon in the off-hand with `AMAZON_OFFHAND_MSG`, `defaultSlot` never picks the off-hand, `compareSlots` compares against the main hand, and `derived()` ignores an off-hand weapon (no dual-wield DPS). The compare sheet shows an off-hand card that says why; the Off-hand button is disabled; dragging onto the off-hand toasts the reason.

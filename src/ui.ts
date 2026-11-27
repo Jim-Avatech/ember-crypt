@@ -1,5 +1,5 @@
 import { GAME_VERSION, PATCH_NOTES } from "./data/patchNotes";
-import { modText } from "./data/affixes";
+import { MAX_AFFIXES, affixCount, modText } from "./data/affixes";
 import {
   BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, QUALITY_LABEL, SLOT_LABEL, baseDamage, baseDefense, beltSlotsOf, ilvlOf,
   isBow, isThrowing, offBlocked, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
@@ -30,7 +30,7 @@ const artifactUrl = (id: string, sil = false) => {
 /** "Ember Crypt · Level 3" */
 const floorLabel = (f: number) => (f <= 0 ? "Ember Camp" : `${actDef(f).area} · Level ${levelInAct(f)}/${LEVELS_PER_ACT}`);
 
-export type PanelTab = "char" | "inv" | "skills" | "arts" | "guide" | "settings" | "shop" | "wp" | "stash";
+export type PanelTab = "char" | "inv" | "skills" | "arts" | "guide" | "settings" | "shop" | "wp" | "stash" | "craft";
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -289,6 +289,7 @@ export class Ui {
     const a = g.contextAction();
     if (a === "descend") g.descend();
     else if (a === "trade") this.open("shop");
+    else if (a === "craft") this.open("craft");
     else if (a === "stash") this.open("stash");
     else if (a === "waypoint") this.open("wp");
     else if (a === "portal") g.usePortal();
@@ -371,7 +372,7 @@ export class Ui {
     btn.hidden = !ctx;
     btn.dataset.kind = ctx ?? "";
     const nx = g.floor + 1;
-    btn.textContent = ctx === "descend" ? (levelInAct(nx) === 1 ? `▼ Enter Act ${actDef(nx).roman}: ${actDef(nx).area}` : `▼ Descend to Level ${levelInAct(nx)}`) : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)}` : "";
+    btn.textContent = ctx === "descend" ? (levelInAct(nx) === 1 ? `▼ Enter Act ${actDef(nx).roman}: ${actDef(nx).area}` : `▼ Descend to Level ${levelInAct(nx)}`) : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "craft" ? "⚒ Craft with Brann" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)}` : "";
     // v1.3: one buff bar for everything timed, both classes: icon, seconds left and a draining bar (no rings on the
     // skill buttons: thumbs cover them)
     $(r, "#buffs").innerHTML = tbuffs
@@ -427,6 +428,13 @@ export class Ui {
       this.toast("The stash is in Ember Camp");
       return;
     }
+    if (tab === "craft" && !this.game().inTown) {
+      this.toast("Brann the Runesmith works in Ember Camp");
+      return;
+    }
+    this.craftAt = null;
+    this.craftAsk = false;
+    this.craftNew = null;
     this.hooks.click();
     this.openTab = tab;
     this.confirmReset = false;
@@ -482,12 +490,14 @@ export class Ui {
     if (tab === "shop") tabs.unshift(["shop", "Trade"]);
     if (tab === "wp") tabs.unshift(["wp", "Waypoint"]);
     if (tab === "stash") tabs.unshift(["stash", "Stash"]);
+    if (tab === "craft") tabs.unshift(["craft", "Craft"]);
     let body = "";
     if (tab === "char") body = this.charHtml();
     else if (tab === "inv") body = this.invHtml();
     else if (tab === "skills") body = this.skillsHtml();
     else if (tab === "shop") body = this.shopHtml();
     else if (tab === "stash") body = this.stashHtml();
+    else if (tab === "craft") body = this.craftHtml();
     else if (tab === "wp") body = this.wpHtml();
     else if (tab === "arts") body = this.artsHtml();
     else if (tab === "guide") body = guideHtml(this.guideSec);
@@ -501,6 +511,7 @@ export class Ui {
         <div class="pbody pbody-${tab}">${body}</div>
         ${this.sheetHtml()}
         ${tab === "char" || tab === "skills" ? this.respecHtml() : ""}
+        ${tab === "craft" ? this.craftAskHtml() : ""}
       </div>`;
     this.panel.querySelectorAll<HTMLElement>(".ccard").forEach((c) => Ui.markMore(c));
   }
@@ -702,6 +713,29 @@ export class Ui {
           else this.sel = null;
         }
         break;
+      case "craft-sel":
+        this.craftAt = el.dataset.slot ? { slot: el.dataset.slot as EquipSlot } : { uid: Number(el.dataset.uid) };
+        this.craftAsk = false;
+        this.craftNew = null;
+        break;
+      case "craft-ask":
+        this.craftAsk = true;
+        break;
+      case "craft-no":
+        this.craftAsk = false;
+        break;
+      case "craft-yes": {
+        this.craftAsk = false;
+        if (this.craftAt) {
+          const err = g.craft(this.craftAt);
+          if (err) this.toast(err);
+          else if (g.lastCraft) {
+            this.craftNew = { uid: g.lastCraft.uid, rows: g.lastCraft.added.map(modText) };
+            this.toast(`Brann adds ${this.craftNew.rows.join(", ")} for ${g.lastCraft.cost.toLocaleString()} gold`);
+          }
+        }
+        break;
+      }
       case "buy":
         if (this.sel?.src === "vendor" && this.sel.uid !== undefined) {
           const err = g.buy(this.sel.uid);
@@ -1028,6 +1062,64 @@ export class Ui {
       return;
     }
     this.sel = null;
+  }
+
+  // ------------------------------------------------------------ v1.4: Brann the Runesmith (crafting)
+  private craftAt: { uid?: number; slot?: EquipSlot } | null = null;
+  private craftAsk = false;
+  private craftNew: { uid: number; rows: string[] } | null = null;
+  private craftHtml(): string {
+    const g = this.game();
+    const p = g.player;
+    const rows: string[] = [];
+    const row = (it: Item, attr: string, where: string, on: boolean) => {
+      const n = affixCount(it);
+      const blocked = g.craftQuote(it).why;
+      const q = qualityOf(it);
+      return `<button class="crow ${on ? "on" : ""} ${blocked ? "dimrow" : ""}" data-act="craft-sel" ${attr}>
+        <span class="q-${q}">${esc(itemName(it))}</span><small>${esc(where)} · ${QUALITY_LABEL[q]} · ${n}/${MAX_AFFIXES} affixes</small></button>`;
+    };
+    for (const sl of ["main", "off", "head", "chest", "gloves", "belt", "boots", "amulet", "ring1", "ring2"] as EquipSlot[]) {
+      const it = p.equip[sl];
+      if (it && !BASE_BY_ID[it.baseId].potion) rows.push(row(it, `data-slot="${sl}"`, `Worn · ${EQUIP_LABEL[sl]}`, this.craftAt?.slot === sl));
+    }
+    for (const e of p.bag) if (!BASE_BY_ID[e.item.baseId].potion) rows.push(row(e.item, `data-uid="${e.item.uid}"`, "Backpack", this.craftAt?.uid === e.item.uid));
+    const it = this.craftAt ? g.craftItem(this.craftAt) : null;
+    let detail = `<div class="hint">Pick an item. Brann adds one random affix to it for gold: normal → magic (1) → magic (2) → rare (3) → rare (4). ${MAX_AFFIXES} is the most an item can hold.</div>`;
+    if (it) {
+      const qt = g.craftQuote(it);
+      const funds = g.respecFunds();
+      const where = p.stashGold ? `you have ${funds.toLocaleString()} with your stash gold` : `you carry ${p.gold.toLocaleString()}`;
+      const fresh = this.craftNew && this.craftNew.uid === it.uid ? `<div class="cnew">New: ${this.craftNew.rows.map(esc).join(", ")}</div>` : "";
+      const step = qt.count >= MAX_AFFIXES ? "" : `<div class="cstep">${QUALITY_LABEL[qt.from]} (${qt.count}) → <span class="q-${qt.to}">${QUALITY_LABEL[qt.to]} (${qt.count + 1})</span> · <b class="gold">${qt.cost.toLocaleString()} gold</b> <span class="muted">(${where})</span></div>`;
+      detail = `${fresh}<div class="ccard selc"><div class="iname q-${qualityOf(it)}">${esc(itemName(it))}</div>
+        ${qualityOf(it) === "rare" ? `<div class="iname q-rare sub">${esc(BASE_BY_ID[it.baseId].name)}</div>` : ""}
+        <div class="itype">${QUALITY_LABEL[qualityOf(it)]} · Item level ${ilvlOf(it)} · ${qt.count}/${MAX_AFFIXES} affixes</div>
+        <div class="clines">${this.itemLines(it)}</div></div>
+        ${step}
+        ${qt.ok ? "" : `<div class="rsp-why bad craftwhy">${esc(qt.why ?? "")}</div>`}
+        <div class="ibtns"><button class="gbtn" data-act="craft-ask" ${qt.ok ? "" : "disabled"}>⚒ Add a random affix${qt.count >= MAX_AFFIXES ? "" : ` · ${qt.cost.toLocaleString()} gold`}</button></div>`;
+    }
+    return `<div class="craftwrap">
+      <div class="craftlist"><div class="bagtop"><span>Brann the Runesmith</span><span class="gold">${p.gold.toLocaleString()} gold${p.stashGold ? ` <small>(+${p.stashGold.toLocaleString()} in stash)</small>` : ""}</span></div>${rows.join("") || `<div class="hint">Nothing to work on</div>`}</div>
+      <div class="craftdetail">${detail}</div>
+    </div>`;
+  }
+  private craftAskHtml(): string {
+    if (!this.craftAsk || !this.craftAt) return "";
+    const g = this.game();
+    const p = g.player;
+    const it = g.craftItem(this.craftAt);
+    if (!it) return "";
+    const qt = g.craftQuote(it);
+    const funds = g.respecFunds();
+    const where = p.stashGold ? `carried gold first, then stash gold; you have ${funds.toLocaleString()}` : `you carry ${p.gold.toLocaleString()}`;
+    return `<div class="rsp-back"><div class="rsp craftconfirm" role="dialog" aria-label="Craft">
+      <div class="rsp-t">Add one random affix to <span class="q-${qualityOf(it)}">${esc(itemName(it))}</span>?</div>
+      <div class="rsp-c">Costs <b class="gold">${qt.cost.toLocaleString()} gold</b> (${where}). It becomes <span class="q-${qt.to}">${QUALITY_LABEL[qt.to]}</span> with ${qt.count + 1} affix${qt.count ? "es" : ""}. The affix is random (for this item type and level, never a stat it already has).</div>
+      ${qt.ok ? "" : `<div class="rsp-why bad">${esc(qt.why ?? "")}</div>`}
+      <div class="ibtns"><button class="gbtn" data-act="craft-yes" ${qt.ok ? "" : "disabled"}>Craft for ${qt.cost.toLocaleString()} gold</button><button class="gbtn dim" data-act="craft-no">Cancel</button></div>
+    </div></div>`;
   }
 
   // ------------------------------------------------------------ v1.2: respec confirm
@@ -1661,7 +1753,7 @@ export class Ui {
         <p>Left side: put your thumb down anywhere and drag to move. Lift to stop.</p>
         <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn: in Skills, pick a skill and tap 1–3 to put it on a button. ⌂ Town (top right) takes you back to camp.</p>
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
-        <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. A Barbarian can put a one-handed weapon in the off-hand to dual wield; an Amazon can't (like Diablo II): her off-hand takes a shield, or a quiver with a bow.</p>
+        <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. Brann the Runesmith (northwest of the campfire) adds a random affix to an item for gold, up to 4 affixes. A Barbarian can put a one-handed weapon in the off-hand to dual wield; an Amazon can't (like Diablo II): her off-hand takes a shield, or a quiver with a bow.</p>
         <p>Kill the boss to open the stairs to the next level. Each act has 20 levels; the 20th holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ in camp takes you to any waypoint level you’ve reached: level 1 and every 5th level of each act. Only those levels have a waypoint stone, so that’s where your progress is kept.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>

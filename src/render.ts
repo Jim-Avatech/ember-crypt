@@ -3,7 +3,7 @@
  * scaled up with nearest-neighbour by CSS. Text (labels, damage numbers, boss name) is drawn on a
  * separate full-resolution overlay so it stays sharp.
  */
-import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, qualityOf } from "./data/items";
+import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, makeItem, qualityOf } from "./data/items";
 import { ARTIFACT_BY_ID, ARTIFACT_COLOR, type Theme, actDef } from "./data/acts";
 import { ELEM_COLOR, ELITE_MODS } from "./data/monsters";
 import type { Ally, Game, GroundItem, Monster, MonsterShot, Nova, Projectile } from "./game";
@@ -13,6 +13,12 @@ import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
 import { type Anim, FRAMES, type Look, dirOf, getFrame, lookKey, spriteTop } from "./sprites/puppet";
 import * as T from "./sprites/tiles";
+
+/** v1.4: how Brann the Runesmith looks (a smith's mace as his hammer, mail, gloves and boots) */
+const CRAFTER_LOOK: Look = (() => {
+  const L = (id: string) => lookOf(makeItem(id, 20));
+  return { main: L("mace"), chest: L("armor"), gloves: L("gloves"), boots: L("boots") };
+})();
 
 /** v0.9.4: below this share of life the screen edge pulses red and a heartbeat plays. */
 export const LOW_LIFE = 0.35;
@@ -388,6 +394,10 @@ export class Renderer {
       const v = L.vendor;
       list.push({ d: v.x + v.y, f: () => this.drawVendor(game) });
     }
+    if (L.crafter) {
+      const v = L.crafter;
+      list.push({ d: v.x + v.y, f: () => this.drawCrafter(game) });
+    }
     list.push({ d: pD, f: () => this.drawPlayer(game) });
     for (const al of game.allies) list.push({ d: al.x + al.y, f: () => this.drawAlly(game, al) });
     for (const q of game.projectiles) list.push({ d: q.x + q.y + 0.3, f: () => this.drawProjectile(q) });
@@ -463,6 +473,18 @@ export class Renderer {
       const yy = this.cy(v.x, v.y) - 44 * this.ascale;
       f.strokeText("Hilde the Trader", this.cx(v.x, v.y), yy);
       f.fillText("Hilde the Trader", this.cx(v.x, v.y), yy);
+    }
+    if (L.crafter) {
+      const v = L.crafter;
+      const near = game.nearCrafter();
+      f.font = "bold 12px Georgia, 'Times New Roman', serif";
+      f.textAlign = "center";
+      f.lineWidth = 3;
+      f.strokeStyle = "rgba(0,0,0,.85)";
+      f.fillStyle = near ? "#ffe9a8" : "#c8b88a";
+      const yy = this.cy(v.x, v.y) - 50 * this.ascale;
+      f.strokeText("Brann the Runesmith", this.cx(v.x, v.y), yy);
+      f.fillText("Brann the Runesmith", this.cx(v.x, v.y), yy);
     }
     for (const fl of game.floaters) {
       const kk = fl.t / fl.life;
@@ -1209,6 +1231,41 @@ export class Renderer {
     ctx.drawImage(ic, bx - 10, by - 24 + bob);
   }
 
+  /** v1.4: Brann the Runesmith: a burly smith in mail with a hammer, by a small anvil */
+  private drawCrafter(game: Game) {
+    const v = game.level.crafter!;
+    const p = game.player;
+    const ctx = this.ctx;
+    const sx = this.ax(v.x, v.y);
+    const sy = this.ay(v.x, v.y);
+    this.shadow(sx, sy, 7);
+    // anvil in front of him
+    const axx = this.ax(v.x + 0.55, v.y + 0.35);
+    const ayy = this.ay(v.x + 0.55, v.y + 0.35);
+    ctx.fillStyle = "#2a2a30";
+    ctx.fillRect(axx - 5, ayy - 4, 10, 4);
+    ctx.fillStyle = "#4a4a54";
+    ctx.fillRect(axx - 7, ayy - 8, 14, 4);
+    ctx.fillStyle = "#6a6a76";
+    ctx.fillRect(axx - 7, ayy - 8, 14, 1);
+    if (Math.floor(game.time * 1.3) % 3 === 0 && (game.time * 1.3) % 1 < 0.15) {
+      ctx.fillStyle = "#ffd27a";
+      for (let i = 0; i < 3; i++) ctx.fillRect(axx - 2 + i * 2, ayy - 11 - i, 1, 1);
+    }
+    const near = Math.hypot(p.x - v.x, p.y - v.y) < 6;
+    const dir = near ? dirOf(p.x - v.x, p.y - v.y) : 2;
+    const fr = getFrame("barb", CRAFTER_LOOK, lookKey(CRAFTER_LOOK), "idle", dir, Math.floor(game.time * 2.5));
+    ctx.drawImage(fr.c, sx - fr.ax, sy - fr.ay);
+  }
+
+  hitCrafter(game: Game, x: number, y: number): boolean {
+    const v = game.level.crafter;
+    if (!v) return false;
+    const cx = this.cx(v.x, v.y);
+    const cy = this.cy(v.x, v.y) - 18 * this.ascale;
+    return Math.abs(x - cx) < 14 * this.ascale && Math.abs(y - cy) < 26 * this.ascale;
+  }
+
   private drawVendor(game: Game) {
     const v = game.level.vendor!;
     const p = game.player;
@@ -1379,6 +1436,7 @@ export class Renderer {
     for (const gi of game.ground) if (gi.artifact) dot(gi.x, gi.y, ARTIFACT_COLOR, 5);
     if (game.waypointHere()) dot(L.waypoint.x, L.waypoint.y, "#5aa8ff", 5);
     if (L.vendor) dot(L.vendor.x, L.vendor.y, "#ffe08a", 4);
+    if (L.crafter) dot(L.crafter.x, L.crafter.y, "#ffb46a", 4);
     for (const m of game.monsters) {
       if (m.state === "dead" || !L.explored[idx(Math.floor(m.x), Math.floor(m.y))]) continue;
       if (Math.hypot(m.x - p.x, m.y - p.y) > 9) continue;

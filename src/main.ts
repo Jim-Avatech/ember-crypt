@@ -1,6 +1,6 @@
 import { CLASS_NAME, SKILLS } from "./data/skills";
 import "./styles.css";
-import { AFFIXES, enchant, rollDrop } from "./data/affixes";
+import { AFFIXES, enchant, mergeDuplicateMods, rollDrop } from "./data/affixes";
 import { ITEM_BASES, lookOf, makeItem, migrateItem } from "./data/items";
 import type { HeroClass } from "./data/skills";
 import { HeroSelect, type HeroCard } from "./heroes";
@@ -169,6 +169,13 @@ function syncStash() {
     for (const it of Object.values(game.player.equip)) if (it) mine.add(it.uid);
     const items = (sh.items as typeof game.player.stash).filter((e) => e && e.item && typeof e.item.baseId === "string" && ITEM_BASES.some((b) => b.id === e.item.baseId));
     for (const e of items) if (mine.has(e.item.uid)) e.item = { ...e.item, uid: e.item.uid + 7 + Math.floor(Math.random() * 1e6) };
+    // v1.4: an old shared stash can hold items with the same stat twice: merge them (higher value kept)
+    let merged = 0;
+    for (const e of items) if (mergeDuplicateMods(e.item) > 0) merged++;
+    if (merged) {
+      game.mergedItems += merged;
+      saveSharedStash(sh.at, items);
+    }
     game.player.stash = items;
     game.stashAt = sh.at;
   } else if (!sh || game.stashAt > sh.at) saveSharedStash(game.stashAt || Date.now(), game.player.stash);
@@ -181,6 +188,12 @@ function syncStash() {
  */
 function afterLoad() {
   if (game.placeUnclaimed()) saveSharedStash(game.stashAt, game.player.stash);
+  if (game.mergedItems > 0) {
+    const n = game.mergedItems;
+    game.mergedItems = 0;
+    setTimeout(() => ui.toast(`${n} item${n === 1 ? " had" : "s had"} the same affix twice: merged into one row, keeping the higher value.`, 7000), 4200);
+    setTimeout(() => doSave(true), 0);
+  }
   const note = game.takeOffhandNote();
   if (note) {
     setTimeout(() => ui.toast(note, 8000), 2600); // after the "walk to the waypoint" hint (1.8 s) so it is not covered
@@ -527,6 +540,9 @@ function step(now: number) {
       else if (renderer.hitStash(game, t.x, t.y)) {
         if (game.nearStash()) ui.open("stash");
         else ui.toast("Walk up to the stash chest to open it");
+      } else if (renderer.hitCrafter(game, t.x, t.y)) {
+        if (game.nearCrafter()) ui.open("craft");
+        else ui.toast("Walk up to Brann to craft");
       } else if (renderer.hitVendor(game, t.x, t.y)) {
         if (game.nearVendor()) ui.open("shop");
         else ui.toast("Walk up to Hilde to trade");

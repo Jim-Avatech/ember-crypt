@@ -3,7 +3,7 @@ import { GRID_H, GRID_W, STASH_H, STASH_W } from "./inventory";
  * In-game wiki ("Guide" tab). Every table is generated from the game data, so it stays in sync
  * when classes, affixes, monsters or skills change.
  */
-import { AFFIXES, type Cat, MAGIC_SPLIT, RARE_COUNTS, modText, qualityOdds } from "./data/affixes";
+import { AFFIXES, type Cat, CRAFT_STEP, MAGIC_TWO, MAX_AFFIXES, RARE_COUNTS, craftCost, modText, qualityOdds } from "./data/affixes";
 import {
   CLASS_USE, ITEM_BASES, type ItemBase, type Mod, QUALITY_COLOR, baseDamage, baseDefense, beltSlotsOf, makeItem,
 } from "./data/items";
@@ -68,21 +68,18 @@ function levelsHtml(): string {
 }
 
 function affixesHtml(): string {
-  const side = (sd: "p" | "s") =>
-    AFFIXES.filter((a) => a.side === sd)
-      .map((a) => {
-        const cats = a.cats.map((c) => CAT_LABEL[c]).join(", ");
-        const tiers = a.tiers
-          .map((t) => {
-            const vals = t.mods.map(([s, lo, hi]) => modText({ s, v: (lo === hi ? `${lo}` : `${lo}–${hi}`) as unknown as number } as Mod)).join(", ");
-            return `<tr><td>${esc(t.name)}</td><td>${t.lvl}</td><td>${esc(vals)}</td></tr>`;
-          })
-          .join("");
-        return `<div class="gaff"><div class="gaffh">${cats}</div><div class="gtable"><table><tr><th>${sd === "p" ? "Prefix" : "Suffix"}</th><th>Min ilvl</th><th>Value</th></tr>${tiers}</table></div></div>`;
+  const list = AFFIXES.map((a) => {
+    const cats = a.cats.map((c) => CAT_LABEL[c]).join(", ");
+    const tiers = a.tiers
+      .map((t) => {
+        const vals = t.mods.map(([s, lo, hi]) => modText({ s, v: (lo === hi ? `${lo}` : `${lo}–${hi}`) as unknown as number } as Mod)).join(", ");
+        return `<tr><td>${esc(t.name)}</td><td>${t.lvl}</td><td>${esc(vals)}</td></tr>`;
       })
       .join("");
-  return `<p class="gnote">Each item can have one affix per group. Higher tiers need a higher item level. Enhanced Damage and Enhanced Damage + AR don't stack on one item. +skill affixes boost a skill you have learned.</p>
-    <h4>Prefixes</h4>${side("p")}<h4>Suffixes</h4>${side("s")}`;
+    return `<div class="gaff"><div class="gaffh">${cats}</div><div class="gtable"><table><tr><th>Name</th><th>Min ilvl</th><th>Value</th></tr>${tiers}</table></div></div>`;
+  }).join("");
+  return `<p class="gnote">One pool of affixes: any of them can roll in any of an item's affix slots (there are no prefix/suffix limits). The same stat never appears twice on one item, so Enhanced Damage and Enhanced Damage + Attack Rating, or +Attack Rating and Enhanced Damage + Attack Rating, never roll together. Higher tiers need a higher item level. +skill affixes boost a skill you have learned. The names only make up a magic item's name.</p>
+    <h4>Affixes</h4>${list}`;
 }
 
 function rarityHtml(): string {
@@ -94,8 +91,9 @@ function rarityHtml(): string {
   const rows = [1, 3, 5, 10, 20].flatMap((m) => [0, 100].map((mf) => `<tr><td>${m}</td><td>${mf}%</td>${odds(m, mf)}</tr>`)).join("");
   return `
     <div class="grar"><b style="color:${QUALITY_COLOR.normal}">Normal (white)</b><span>No affixes. Plain class name.</span></div>
-    <div class="grar"><b style="color:${QUALITY_COLOR.magic}">Magic (blue)</b><span>1–2 affixes: a prefix and/or a suffix (${pct(MAGIC_SPLIT.prefixOnly)} prefix only, ${pct(MAGIC_SPLIT.suffixOnly)} suffix only, the rest both). Named like “Jagged Axe of the Fox”.</span></div>
-    <div class="grar"><b style="color:${QUALITY_COLOR.rare}">Rare (yellow)</b><span>${counts[0]}–${counts[counts.length - 1]} affixes, at most 3 prefixes and 3 suffixes. A random two-word name with the class name under it.</span></div>
+    <div class="grar"><b style="color:${QUALITY_COLOR.magic}">Magic (blue)</b><span>1–2 affixes (${pct(1 - MAGIC_TWO)} one, ${pct(MAGIC_TWO)} two), any from the pool. Named after its affixes, like “Jagged Axe of the Fox”.</span></div>
+    <div class="grar"><b style="color:${QUALITY_COLOR.rare}">Rare (yellow)</b><span>${counts[0]}–${counts[counts.length - 1]} affixes, any from the pool. A random two-word name with the class name under it.</span></div>
+    <p class="gnote">No item ever has the same stat twice, and ${MAX_AFFIXES} affixes is the most an item can hold. <b>Brann the Runesmith</b> in camp adds one random affix for gold: normal → magic (1) → magic (2) → rare (3) → rare (4). Cost for an item level 10 / 30 item: ${CRAFT_STEP.map((_, n) => `${n}→${n + 1}: ${craftCost(10, n).toLocaleString()} / ${craftCost(30, n).toLocaleString()}`).join(", ")} gold.</p>
     <p class="gnote">Rings and amulets are never white. Hilde sells white gear and a few magic items. Nothing ever needs identifying.</p>
     <h4>Drop quality by monster level</h4>
     <div class="gtable"><table><tr><th>Monster lvl</th><th>Magic find</th><th>White</th><th>Magic</th><th>Rare</th></tr>${rows}
