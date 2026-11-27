@@ -1,9 +1,9 @@
 /**
  * v1.0 character select / create. A full-screen overlay listing the heroes on this device (last played first),
- * with "New hero" leading to a class choice (Barbarian / Amazon) and a name. The game is paused while it's open.
+ * with "New hero" leading to a class choice (Barbarian / Amazon / Sorceress) and a name. The game is paused while it's open.
  */
-import { CLASS_NAME, type HeroClass } from "./data/skills";
-import { type Look, getFrame, lookKey } from "./sprites/puppet";
+import { CLASS_NAME, HERO_CLASSES, type HeroClass } from "./data/skills";
+import { type Look, getFrame, heroModel, lookKey } from "./sprites/puppet";
 import { actDef, levelInAct } from "./data/acts";
 import { MAX_HEROES } from "./save";
 
@@ -30,16 +30,18 @@ export interface HeroSelectHooks {
 const CLASS_BLURB: Record<HeroClass, string> = {
   barbarian: "A towering warrior of the high steppes. Masters every weapon, fights two-handed or with one in each hand, and shouts to turn the tide.",
   amazon: "A swift huntress from the Skovos Isles. Bows and javelins, dodging and evading blows, with fire, cold and lightning in her missiles.",
+  sorceress: "A mage of the Zann Esu. Fire, cold and lightning spells from a staff, wand or orb; frail, but with deep mana.",
 };
 const START_LOOK: Record<HeroClass, Look> = {
   barbarian: { main: "short_sword", off: "buckler", chest: "quilted_armor" },
   amazon: { main: "short_bow", off: "arrows", chest: "leather_armor" },
+  sorceress: { main: "battle_staff", chest: "quilted_armor" },
 };
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** A crisp 3x portrait of a hero (idle, facing down-right). */
 export function portrait(cls: HeroClass, look: Look, scale = 3): string {
-  const fr = getFrame(cls === "amazon" ? "amazon" : "barb", look, lookKey(look) + "|portrait", "idle", 1, 0);
+  const fr = getFrame(heroModel(cls), look, lookKey(look) + "|portrait", "idle", 1, 0);
   const c = document.createElement("canvas");
   // crop to the figure: the frame is 52x58 with the feet near the bottom
   c.width = 30 * scale;
@@ -92,7 +94,7 @@ export class HeroSelect {
   private render() {
     const heroes = this.h.heroes();
     if (this.step === "new") {
-      const cards = (["barbarian", "amazon"] as HeroClass[])
+      const cards = HERO_CLASSES
         .map((c) => `<button class="hcls ${c === this.cls ? "on" : ""}" data-hact="cls" data-cls="${c}"><img src="${portrait(c, START_LOOK[c])}" alt=""/><b>${CLASS_NAME[c]}</b><small>${CLASS_BLURB[c]}</small></button>`)
         .join("");
       this.el.innerHTML = `
@@ -148,7 +150,7 @@ export class HeroSelect {
       <div class="hbox">
         <div class="htitle">Choose your hero <small class="hcount">${heroes.length}/${MAX_HEROES}</small></div>
         <div class="hlist">${list}
-          <button class="hcard new" data-hact="new" ${canNew ? "" : "disabled"}><span class="plus">+</span><span class="hinfo"><b>New hero</b><small>${canNew ? "Barbarian or Amazon" : `All ${MAX_HEROES} hero slots are used: delete one (🗑) to make room`}</small></span></button>
+          <button class="hcard new" data-hact="new" ${canNew ? "" : "disabled"}><span class="plus">+</span><span class="hinfo"><b>New hero</b><small>${canNew ? "Barbarian, Amazon or Sorceress" : `All ${MAX_HEROES} hero slots are used: delete one (🗑) to make room`}</small></span></button>
         </div>
         <div class="hnote">The stash chest in camp is shared by all your heroes.</div>
         ${this.closable ? `<div class="hbtns"><button class="gbtn dim" data-hact="close">Cancel</button></div>` : ""}

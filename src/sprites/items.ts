@@ -155,7 +155,30 @@ function paint(baseId: string, cs: number, cw?: number, ch?: number): HTMLCanvas
       part(M().rect(cx - 6 * u, H - 6 * u, 12 * u, 2 * u), hex("#5a3a20"));
       break;
     }
+    case "wand": {
+      // v1.6: a bone-white wand with a dark grip and a pale blue tip
+      part(M().rect(cx - 1.1 * u, 5 * u, 2.2 * u, H - 9 * u), hex("#e2d8c0"), (_x, y) => (y % 5 === 0 ? 0.85 : 1));
+      part(M().rect(cx - 1.4 * u, H - 9 * u, 2.8 * u, 6 * u), hex("#3a2616"));
+      part(M().disc(cx, 4.5 * u, 2.4 * u), hex("#8ad0ff"));
+      part(M().disc(cx - 0.6 * u, 3.8 * u, 0.9 * u), hex("#e8f6ff"));
+      break;
+    }
+    case "orb": {
+      // v1.6: a glowing sorceress orb on a small claw stand
+      part(M().disc(cx, H * 0.4, 6.5 * u), hex("#4a6ad8"));
+      part(M().disc(cx - 2 * u, H * 0.4 - 2 * u, 2.4 * u), hex("#cfe0ff"));
+      part(M().poly([[cx - 5 * u, H * 0.62], [cx + 5 * u, H * 0.62], [cx + 2.5 * u, H - 3 * u], [cx - 2.5 * u, H - 3 * u]]), GOLD);
+      break;
+    }
     case "staff": {
+      if (id === "battle_staff") {
+        // v1.6: a gnarled staff with a glowing gem in a claw
+        part(M().rect(cx - 1.3 * u, 7 * u, 2.6 * u, H - 9 * u), hex("#5a3a22"), (_x, y) => (y % 5 === 0 ? 0.78 : y % 9 === 0 ? 1.15 : 1));
+        part(M().poly([[cx - 4 * u, 2 * u], [cx - 1 * u, 8 * u], [cx + 1 * u, 8 * u], [cx + 4 * u, 2 * u], [cx + 2 * u, 7 * u], [cx - 2 * u, 7 * u]]), hex("#3a2616"));
+        part(M().disc(cx, 4.5 * u, 2.6 * u), hex("#ff7a2a"));
+        part(M().disc(cx - 0.7 * u, 3.8 * u, 1 * u), hex("#ffe0a0"));
+        break;
+      }
       // quarterstaff: long wooden pole with iron caps and a leather grip in the middle
       part(M().rect(cx - 1.3 * u, 2 * u, 2.6 * u, H - 4 * u), WOOD, (_x, y) => (y % 4 === 0 ? 0.82 : y % 7 === 0 ? 1.12 : 1));
       part(M().rect(cx - 1.7 * u, 1 * u, 3.4 * u, 3 * u), STEEL_D);

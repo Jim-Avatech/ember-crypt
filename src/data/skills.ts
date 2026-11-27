@@ -1,8 +1,11 @@
+import { SORC_SKILLS } from "./sorc";
+
 /** Barbarian and Amazon skill trees modeled on Diablo II: Lord of Destruction (names, tabs, level gates, prerequisites). */
-export type Tab = "combat" | "masteries" | "warcries" | "bow" | "passive" | "javelin" | "basic";
-/** v1.0 hero classes */
-export type HeroClass = "barbarian" | "amazon";
-export const CLASS_NAME: Record<HeroClass, string> = { barbarian: "Barbarian", amazon: "Amazon" };
+export type Tab = "combat" | "masteries" | "warcries" | "bow" | "passive" | "javelin" | "fire" | "cold" | "lightning" | "basic";
+/** v1.0 hero classes (v1.6: the Sorceress) */
+export type HeroClass = "barbarian" | "amazon" | "sorceress";
+export const CLASS_NAME: Record<HeroClass, string> = { barbarian: "Barbarian", amazon: "Amazon", sorceress: "Sorceress" };
+export const HERO_CLASSES: HeroClass[] = ["barbarian", "amazon", "sorceress"];
 
 export interface SkillDef {
   id: string;
@@ -31,12 +34,16 @@ export const TAB_NAMES: Record<Tab, string> = {
   bow: "Bow & Crossbow",
   passive: "Passive & Magic",
   javelin: "Javelin & Spear",
+  fire: "Fire Spells",
+  cold: "Cold Spells",
+  lightning: "Lightning Spells",
   basic: "Basic",
 };
 /** v1.0: skill tabs per class, in D2 order, then the basic attacks everyone has */
 export const CLASS_TABS: Record<HeroClass, Tab[]> = {
   barbarian: ["combat", "masteries", "warcries", "basic"],
   amazon: ["bow", "passive", "javelin", "basic"],
+  sorceress: ["fire", "cold", "lightning", "basic"],
 };
 /** v1.0: basic attacks (no points needed) that can go on a skill button or the main attack button */
 export const BASIC_IDS = ["basic_attack", "basic_throw", "basic_shoot"] as const;
@@ -554,6 +561,8 @@ export const SKILLS: SkillDef[] = [
     effect: () => "Shoots one arrow",
   }),
 ];
+
+SKILLS.splice(SKILLS.findIndex((s) => s.tab === "basic"), 0, ...SORC_SKILLS);
 
 export const SKILL_BY_ID: Record<string, SkillDef> = Object.fromEntries(SKILLS.map((s) => [s.id, s]));
 

@@ -7,7 +7,7 @@
 import { LOOK_BY_ID } from "./looks";
 
 export type Slot = "weapon" | "shield" | "quiver" | "armor" | "helm" | "gloves" | "boots" | "belt" | "ring" | "amulet" | "potion";
-export type Kind = "sword" | "axe" | "mace" | "knife" | "spear" | "staff" | "bow" | "quiver" | "armor" | "helm" | "shield" | "gloves" | "boots" | "belt" | "ring" | "amulet" | "potion";
+export type Kind = "sword" | "axe" | "mace" | "knife" | "spear" | "staff" | "wand" | "orb" | "bow" | "quiver" | "armor" | "helm" | "shield" | "gloves" | "boots" | "belt" | "ring" | "amulet" | "potion";
 export type EquipSlot = "head" | "chest" | "gloves" | "boots" | "belt" | "ring1" | "ring2" | "amulet" | "main" | "off";
 export type Quality = "normal" | "magic" | "rare";
 
@@ -83,10 +83,15 @@ export const ITEM_BASES: ItemBase[] = [
   { ...W("spear", "Spear", "spear", 2, 4, 0.56, [0.45, 1.55], 1.8, [14, 1.8], [12, 1.6], 2), reach: 0.55, price: 65, weight: 0.45 },
   { ...W("short_bow", "Short Bow", "bow", 2, 3, 0.42, [0.55, 1.45], 1.05, [0, 0.6], [14, 1.9], 2), range: 11, price: 55, weight: 0.45 },
   { ...W("long_bow", "Long Bow", "bow", 2, 4, 0.56, [0.5, 1.5], 1.55, [12, 1.2], [16, 2.1], 2), range: 12, price: 70, weight: 0.4 },
+  // v1.6 Sorceress weapons: a two-handed battle staff and a one-handed wand (+Sorceress skills only)
+  { ...W("battle_staff", "Battle Staff", "staff", 1, 4, 0.5, [0.75, 1.25], 1.25, [5, 0.55], undefined, 2), price: 60, weight: 0.35 },
+  { ...W("wand", "Wand", "wand", 1, 2, 0.46, [0.6, 1.4], 0.6, [0, 0.4], undefined), price: 40, weight: 0.4 },
   { id: "arrows", name: "Arrows", slot: "quiver", kind: "quiver", w: 1, h: 3, ammo: 1200, price: 20, weight: 0.25 },
   A("armor", "Armor", "armor", 2, 3, 1, [8, 1.6], 40, 1.1),
   A("helm", "Helm", "helm", 2, 2, 0.45, [0, 1.2], 30, 0.95),
-  A("shield", "Shield", "shield", 2, 2, 0.6, [8, 1.5], 35, 0.95),
+  A("shield", "Shield", "shield", 2, 2, 0.6, [8, 1.5], 35, 0.8),
+  // v1.6: the Sorceress orb: an off-hand item (shield slot) with little defense that rolls +Sorceress skills and mana
+  { ...A("orb", "Orb", "orb", 1, 2, 0.15, undefined, 45, 0.15), slot: "shield" },
   A("gloves", "Gloves", "gloves", 2, 2, 0.25, undefined, 25, 0.75),
   A("boots", "Boots", "boots", 2, 2, 0.25, undefined, 25, 0.75),
   A("belt", "Belt", "belt", 2, 1, 0.2, undefined, 25, 0.65),
@@ -108,6 +113,9 @@ export const CLASS_USE: Record<string, string> = {
   spear: "Two-handed reach weapon: stabs from further away than any other melee weapon. Spear Mastery; Amazon spear skills use it.",
   short_bow: "Two-handed bow, the faster of the two. Shoots arrows from a quiver in the off-hand (Shoot basic attack). Damage grows with Dexterity.",
   long_bow: "Two-handed bow: slower, more damage and range than the Short Bow. Needs a quiver of arrows. Damage grows with Dexterity.",
+  battle_staff: "Two-handed Sorceress staff: steady damage, low Strength. Rolls +Sorceress skills (fire, cold, lightning).",
+  wand: "One-handed Sorceress wand: light, fast, little damage. Rolls +Sorceress skills; pair it with a shield or an orb.",
+  orb: "Sorceress off-hand: little defense, but rolls +Sorceress skills, mana and Energy. Goes where a shield goes.",
   arrows: "A quiver of 600 arrows for the off-hand. Bows need it to shoot. Refilled free in camp.",
   armor: "Most defense of any slot.",
   helm: "Defense. Can roll +skills, mana and magic find.",
@@ -121,7 +129,17 @@ export const CLASS_USE: Record<string, string> = {
   mp_potion: "Restores 60% mana over a few seconds.",
 };
 
+/** v1.6: the Sorceress's staff and wand take their drop weight from the other weapons (the weapon total is unchanged) */
+{
+  const isW = (b: ItemBase) => b.slot === "weapon";
+  const sorc = new Set(["battle_staff", "wand"]);
+  const total = ITEM_BASES.filter(isW).filter((b) => !sorc.has(b.id)).reduce((a, b) => a + b.weight, 0);
+  const add = ITEM_BASES.filter((b) => sorc.has(b.id)).reduce((a, b) => a + b.weight, 0);
+  for (const b of ITEM_BASES) if (isW(b) && !sorc.has(b.id)) b.weight *= (total - add) / total;
+}
 export const BASE_BY_ID: Record<string, ItemBase> = Object.fromEntries(ITEM_BASES.map((b) => [b.id, b]));
+/** v1.6 Sorceress items: battle staves, wands and orbs (their +skill rolls are Sorceress spells only) */
+export const SORC_ITEM_BASES = new Set(["battle_staff", "wand", "orb"]);
 
 export interface Item {
   uid: number;
@@ -230,13 +248,46 @@ export const QUALITY_LABEL: Record<Quality, string> = { normal: "Normal", magic:
 
 /** Pick a random item class for a drop. */
 /**
- * v1.1 class-leaning weapon drops: 40% of the other class's weapon weight moves to your own class's weapons, so
- * each class's total weapon weight (6.05) is unchanged and armor/jewelry keep exactly the same share. Quarterstaff,
+ * v1.1 class-leaning weapon drops: 40% of the other classes' weapon weight moves to your own class's weapons, so
+ * each class's total weapon weight is unchanged and armor/jewelry keep exactly the same share. Quarterstaff,
  * throwing knives/axes and arrows stay shared. Bases not listed use their normal weight.
+ * v1.6: three classes (the Sorceress's battle staff and wand join), built by the same rule; her orb leans the same
+ * way against the shield (the shield slot keeps its total weight).
  */
-export const CLASS_DROP_WEIGHTS: Record<"barbarian" | "amazon", Record<string, number>> = {
-  amazon: { sword: 0.51, axe: 0.51, mace: 0.51, great_sword: 0.3, javelin: 0.61, spear: 0.78, short_bow: 0.78, long_bow: 0.7 },
-  barbarian: { sword: 1.03, axe: 1.03, mace: 1.03, great_sword: 0.62, javelin: 0.21, spear: 0.27, short_bow: 0.27, long_bow: 0.24 },
+export const CLASS_WEAPON_BASES: Record<"barbarian" | "amazon" | "sorceress", string[]> = {
+  barbarian: ["sword", "axe", "mace", "great_sword"],
+  amazon: ["javelin", "spear", "short_bow", "long_bow"],
+  sorceress: ["battle_staff", "wand"],
+};
+export const CLASS_LEAN = 0.4;
+function leanWeights(cls: keyof typeof CLASS_WEAPON_BASES): Record<string, number> {
+  const out: Record<string, number> = {};
+  const w = (id: string) => BASE_BY_ID[id].weight;
+  const mine = CLASS_WEAPON_BASES[cls];
+  let moved = 0;
+  for (const [c, ids] of Object.entries(CLASS_WEAPON_BASES)) {
+    if (c === cls) continue;
+    for (const id of ids) {
+      out[id] = w(id) * (1 - CLASS_LEAN);
+      moved += w(id) * CLASS_LEAN;
+    }
+  }
+  const ownSum = mine.reduce((a, id) => a + w(id), 0);
+  for (const id of mine) out[id] = w(id) + (moved * w(id)) / ownSum;
+  // the off-hand: the orb leans to the Sorceress, the shield to everyone else
+  if (cls === "sorceress") {
+    out.shield = w("shield") * (1 - CLASS_LEAN);
+    out.orb = w("orb") + w("shield") * CLASS_LEAN;
+  } else {
+    out.orb = w("orb") * (1 - CLASS_LEAN);
+    out.shield = w("shield") + w("orb") * CLASS_LEAN;
+  }
+  return out;
+}
+export const CLASS_DROP_WEIGHTS: Record<"barbarian" | "amazon" | "sorceress", Record<string, number>> = {
+  barbarian: leanWeights("barbarian"),
+  amazon: leanWeights("amazon"),
+  sorceress: leanWeights("sorceress"),
 };
 export const dropWeight = (b: ItemBase, cls?: string): number => (cls ? CLASS_DROP_WEIGHTS[cls as "amazon"]?.[b.id] : undefined) ?? b.weight;
 

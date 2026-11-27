@@ -70,6 +70,10 @@ export const LOOK_BASES: LookBase[] = [
   W("long_bow", "Long Bow", "bow", 1, 3, 10, 22, 19, 0.56, 2, 4, 2),
   W("long_battle_bow", "Long Battle Bow", "bow", 12, 3, 18, 40, 50, 0.56, 2, 4, 2),
   { id: "arrows", name: "Arrows", slot: "quiver", kind: "quiver", qlvl: 1, reqStr: 0, reqDex: 0, reqLvl: 0, w: 1, h: 3, price: 20, weight: 0 },
+  // v1.6 Sorceress (art only)
+  W("battle_staff", "Battle Staff", "staff", 1, 6, 13, 0, 0, 0.5, 1, 4, 2),
+  W("wand", "Wand", "wand", 1, 2, 4, 0, 0, 0.46, 1, 2),
+  A("orb", "Orb", "orb", "shield", 1, 2, 4, 0, 1, 2),
   // Swords
   W("short_sword", "Short Sword", "sword", 1, 2, 7, 0, 0, 0.48, 1, 3),
   W("scimitar", "Scimitar", "sword", 5, 2, 6, 0, 21, 0.42, 1, 3),

@@ -10,6 +10,17 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.6",
+    title: "The Sorceress",
+    notes: [
+      "New hero: the Sorceress, from Diablo II. Make one from New hero. Frail (10 Strength, 10 Vitality) but with deep mana (35 Energy, 2 mana a level and per Energy point) that comes back 1.5× as fast as the others'. She starts with a battle staff; a wand waits in her bag.",
+      "Three spell trees with Diablo II's skills, levels and prerequisites: Fire (Fire Bolt to Meteor and Hydra), Cold (Ice Bolt to Blizzard and Frozen Orb, three ice armors) and Lightning (Charged Bolt to Chain Lightning, Thunder Storm, Teleport and Energy Shield). Spell damage grows with her level and the skill's level, never her weapon; each Mastery adds to its element. No synergies.",
+      "Kept simple for phones: Telekinesis knocks an enemy back and stuns it; Teleport blinks the way you aim (never through walls); Inferno is a short burst of flame; Hydra is a head that stays put (up to 3); Thunder Storm strikes nearby enemies on its own; Static Field never kills and never takes a boss below half its life. Meteor, Blizzard, Fire Wall, Frozen Orb and Hydra have short cooldowns.",
+      "Her armors, Energy Shield, Enchant, Thunder Storm, Blaze and Hydras show on the buff bar. The Character screen shows Spell DPS for her main spell, and the training dummy counts spell damage.",
+      "New items: battle staves (two-handed), wands and orbs (off-hand, where a shield goes). Their +skill rolls are Sorceress spells only. Like the Amazon she can't dual wield. Loot leans to her items like it does for the other classes; how often items drop is unchanged.",
+    ],
+  },
+  {
     version: "1.5.1",
     title: "Levels numbered within each act",
     notes: [

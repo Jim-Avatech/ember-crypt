@@ -4,8 +4,8 @@ import { type Item, type StatKey, makeItem } from "../src/data/items";
 import { Game, type GameEvents, STAT_COMPARE } from "../src/game";
 
 const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, levelUp() {}, shake() {} };
-const BASE_FOR: Record<Cat, string> = { weapon: "sword", armor: "armor", helm: "helm", shield: "shield", gloves: "gloves", boots: "boots", belt: "belt", ring: "ring", amulet: "amulet" };
-const SLOT_FOR: Record<Cat, string> = { weapon: "main", armor: "chest", helm: "head", shield: "off", gloves: "gloves", boots: "boots", belt: "belt", ring: "ring1", amulet: "amulet" };
+const BASE_FOR: Record<Cat, string> = { weapon: "sword", armor: "armor", helm: "helm", shield: "shield", orb: "orb", gloves: "gloves", boots: "boots", belt: "belt", ring: "ring", amulet: "amulet" };
+const SLOT_FOR: Record<Cat, string> = { weapon: "main", armor: "chest", helm: "head", shield: "off", orb: "off", gloves: "gloves", boots: "boots", belt: "belt", ring: "ring1", amulet: "amulet" };
 
 function setup() {
   const g = new Game(events, null, 7);

@@ -22,7 +22,7 @@ const priv = (g: Game) => g as unknown as { kill(m: Mon): void; aggroPack(m: Mon
 
 describe("v1.1 difficulty curve", () => {
   it("floor 1 is 80% life / 90% damage, rising in a straight line to 100% at floor 60 and after", () => {
-    expect(GAME_VERSION).toBe("1.5.1");
+    expect(GAME_VERSION).toBe("1.6");
     expect(CURVE_END).toBe(60);
     expect(curveHp(1)).toBeCloseTo(0.8);
     expect(curveDmg(1)).toBeCloseTo(0.9);
@@ -112,8 +112,8 @@ describe("v1.1 +skill rolls match the item", () => {
   });
   it("amulets: mostly the finder's class, sometimes any class", () => {
     expect([...clsOf(skillPoolFor("amulet", () => 0, "amazon"))]).toEqual(["amazon"]);
-    expect(clsOf(skillPoolFor("amulet", () => 0.99, "amazon")).size).toBe(2);
-    expect(clsOf(skillPoolFor("amulet")).size).toBe(2);
+    expect(clsOf(skillPoolFor("amulet", () => 0.99, "amazon")).size).toBe(3); // v1.6: three classes
+    expect(clsOf(skillPoolFor("amulet")).size).toBe(3);
   });
   it("dropped items follow the rule", () => {
     const g = new Game(events, null, 3, { cls: "amazon", name: "" });

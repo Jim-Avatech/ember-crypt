@@ -3,6 +3,16 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.6: The Sorceress
+
+- New class `sorceress` (hero select now shows three cards). D2 starting stats 10/25/10/35, 40 life (+1/level, +2 per Vitality), 35 mana (+2/level, +2 per Energy), mana regen ×1.5. Starts with a Battle Staff, a Wand in the bag and 3 mana potions. Own puppet model (`sorc` in src/sprites/puppet.ts): long robe that changes colour and trim with the armour worn, circlets for helms, staff/wand/orb art.
+- Skills: `src/data/sorc.ts` (all numbers) and `src/spells.ts` (casting, spell entities, buffs). Fire / Cold / Lightning trees, 10 skills each, D2 prerequisites; tree rows unlock at levels 1/6/12/18/24/30. Damage = `spellBase(clvl)` × skill growth × (1 + mastery), never the weapon. Fixed 0.5 s cast. Cooldowns on Meteor 1.2 s, Blizzard 1.8 s, Fire Wall 1.4 s, Frozen Orb 1.0 s, Hydra 0.6 s. Cold uses the v1.3 chill/freeze rules. Static Field never kills and stops bosses at 50%. Timed buffs (armours, Energy Shield, Enchant, Thunder Storm, Blaze, Hydras) show on the buff bar. Any learned spell can go on ⚔.
+- Simplified for mobile: Telekinesis is a knockback + stun bolt; Teleport blinks along the aim to the last open point (never through walls); Inferno is one cone burst; Blaze is a timed trail of fire; Fire Wall is a 5-tile segment; Hydra is one head per cast (max 3, 10 s); Thunder Storm strikes a random nearby monster; Energy Shield moves a share of damage to mana (1.5 mana per life); Chilling Armor answers missiles only; Cold Mastery is +% cold damage; Enchant is self only; one cold armour at a time; no synergies; no faster cast rate.
+- Items: Battle Staff (2H), Wand (1H), Orb (off-hand, shield slot). +skill rolls on them are Sorceress skills only. Drops lean 40% toward the hero's class (`leanWeights`), overall weapon/armour share unchanged. Hilde stocks a magic Sorceress weapon. Only the Barbarian dual wields (`NO_DUAL_MSG`).
+- Character screen: Spell DPS row (⚔ spell, one target); the training dummy counts spell hits.
+- Balance: `tests/classSim.ts` clears a pack of 5 real monsters through `Game.update`; `tests/v16balance.test.ts` keeps the Sorceress within 0.6×–1.3× of the other classes at levels 1/10/30/60.
+- Tests: `tests/v16.test.ts`, `tests/v16balance.test.ts`, `scripts/v16-shots.mjs` (screenshots/v16, Chromium + WebKit). SW cache v33.
+
 ## v1.5.1: Levels numbered within each act
 
 - Every level number the player sees counts 1-20 within its act: `whereLabel` (map label, Character screen deepest level, save-import prompt) is "Act N · Level levelInAct(floor)"; the portal messages use `floorName` ("Burning Hells — Level 7"). Waypoint list, arrival toast and hero select were already per act. The v1.1 patch note no longer says "level 60". Floors stay 1-80 internally.

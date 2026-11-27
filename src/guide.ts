@@ -29,7 +29,7 @@ const LEVELS = [1, 3, 5, 8, 10, 12, 15, 20, 25, 30];
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const reqText = (p: [number, number] | undefined, name: string) => (p ? `${name} ${p[0]} + ${p[1]}×ilvl` : "");
 const CAT_LABEL: Record<Cat, string> = {
-  weapon: "Weapons", armor: "Armor", helm: "Helms", shield: "Shields", gloves: "Gloves", boots: "Boots", belt: "Belts", ring: "Rings", amulet: "Amulets",
+  weapon: "Weapons", armor: "Armor", helm: "Helms", shield: "Shields", orb: "Orbs", gloves: "Gloves", boots: "Boots", belt: "Belts", ring: "Rings", amulet: "Amulets",
 };
 
 function classesHtml(): string {
@@ -134,7 +134,7 @@ function monstersHtml(): string {
 
 function skillsHtml(): string {
   const tabs = [...new Set(SKILLS.map((s) => s.tab))];
-  return `<p class="gnote">Each level gives 1 skill point. As in Diablo II, a skill's hard points are capped at 1 + (your level − the skill's level), up to ${MAX_SKILL_LVL}; +skills on gear go on top. Every Barbarian and Amazon skill is playable. Put up to three on the skill buttons: open Skills, pick one, tap 1–3; the Basic tab puts Attack / Stab, Throw or Shoot on a button too, and picks what the main ⚔ button does. Passives work on their own. Barbarian synergies: each hard point in Howl, Taunt, Battle Cry or Battle Orders adds 6% War Cry damage; Shout and Battle Orders lengthen each other (+5 s per point). Amazon: fire, cold, lightning and poison damage scales with your weapon's damage; her skills have no synergies yet.</p>${tabs
+  return `<p class="gnote">Each level gives 1 skill point. As in Diablo II, a skill's hard points are capped at 1 + (your level − the skill's level), up to ${MAX_SKILL_LVL}; +skills on gear go on top. Every Barbarian, Amazon and Sorceress skill is playable. Put up to three on the skill buttons: open Skills, pick one, tap 1–3; the Basic tab puts Attack / Stab, Throw or Shoot on a button too, and picks what the main ⚔ button does. Passives work on their own. Barbarian synergies: each hard point in Howl, Taunt, Battle Cry or Battle Orders adds 6% War Cry damage; Shout and Battle Orders lengthen each other (+5 s per point). Amazon: fire, cold, lightning and poison damage scales with your weapon's damage; her skills have no synergies yet. Sorceress: spell damage comes from her character level and the skill's level (never her weapon), plus her Fire, Cold or Lightning Mastery; no synergies. Meteor, Blizzard, Fire Wall, Frozen Orb and Hydra have short cooldowns.</p>${tabs
     .map((t) => {
       const rows = SKILLS.filter((s) => s.tab === t)
         .sort((a, b) => a.reqLvl - b.reqLvl || a.row - b.row)

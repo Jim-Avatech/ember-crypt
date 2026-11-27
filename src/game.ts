@@ -27,6 +27,8 @@ import {
 import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
 import { type Level, type Room, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
 import { Rng, chance, rand, randInt } from "./rng";
+import { SORC_CAST, SORC_IDS, warmthRegen } from "./data/sorc";
+import { DAMAGE_SPELLS, type SorcBuffs, type SorcHost, type Spell, castSorc, spellDps, enchantBonus, sorcBlock, sorcDefPct, sorcOnHurt, updateSorc } from "./spells";
 
 /** v0.9.1 drop rates: a normal monster drops an item 8.5% of the time (was 17%); a champion has a 50% chance of one item (was always 1). */
 /** v0.9.2: every monster (elites and bosses build on these) has +30% life and +25% damage. */
@@ -41,6 +43,7 @@ export const MON_DMG = 1.875; // v0.9.3: +50% on v0.9.2's 1.25
 export const CLASS_WEAPONS: Record<HeroClass, string[]> = {
   barbarian: ["sword", "axe", "mace", "great_sword"],
   amazon: ["javelin", "spear", "short_bow", "long_bow"],
+  sorceress: ["battle_staff", "wand"],
 };
 /** v1.1: every equipment slot, in a fixed order (for the usable-gear cache) */
 const EQUIP_ORDER: EquipSlot[] = ["main", "off", "head", "chest", "gloves", "boots", "belt", "ring1", "ring2", "amulet"];
@@ -94,6 +97,8 @@ export type Action =
   | { type: "cry"; t: number; dur: number }
   | { type: "whirl"; t: number; dur: number; dx: number; dy: number; tick: number; hand: number; spin: number }
   | { type: "throw"; skill: string | null; t: number; dur: number; releaseAt: number[]; hands: number[]; done: number; target: Monster | null }
+  /** v1.6: a Sorceress spell (it goes off partway through the cast) */
+  | { type: "spell"; skill: string; t: number; dur: number; done: boolean }
   /** v1.0: a bow shot (Strafe: one release per target) */
   | { type: "shoot"; skill: string | null; t: number; dur: number; releaseAt: number[]; done: number; target: Monster | null; targets: Monster[] };
 
@@ -212,6 +217,8 @@ export interface Player {
   moving: boolean;
   /** seconds left: shout, battle orders, concentrate (defense while swinging), berserk (defense 0), battle command */
   buffs: { shout: number; bo: number; conc: number; bers: number; bcmd: number; slowm?: number };
+  /** v1.6 Sorceress buffs (cold armor, Energy Shield, Enchant, Thunder Storm, Blaze) */
+  sb?: SorcBuffs;
   flash: number;
   z: number;
   moveTarget: GroundItem | null;
@@ -562,11 +569,14 @@ export const VENDOR_W = 10;
 export const VENDOR_H = 10; // v1.0: room for bows, a spear and arrows
 export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
 /** v1.0: per-class starting attributes and life/mana growth (D2 numbers) */
-export const CLASS_DEF: Record<HeroClass, { stats: Stats; life: number; lifePerVit: number; mana: number; manaPerEne: number }> = {
+export const CLASS_DEF: Record<HeroClass, { stats: Stats; life: number; lifePerVit: number; mana: number; manaPerEne: number; lifePerLvl?: number; manaPerLvl?: number; manaRegen?: number }> = {
   barbarian: { stats: BASE_STATS, life: 55, lifePerVit: 4, mana: 10, manaPerEne: 1.5 },
   amazon: { stats: { str: 20, dex: 25, vit: 20, ene: 15 }, life: 50, lifePerVit: 3, mana: 15, manaPerEne: 1.5 },
+  // v1.6: D2 Sorceress: 10 Str, 25 Dex, 10 Vit, 35 Energy; 40 life (+1 a level, +2 per Vitality), 35 mana (+2 a level,
+  // +2 per Energy). Her mana also comes back 1.5× as fast as the others' (more with Warmth).
+  sorceress: { stats: { str: 10, dex: 25, vit: 10, ene: 35 }, life: 40, lifePerVit: 2, mana: 35, manaPerEne: 2, lifePerLvl: 1, manaPerLvl: 2, manaRegen: 1.5 },
 };
-export const isHeroClass = (c: unknown): c is HeroClass => c === "barbarian" || c === "amazon";
+export const isHeroClass = (c: unknown): c is HeroClass => c === "barbarian" || c === "amazon" || c === "sorceress";
 
 /** Total XP needed to reach level L+1 from level L. */
 export const xpForLevel = (L: number) => (L <= 1 ? 0 : Math.round(100 * Math.pow(L - 1, 1.9)));
@@ -662,6 +672,8 @@ const SPEAR_MELEE = new Set(["jab", "power_strike", "impale", "charged_strike", 
 const JAV_THROWS = new Set(["poison_javelin", "lightning_bolt", "plague_javelin", "lightning_fury"]);
 /** v1.3.2: like Diablo II, only the Barbarian dual wields; the Amazon's off-hand takes a shield (or a quiver with a bow) */
 export const AMAZON_OFFHAND_MSG = "Amazons can't dual wield";
+/** v1.6: the Sorceress doesn't dual wield either (a shield or an orb goes in her off-hand) */
+export const NO_DUAL_MSG: Partial<Record<HeroClass, string>> = { amazon: AMAZON_OFFHAND_MSG, sorceress: "Sorceresses can't dual wield (shield or orb)" };
 /** v1.3.2: a weapon (not a shield or quiver) */
 export const isWeaponItem = (it: Item | undefined | null) => !!it && BASE_BY_ID[it.baseId]?.slot === "weapon";
 /** v1.3.1: the colour of a pierce (tag, sparks, arrow streak): used by no element, crit or magic, so it shows on any arrow */
@@ -685,7 +697,8 @@ export function mainAtkOk(id: unknown, cls: HeroClass): id is string {
  * v1.2: skills that don't attack (warcries, Leap, Amazon helpers). On ⚔ they fire once per press; holding ⚔ after
  * that keeps attacking normally, so a held button never burns mana re-casting a buff.
  */
-export const ONCE_PER_PRESS = new Set(["leap", "howl", "find_potion", "taunt", "shout", "find_item", "battle_cry", "battle_orders", "grim_ward", "war_cry", "battle_command", "inner_sight", "slow_missiles", "decoy", "valkyrie"]);
+export const ONCE_PER_PRESS = new Set(["leap", "howl", "find_potion", "taunt", "shout", "find_item", "battle_cry", "battle_orders", "grim_ward", "war_cry", "battle_command", "inner_sight", "slow_missiles", "decoy", "valkyrie",
+  "blaze", "enchant", "frozen_armor", "shiver_armor", "chilling_armor", "thunder_storm", "energy_shield", "teleport"]);
 /**
  * v1.3 freeze resistance by monster tier: base share of a freeze (and half of it for chill) shaved off, plus
  * FREEZE_RES_PER_FLOOR per floor past the first for everything but normal monsters, capped at FREEZE_RES_CAP; and how
@@ -966,6 +979,9 @@ export class Game {
   /** v1.0 Amazon effects */
   patches: Patch[] = [];
   zaps: Zap[] = [];
+  /** v1.6 Sorceress spell entities and cooldowns (game time each is ready again) */
+  spells: Spell[] = [];
+  sorcCd: Record<string, number> = {};
   allies: Ally[] = [];
   /** v1.0: when the stash last changed (ms), so the newest copy of the shared stash wins */
   stashAt = 0;
@@ -1027,6 +1043,13 @@ export class Game {
       this.stashAt = save.stashAt ?? 0;
       this.floor = save.floor;
       this.maxFloor = Math.max(save.maxFloor ?? save.floor, save.floor);
+    } else if (cls === "sorceress") {
+      // v1.6 D2 Sorceress: a staff and light armor; a wand waits in the bag
+      this.player.equip.main = makeItem("battle_staff", 1);
+      this.player.equip.chest = makeItem("armor", 1);
+      this.player.equip.belt = makeItem("belt", 1);
+      addItem(this.player.bag, makeItem("wand", 1));
+      this.player.mpPots = 3;
     } else if (cls === "amazon") {
       // D2 Amazon: javelins and a buckler; a short bow and a quiver wait in the bag
       this.player.equip.main = makeItem("javelin", 1);
@@ -1106,6 +1129,8 @@ export class Game {
     p.moveTarget = null;
     p.dead = false;
     p.buffs = { shout: 0, bo: 0, conc: 0, bers: 0, bcmd: 0, slowm: 0 };
+    p.sb = {};
+    this.spells = [];
     p.frenzy = { stacks: 0, t: 0, decay: 0 };
     this.patches = [];
     this.zaps = [];
@@ -1190,6 +1215,7 @@ export class Game {
     this.particles = [];
     this.rings = [];
     this.projectiles = [];
+    this.spells = [];
     this.shots = [];
     this.novas = [];
     this.wards = [];
@@ -1514,11 +1540,12 @@ export class Game {
     if (isl) defPct += ironSkinDef(isl);
     if (p.buffs.shout > 0) defPct += shoutDef(this.skillLevel("shout") || 1);
     if (p.buffs.conc > 0) defPct += concDef(this.skillLevel("concentrate") || 1);
+    if (p.sb?.armor) defPct += sorcDefPct(this as unknown as SorcHost);
     const stam = stamLife(this.skillLevel("increased_stamina"));
     const boMul = p.buffs.bo > 0 ? 1 + boPct(this.skillLevel("battle_orders") || 1) / 100 : 1;
     const cd = CLASS_DEF[p.cls] ?? CLASS_DEF.barbarian;
-    const maxHp = Math.round((cd.life + (s.vit - cd.stats.vit) * cd.lifePerVit + (p.level - 1) * 2 + g("life")) * boMul * (1 + stam / 100));
-    const maxMana = Math.round((cd.mana + (s.ene - cd.stats.ene) * cd.manaPerEne + (p.level - 1) * 1.5 + g("mana")) * boMul);
+    const maxHp = Math.round((cd.life + (s.vit - cd.stats.vit) * cd.lifePerVit + (p.level - 1) * (cd.lifePerLvl ?? 2) + g("life")) * boMul * (1 + stam / 100));
+    const maxMana = Math.round((cd.mana + (s.ene - cd.stats.ene) * cd.manaPerEne + (p.level - 1) * (cd.manaPerLvl ?? 1.5) + g("mana")) * boMul);
     const fl = this.skillLevel("frenzy");
     const gearIas = Math.min(60, g("ias"));
     const ias = (fl ? (p.frenzy.stacks * frenzyIas(fl)) / 100 : 0) + gearIas / 100;
@@ -1600,6 +1627,16 @@ export class Game {
     add("inner_sight", "Inner Sight", most((m) => m.sight?.t ?? 0), "debuff");
     add("battle_cry", "Battle Cry", most((m) => m.bcry.t), "debuff");
     add("taunt", "Taunt", most((m) => m.taunt.t), "debuff");
+    // v1.6 Sorceress
+    const sbf = p.sb;
+    if (sbf) {
+      if (sbf.armorId) add(sbf.armorId, SKILL_BY_ID[sbf.armorId]?.name ?? "Armor", sbf.armor ?? 0, "buff");
+      add("energy_shield", "Energy Shield", sbf.es ?? 0, "buff");
+      add("enchant", "Enchant", sbf.ench ?? 0, "buff");
+      add("thunder_storm", "Thunder Storm", sbf.storm ?? 0, "buff");
+      add("blaze", "Blaze", sbf.blaze ?? 0, "buff");
+      add("hydra", "Hydra", this.spells.reduce((a, sp) => (sp.k === "hydra" ? Math.max(a, sp.life - sp.t) : a), 0), "buff", { stacks: this.spells.filter((sp) => sp.k === "hydra").length });
+    }
     add("chill", "Chilled", p.chillT, "ailment", { glyph: "❄" });
     add("poison", "Poisoned", p.poison.t, "ailment", { glyph: "☠" });
     return out;
@@ -1646,6 +1683,20 @@ export class Game {
     const recent = this.dummyHits.filter((h) => h.t >= from && h.t <= end).reduce((a, h) => a + h.dmg, 0);
     const span = Math.max(1, Math.min(DUMMY_WINDOW, end - s.start));
     return { dps: recent / span, total: s.total, hits: s.hits, secs, avg: s.total / Math.max(1, secs), done };
+  }
+
+  /**
+   * v1.6: the Sorceress's main spell for the character screen: the damaging spell on ⚔, else the first on a skill button,
+   * else her strongest learned one; with its single-target DPS (spellDps). null for other classes or with none learned.
+   */
+  mainSpell(): { id: string; lvl: number; dps: number } | null {
+    const p = this.player;
+    if (p.cls !== "sorceress") return null;
+    const host = this as unknown as SorcHost;
+    const ok = (id: string | null | undefined): id is string => !!id && DAMAGE_SPELLS.includes(id) && this.skillLevel(id) > 0;
+    const pick = ok(p.mainAtk) ? p.mainAtk : p.slots.find(ok) ?? DAMAGE_SPELLS.filter(ok).sort((a, b) => spellDps(host, b) - spellDps(host, a))[0];
+    if (!pick) return null;
+    return { id: pick, lvl: this.skillLevel(pick), dps: spellDps(host, pick) };
   }
 
   /** v1.3: the ⚔ normal attack's DPS with this weapon (worn: as now; otherwise as if it replaced your main hand). */
@@ -1807,6 +1858,7 @@ export class Game {
     this.updateMonsters(dt, d);
     this.updateFx(dt);
     this.updateProjectiles(dt);
+    if (this.spells.length || this.player.sb) updateSorc(this as unknown as SorcHost, dt);
     this.updatePatches(dt);
     if (this.allies.length) this.updateAllies(dt);
     this.updateShots(dt, d);
@@ -1831,7 +1883,9 @@ export class Game {
     const p = this.player;
     // regen + potions
     // v0.8: slower natural regen (was full mana in 22 s, full life in 160 s)
-    p.mana = Math.min(d.maxMana, p.mana + (d.maxMana / 45) * dt);
+    // v1.6: the Sorceress regenerates mana 1.5× as fast, and Warmth adds to it
+    const regen = (CLASS_DEF[p.cls]?.manaRegen ?? 1) * (1 + warmthRegen(this.skillLevel("warmth")) / 100);
+    p.mana = Math.min(d.maxMana, p.mana + (d.maxMana / 45) * regen * dt);
     p.hp = Math.min(d.maxHp, p.hp + (d.maxHp / 300) * (1 + stamRegen(this.skillLevel("increased_stamina")) / 100) * dt);
     if (p.healLeft > 0) {
       // potions heal over 1.5 s instead of half a second
@@ -2892,6 +2946,14 @@ export class Game {
     const s = SKILL_BY_ID[id];
     const lvl = this.skillLevel(id);
     if (!s || !lvl || !s.implemented || s.kind !== "active") return false;
+    // v1.6 Sorceress: cooldowns (Meteor, Blizzard, Fire Wall, Frozen Orb, Hydra) and room to Teleport
+    if (SORC_IDS.has(id)) {
+      const why = sorcBlock(this as unknown as SorcHost, id);
+      if (why !== null) {
+        if (why) this.hint(why);
+        return false;
+      }
+    }
     // v1.0 Amazon weapon requirements (checked before mana, like D2's greyed-out skills)
     if (SPEAR_MELEE.has(id) && !isSpearLike(p.equip.main)) {
       this.hint("Needs a javelin or spear");
@@ -2945,6 +3007,17 @@ export class Game {
     if (JAV_THROWS.has(id)) {
       p.mana -= cost;
       this.startThrow(id, [0], d);
+      return true;
+    }
+    if (SORC_IDS.has(id)) {
+      // v1.6: a spell: face the target, cast; it goes off partway through (runAction → castSorc)
+      p.mana -= cost;
+      const t = this.nearestMonster(10);
+      if (t) {
+        p.fx = t.x - p.x;
+        p.fy = t.y - p.y;
+      }
+      p.action = { type: "spell", skill: id, t: 0, dur: SORC_CAST, done: false };
       return true;
     }
     if (BOW_SKILLS.has(id)) {
@@ -3220,6 +3293,13 @@ export class Game {
         this.resolveMelee(a.skill, a.target, d, hand);
       }
       if (a.t >= a.dur) p.action = null;
+    } else if (a.type === "spell") {
+      if (!a.done && a.t >= a.dur * 0.45) {
+        a.done = true;
+        castSorc(this as unknown as SorcHost, a.skill, this.skillLevel(a.skill) || 1);
+        this.events.changed();
+      }
+      if (a.t >= a.dur) p.action = null;
     } else if (a.type === "leap") {
       const k = Math.min(1, a.t / a.dur);
       const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -3393,6 +3473,8 @@ export class Game {
     // v1.2.1: a whole-hit multiplier (Multiple Shot's share of the volley), physical and elemental alike
     const k = o.mult ?? 1;
     dmg = Math.max(1, Math.round(dmg * k)) + (extra ? Math.max(1, Math.round(extra * k)) : 0);
+    // v1.6 Enchant: fire added to each attack
+    if (p.sb?.ench) dmg += Math.round(enchantBonus(this as unknown as SorcHost) * k);
     m.hp -= dmg;
     m.flash = 1;
     m.lastHurt = this.time;
@@ -3863,7 +3945,7 @@ export class Game {
   private monsterHit(m: Monster, d: Derived, mult = 1) {
     const k = mult * this.weaken(m);
     const ar = m.ar * (m.taunt.t > 0 ? 1 - m.taunt.pct / 100 : 1);
-    this.hurtPlayer({ ar, mlvl: m.mlvl, dmgMin: m.dmgMin * k, dmgMax: m.dmgMax * k, elem: m.def.elem, big: m.def.rank !== "normal" }, d, true);
+    this.hurtPlayer({ ar, mlvl: m.mlvl, dmgMin: m.dmgMin * k, dmgMax: m.dmgMax * k, elem: m.def.elem, big: m.def.rank !== "normal" }, d, true, "melee", m);
   }
 
   /** Damage multiplier from Taunt and Battle Cry on a monster. */
@@ -3885,7 +3967,7 @@ export class Game {
    * Damage the player. Physical damage rolls to hit against defense; elemental damage is cut by the
    * matching resist. Cold chills (slower movement), poison deals part of the damage over time.
    */
-  hurtPlayer(src: { ar: number; mlvl: number; dmgMin: number; dmgMax: number; elem: Elem; big: boolean }, d: Derived, roll: boolean, how: "melee" | "missile" | "area" = "melee") {
+  hurtPlayer(src: { ar: number; mlvl: number; dmgMin: number; dmgMax: number; elem: Elem; big: boolean }, d: Derived, roll: boolean, how: "melee" | "missile" | "area" = "melee", from?: Monster) {
     const p = this.player;
     if (p.dead || p.action?.type === "leap") return;
     // v1.0 Amazon: Dodge (melee, standing or attacking), Avoid (missiles), Evade (anything while moving)
@@ -3924,6 +4006,8 @@ export class Game {
       p.chillT = 1.5;
       this.events.sound("chill");
     }
+    // v1.6 Sorceress: cold armors strike back, Energy Shield takes its share from mana
+    if (p.sb) dmg = Math.round(sorcOnHurt(this as unknown as SorcHost, dmg, how, from));
     p.hp -= dmg;
     p.flash = 1;
     this.floatAt(p.x, p.y, `-${dmg}`, ELEM_COLOR[src.elem], 15);
@@ -4164,7 +4248,11 @@ export class Game {
 
   /** v1.3.2: Diablo II rule: the Barbarian dual wields one-handed weapons, the Amazon never does. */
   canDualWield(): boolean {
-    return this.player.cls !== "amazon";
+    return this.player.cls === "barbarian";
+  }
+  /** v1.6: why a weapon can't go in this hero's off-hand */
+  noDualMsg(): string {
+    return NO_DUAL_MSG[this.player.cls] ?? AMAZON_OFFHAND_MSG;
   }
   /**
    * v1.3.2: an Amazon with a weapon in her off-hand (saves from before v1.3.2) has it moved to the bag; if the bag is
@@ -4238,7 +4326,7 @@ export class Game {
     if (!m) return null;
     this.offhandMoved = null;
     const where = m.to === "bag" ? "is in your bag" : m.to === "stash" ? "is in the camp stash (bag full)" : "is on the ground beside you (bag and stash full)";
-    return `Amazons don't dual wield: your off-hand ${itemName(m.item)} ${where}`;
+    return `${CLASS_NAME[this.player.cls]}s don't dual wield: your off-hand ${itemName(m.item)} ${where}`;
   }
 
   /** Slots an item could go in. */
@@ -4265,7 +4353,7 @@ export class Game {
 
   /** Why an item can't go in a slot, or null if it can. */
   equipError(it: Item, slot: EquipSlot): string | null {
-    if (slot === "off" && isWeaponItem(it) && !this.canDualWield()) return AMAZON_OFFHAND_MSG;
+    if (slot === "off" && isWeaponItem(it) && !this.canDualWield()) return this.noDualMsg();
     if (!this.slotsFor(it).includes(slot)) return "That doesn't go there";
     if (!this.meetsReq(it)) return "You don't meet the requirements";
     if (slot === "off" && offBlocked(this.player.equip.main, it)) return isBow(this.player.equip.main) ? "Your bow takes both hands (a quiver fits)" : "Your two-handed weapon needs both hands";
@@ -4323,7 +4411,7 @@ export class Game {
     const ia = p.equip[a];
     const ib = p.equip[b];
     if (!ia || a === b) return null;
-    if ((b === "off" && isWeaponItem(ia)) || (a === "off" && isWeaponItem(ib))) if (!this.canDualWield()) return AMAZON_OFFHAND_MSG;
+    if ((b === "off" && isWeaponItem(ia)) || (a === "off" && isWeaponItem(ib))) if (!this.canDualWield()) return this.noDualMsg();
     if (!this.slotsFor(ia).includes(b)) return "That doesn't go there";
     if (ib && !this.slotsFor(ib).includes(a)) return "Those can't swap";
     if ((b === "off" && isTwoHanded(ia)) || (a === "off" && isTwoHanded(ib))) return "Two-handed weapons go in the main hand";

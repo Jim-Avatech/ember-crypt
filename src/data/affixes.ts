@@ -4,10 +4,10 @@
  * each other, e.g. +Attack Rating and Enhanced Damage + Attack Rating). Each tier needs a minimum item level; the tier
  * names only build magic item names ("Jagged Axe of the Fox") and never decide what rolls.
  */
-import { BASE_BY_ID, type Item, type Mod, type Quality, type StatKey, makeItem, rollBase } from "./items";
+import { BASE_BY_ID, SORC_ITEM_BASES, type Item, type Mod, type Quality, type StatKey, makeItem, rollBase } from "./items";
 import { CLASS_NAME, SKILLS, SKILL_BY_ID } from "./skills";
 
-export type Cat = "weapon" | "armor" | "helm" | "shield" | "gloves" | "boots" | "belt" | "ring" | "amulet";
+export type Cat = "weapon" | "armor" | "helm" | "shield" | "orb" | "gloves" | "boots" | "belt" | "ring" | "amulet";
 type Range = [StatKey, number, number];
 interface Tier {
   lvl: number;
@@ -42,20 +42,20 @@ export const AFFIXES: AffixDef[] = [
     T(14, "Blessed", ["edef", 41, 50]), T(20, "Saintly", ["edef", 51, 65]), T(27, "Holy", ["edef", 66, 80])),
   A("def", ARMORS,
     T(1, "Stout", ["def", 2, 6]), T(6, "Burly", ["def", 7, 15]), T(13, "Rugged", ["def", 16, 30])),
-  A("mana", ["helm", "belt", ...JEWEL],
+  A("mana", ["orb", "helm", "belt", ...JEWEL],
     T(1, "Lizard's", ["mana", 1, 5]), T(5, "Snake's", ["mana", 6, 10]), T(12, "Serpent's", ["mana", 11, 15]),
     T(20, "Drake's", ["mana", 16, 20])),
-  A("fres", ["armor", "helm", "shield", "boots", "belt", ...JEWEL],
+  A("fres", ["orb", "armor", "helm", "shield", "boots", "belt", ...JEWEL],
     T(4, "Red", ["fres", 5, 10]), T(12, "Crimson", ["fres", 11, 20]), T(20, "Burgundy", ["fres", 21, 30])),
-  A("cres", ["armor", "helm", "shield", "boots", "belt", ...JEWEL],
+  A("cres", ["orb", "armor", "helm", "shield", "boots", "belt", ...JEWEL],
     T(4, "Azure", ["cres", 5, 10]), T(12, "Lapis", ["cres", 11, 20]), T(20, "Cobalt", ["cres", 21, 30])),
-  A("lres", ["armor", "helm", "shield", "boots", "belt", ...JEWEL],
+  A("lres", ["orb", "armor", "helm", "shield", "boots", "belt", ...JEWEL],
     T(4, "Ocher", ["lres", 5, 10]), T(12, "Tangerine", ["lres", 11, 20]), T(20, "Coral", ["lres", 21, 30])),
-  A("pres", ["armor", "helm", "shield", "boots", "belt", ...JEWEL],
+  A("pres", ["orb", "armor", "helm", "shield", "boots", "belt", ...JEWEL],
     T(4, "Beryl", ["pres", 5, 10]), T(12, "Jade", ["pres", 11, 20]), T(20, "Viridian", ["pres", 21, 30])),
-  A("ares", ["shield", "armor", ...JEWEL],
+  A("ares", ["orb", "shield", "armor", ...JEWEL],
     T(10, "Shimmering", ["ares", 5, 10]), T(20, "Rainbow", ["ares", 11, 15]), T(28, "Prismatic", ["ares", 16, 25])),
-  A("skill", ["helm", "amulet", "weapon"],
+  A("skill", ["orb", "helm", "amulet", "weapon"],
     T(6, "Fervent", ["skill", 1, 1]), T(18, "Furious", ["skill", 2, 2])),
   // v1.4: one Magic Find affix (before, a magic-find prefix and a magic-find suffix could both roll: two MF rows)
   A("mf", ["helm", "boots", "gloves", "belt", ...JEWEL],
@@ -64,11 +64,11 @@ export const AFFIXES: AffixDef[] = [
     T(1, "of Strength", ["str", 1, 2]), T(7, "of Might", ["str", 3, 5]), T(16, "of the Ox", ["str", 6, 9]), T(26, "of the Giant", ["str", 10, 15])),
   A("dex", ["weapon", "armor", "gloves", "boots", ...JEWEL],
     T(1, "of Dexterity", ["dex", 1, 2]), T(7, "of Skill", ["dex", 3, 5]), T(16, "of Accuracy", ["dex", 6, 9]), T(26, "of Precision", ["dex", 10, 15])),
-  A("vit", ["armor", "helm", "shield", "belt", ...JEWEL],
+  A("vit", ["orb", "armor", "helm", "shield", "belt", ...JEWEL],
     T(1, "of Vitality", ["vit", 1, 2]), T(7, "of Vigor", ["vit", 3, 5]), T(16, "of Health", ["vit", 6, 9]), T(26, "of Life", ["vit", 10, 15])),
-  A("ene", ["helm", "shield", ...JEWEL],
+  A("ene", ["orb", "helm", "shield", ...JEWEL],
     T(1, "of Energy", ["ene", 1, 2]), T(7, "of the Mind", ["ene", 3, 5]), T(16, "of Brilliance", ["ene", 6, 9])),
-  A("life", ["armor", "helm", "shield", "belt", "boots", ...JEWEL],
+  A("life", ["orb", "armor", "helm", "shield", "belt", "boots", ...JEWEL],
     T(1, "of the Jackal", ["life", 1, 5]), T(5, "of the Fox", ["life", 6, 10]), T(11, "of the Wolf", ["life", 11, 20]),
     T(18, "of the Tiger", ["life", 21, 30]), T(26, "of the Mammoth", ["life", 31, 40])),
   A("ll", ["weapon", "gloves", ...JEWEL],
@@ -95,6 +95,7 @@ export const statsOf = (a: AffixDef): Set<StatKey> => new Set(a.tiers.flatMap((t
 export const MAX_AFFIXES = 4;
 
 export const catOf = (baseId: string): Cat | null => {
+  if (BASE_BY_ID[baseId]?.kind === "orb") return "orb";
   const s = BASE_BY_ID[baseId]?.slot;
   return !s || s === "potion" ? null : (s as Cat);
 };
@@ -114,6 +115,8 @@ export const AMULET_OWN_CLASS = 0.7;
 export function skillPoolFor(baseId: string, r: Rng = Math.random, cls?: string): string[] {
   const b = BASE_BY_ID[baseId];
   const ok = (f: (s: (typeof SKILLS)[number]) => boolean) => SKILLS.filter((s) => s.implemented && s.cls !== "any" && f(s)).map((s) => s.id);
+  // v1.6: Sorceress staves, wands and orbs: only Sorceress spells
+  if (SORC_ITEM_BASES.has(baseId)) return ok((s) => s.cls === "sorceress");
   if (b?.slot === "weapon") {
     if (b.kind === "bow") return ok((s) => s.tab === "bow");
     if (b.kind === "spear") return ok((s) => s.tab === "javelin");
@@ -258,6 +261,7 @@ const RARE_B: Record<Cat, string[]> = {
   weapon: ["Bite", "Scratch", "Thirst", "Edge", "Cleaver", "Mangler", "Gnash", "Song", "Spike", "Fang", "Razor", "Break", "Wrack"],
   armor: ["Shell", "Coat", "Carapace", "Hide", "Pelt", "Jack", "Wrap", "Suit", "Cloak", "Mantle"],
   helm: ["Brow", "Visage", "Crown", "Hood", "Mask", "Horn", "Veil", "Cowl"],
+  orb: ["Eye", "Sphere", "Star", "Moon", "Globe", "Heart", "Glow", "Gaze"],
   shield: ["Ward", "Wing", "Badge", "Emblem", "Guard", "Mark", "Tower", "Rock", "Aegis"],
   gloves: ["Hand", "Fist", "Grip", "Clutch", "Claw", "Knuckle", "Hold", "Touch"],
   boots: ["Track", "Road", "Trample", "Spur", "Stalker", "Blazer", "Nails", "Slippers"],

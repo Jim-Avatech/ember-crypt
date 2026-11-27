@@ -11,7 +11,8 @@ import { PIERCE_COLOR, fmtDps } from "./game";
 import { artifactIcon } from "./sprites/artifacts";
 import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
-import { type Anim, FRAMES, type Look, dirOf, getFrame, lookKey, spriteTop } from "./sprites/puppet";
+import { type Anim, FRAMES, type Look, dirOf, getFrame, heroModel, lookKey, spriteTop } from "./sprites/puppet";
+import type { Spell } from "./spells";
 import * as T from "./sprites/tiles";
 
 /** v1.4: how Brann the Runesmith looks (a smith's mace as his hammer, mail, gloves and boots) */
@@ -402,6 +403,12 @@ export class Renderer {
     for (const al of game.allies) list.push({ d: al.x + al.y, f: () => this.drawAlly(game, al) });
     for (const q of game.projectiles) list.push({ d: q.x + q.y + 0.3, f: () => this.drawProjectile(q) });
     for (const q of game.shots) list.push({ d: q.x + q.y + 0.3, f: () => this.drawShot(q) });
+    // v1.6 Sorceress spells (ground effects under everything, the rest sorted with the world)
+    for (const sp of game.spells) {
+      if (sp.k === "blizzard" || sp.k === "wall" || sp.k === "cone" || sp.k === "blink") list.push({ d: -1e5, f: () => this.drawSpell(sp, game.time) });
+      else if (sp.k === "missile" || sp.k === "hydra") list.push({ d: sp.x + sp.y + 0.3, f: () => this.drawSpell(sp, game.time) });
+      else list.push({ d: 1e6, f: () => this.drawSpell(sp, game.time) });
+    }
     list.sort((a, b) => a.d - b.d);
     for (const it of list) it.f();
 
@@ -854,7 +861,8 @@ export class Renderer {
     if (a?.type === "whirl") return { anim: a.hand % 2 ? "atk1" : "atk0", f: 3 }; // blade held out while spinning
     if (a?.type === "leap") return { anim: "leap", f: Math.min(2, Math.floor((a.t / a.dur) * 3)) };
     if (game.recall) return { anim: "cry", f: Math.min(3, Math.floor((game.recall.t / game.recall.dur) * 6)) };
-    if (a?.type === "cry") return { anim: p.cls === "amazon" ? "cast" : "cry", f: Math.min(3, Math.floor((a.t / a.dur) * 4)) };
+    if (a?.type === "cry") return { anim: p.cls === "barbarian" ? "cry" : "cast", f: Math.min(3, Math.floor((a.t / a.dur) * 4)) };
+    if (a?.type === "spell") return { anim: "cast", f: Math.min(3, Math.floor((a.t / a.dur) * 4)) };
     if (p.moving) return { anim: "walk", f: Math.floor((p.walkPhase / (Math.PI * 2)) * 8) };
     return { anim: "idle", f: Math.floor(game.time * 3) };
   }
@@ -867,7 +875,7 @@ export class Renderer {
     if (!p.dead) this.shadow(sx, sy0, 8);
     const look = this.playerLook(game);
     const { anim, f } = this.playerAnim(game);
-    const fr = getFrame(p.cls === "amazon" ? "amazon" : "barb", look, lookKey(look), anim, dirOf(p.fx, p.fy), f, p.flash > 0.5);
+    const fr = getFrame(heroModel(p.cls), look, lookKey(look), anim, dirOf(p.fx, p.fy), f, p.flash > 0.5);
     const rc = game.recall;
     if (rc) {
       // a portal forms behind you while you channel
@@ -937,6 +945,216 @@ export class Renderer {
       this.ctx.fillStyle = `rgba(255,90,40,${0.12 + p.frenzy.stacks * 0.05})`;
       this.ctx.fillRect(sx - 6, sy0 - 1, 12, 2);
     }
+  }
+
+  /** v1.6: one Sorceress spell entity */
+  private drawSpell(sp: Spell, t: number) {
+    const ctx = this.ctx;
+    ctx.save();
+    const glow = (x: number, y: number, r: number, inner: string, outer: string) => {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, inner);
+      g.addColorStop(1, outer);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    switch (sp.k) {
+      case "missile": {
+        const x = this.ax(sp.x, sp.y);
+        const y = this.ay(sp.x, sp.y, 0.6);
+        const dx = (sp.vx - sp.vy) * HW;
+        const dy = (sp.vx + sp.vy) * HH;
+        const l = Math.hypot(dx, dy) || 1;
+        const ux = dx / l;
+        const uy = dy / l;
+        const sz = sp.size;
+        if (sp.orb) {
+          // Frozen Orb: a big pale sphere with a spinning ring
+          glow(x, y, 9, "rgba(230,245,255,0.95)", "rgba(120,190,255,0)");
+          ctx.strokeStyle = "rgba(200,235,255,0.9)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(x, y, 6, 3, t * 6, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
+        }
+        const col = sp.elem === "fire" ? ["rgba(255,240,170,1)", "rgba(255,120,30,0)", "#ff8a2a"] : sp.elem === "cold" ? ["rgba(235,250,255,1)", "rgba(110,190,255,0)", "#9ad8ff"] : sp.id === "telekinesis" ? ["rgba(240,230,255,1)", "rgba(170,140,255,0)", "#c8b8ff"] : ["rgba(255,255,230,1)", "rgba(230,230,90,0)", "#fff070"];
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = col[2];
+        ctx.lineWidth = 2.4 * sz;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x - ux * 9 * sz, y - uy * 9 * sz);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        glow(x, y, 4.5 * sz, col[0], col[1]);
+        if (sp.elem === "light" && sp.id !== "telekinesis") {
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          const j = (Math.floor(t * 30) % 3) - 1;
+          ctx.moveTo(x - 3, y + j);
+          ctx.lineTo(x, y - 2);
+          ctx.lineTo(x + 3, y - j);
+          ctx.stroke();
+        }
+        break;
+      }
+      case "meteor": {
+        const k = Math.min(1, sp.t / sp.delay);
+        const gx = this.ax(sp.x, sp.y);
+        const gy = this.ay(sp.x, sp.y);
+        ctx.strokeStyle = `rgba(255,120,40,${(0.35 + 0.5 * k).toFixed(2)})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(gx, gy, 2 * HW * 1.41 * k, HW * 1.41 * k, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        const h = (1 - k) * 120;
+        const mx = gx + (1 - k) * 50;
+        const my = gy - h;
+        ctx.globalAlpha = 0.6;
+        ctx.strokeStyle = "#ff8a2a";
+        ctx.lineWidth = 5;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(mx + 18, my - 40);
+        ctx.lineTo(mx, my);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        glow(mx, my, 9, "rgba(255,250,200,1)", "rgba(255,100,20,0)");
+        break;
+      }
+      case "blizzard": {
+        const cx = this.ax(sp.x, sp.y);
+        const cy = this.ay(sp.x, sp.y);
+        const k = Math.min(1, (sp.life - sp.t) / 0.4, sp.t / 0.2);
+        const rx = sp.r * HW * 1.41;
+        ctx.fillStyle = `rgba(150,200,255,${(0.16 * k).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx, rx * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // falling ice shards
+        for (let i = 0; i < 26; i++) {
+          const a = i * 2.39996;
+          const rr = Math.sqrt(((i * 7) % 26 + 0.5) / 26) * rx;
+          const ph = (t * 1.6 + i * 0.137) % 1;
+          const px = cx + Math.cos(a) * rr - (1 - ph) * 10;
+          const py = cy + Math.sin(a) * rr * 0.5 - (1 - ph) * 44;
+          ctx.strokeStyle = `rgba(220,240,255,${(0.9 * k).toFixed(2)})`;
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(px - 3, py - 8);
+          ctx.lineTo(px, py);
+          ctx.stroke();
+        }
+        break;
+      }
+      case "hydra": {
+        const x = this.ax(sp.x, sp.y);
+        const y = this.ay(sp.x, sp.y);
+        const k = Math.min(1, sp.t / 0.3, (sp.life - sp.t) / 0.3);
+        ctx.globalAlpha = Math.max(0, k);
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.beginPath();
+        ctx.ellipse(x, y, 8, 3.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#6a2a14";
+        ctx.beginPath();
+        ctx.ellipse(x, y - 1, 6, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        const hx = (sp.fx - sp.fy) * 4;
+        const hy = (sp.fx + sp.fy) * 2;
+        for (const o of [-4, 0, 4]) {
+          const bob = Math.sin(t * 6 + o) * 1.2;
+          const tx = x + o + hx;
+          const ty = y - 13 + bob + hy - Math.abs(o) * 0.3;
+          ctx.strokeStyle = "#a0401c";
+          ctx.lineWidth = 2.6;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(x + o * 0.5, y - 1);
+          ctx.quadraticCurveTo(x + o * 1.4, y - 8, tx, ty);
+          ctx.stroke();
+          ctx.fillStyle = "#c85a24";
+          ctx.beginPath();
+          ctx.ellipse(tx, ty, 2.6, 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#ffe14a";
+          ctx.fillRect(Math.round(tx + hx * 0.2), Math.round(ty - 1), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case "wall": {
+        const k = Math.min(1, (sp.life - sp.t) / 0.4, sp.t / 0.15);
+        const n = Math.max(2, Math.round(Math.hypot(sp.x2 - sp.x1, sp.y2 - sp.y1) * 3));
+        for (let i = 0; i <= n; i++) {
+          const u = i / n;
+          const wx = sp.x1 + (sp.x2 - sp.x1) * u;
+          const wy = sp.y1 + (sp.y2 - sp.y1) * u;
+          const x = this.ax(wx, wy);
+          const y = this.ay(wx, wy);
+          const h = 9 + ((t * 30 + i * 7) % 7);
+          ctx.globalAlpha = 0.85 * k;
+          ctx.fillStyle = "#ff6a1a";
+          ctx.beginPath();
+          ctx.moveTo(x - 3.5, y);
+          ctx.quadraticCurveTo(x - 1, y - h * 0.6, x + Math.sin(t * 9 + i) * 1.5, y - h);
+          ctx.quadraticCurveTo(x + 1, y - h * 0.6, x + 3.5, y);
+          ctx.fill();
+          ctx.fillStyle = "#ffe08a";
+          ctx.fillRect(Math.round(x - 1), Math.round(y - h * 0.45), 2, Math.round(h * 0.4));
+        }
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case "cone": {
+        const k = 1 - sp.t / sp.life;
+        const x = this.ax(sp.x, sp.y);
+        const y = this.ay(sp.x, sp.y, 0.5);
+        for (let i = 0; i < 22; i++) {
+          const a = sp.ang + (((i * 37) % 11) / 10 - 0.5) * 0.9;
+          const d = (0.3 + (((i * 53) % 17) / 16) * 0.7) * sp.range * (0.5 + 0.5 * (sp.t / sp.life + 0.3));
+          const wx = Math.cos(a) * d;
+          const wy = Math.sin(a) * d;
+          const px = x + (wx - wy) * HW;
+          const py = y + (wx + wy) * HH;
+          glow(px, py, 4 + (i % 3), `rgba(255,${180 + (i % 4) * 15},80,${(0.9 * k).toFixed(2)})`, "rgba(255,90,20,0)");
+        }
+        break;
+      }
+      case "strike": {
+        const k = 1 - sp.t / sp.life;
+        const x = this.ax(sp.x, sp.y);
+        const y = this.ay(sp.x, sp.y);
+        for (const [w, c] of [[4, `rgba(140,170,255,${(0.45 * k).toFixed(2)})`], [1.4, `rgba(255,255,255,${k.toFixed(2)})`]] as const) {
+          ctx.strokeStyle = c;
+          ctx.lineWidth = w;
+          ctx.beginPath();
+          ctx.moveTo(x + 6, y - 110);
+          for (let i = 1; i <= 8; i++) ctx.lineTo(x + ((i * 29 + Math.floor(sp.t * 40)) % 9) - 4 + (8 - i) * 0.7, y - 110 + i * 13.75);
+          ctx.stroke();
+        }
+        glow(x, y, 10 * k, "rgba(255,255,230,0.9)", "rgba(200,200,255,0)");
+        break;
+      }
+      case "blink": {
+        const k = 1 - sp.t / sp.life;
+        const x = this.ax(sp.x, sp.y);
+        const y = this.ay(sp.x, sp.y);
+        ctx.strokeStyle = `rgba(190,200,255,${k.toFixed(2)})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 10 * (1.3 - k), 5 * (1.3 - k), 0, 0, Math.PI * 2);
+        ctx.stroke();
+        glow(x, y - 12, 12 * k, "rgba(220,225,255,0.8)", "rgba(160,170,255,0)");
+        break;
+      }
+    }
+    ctx.restore();
   }
 
   /** v1.0: Immolation fire / poison cloud on the ground. */

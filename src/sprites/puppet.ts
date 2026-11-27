@@ -8,7 +8,9 @@ import { Mask, PB, type RGB, hex, mul, whiteOf } from "../pixel";
 
 import type { Species } from "../data/monsters";
 
-export type Model = "barb" | "amazon" | "vendor" | Species;
+export type Model = "barb" | "amazon" | "sorc" | "vendor" | Species;
+/** v1.6: which puppet draws a hero class */
+export const heroModel = (cls: string | undefined): Model => (cls === "amazon" ? "amazon" : cls === "sorceress" ? "sorc" : "barb");
 /** Body families: each species borrows one family's skeleton, scaled. */
 type Fam = "barb" | "zombie" | "fallen" | "boss" | "vendor";
 type Acc =
@@ -36,6 +38,8 @@ const SPECIES: Record<Model, SpeciesDef> = {
   barb: { fam: "barb", pose: "barb", scale: 1, eye: "#1a0e08", acc: [] },
   // v1.0: slimmer frame, ponytail, light armor (see AMA_DIMS and the "amazon" branches in render)
   amazon: { fam: "barb", pose: "barb", scale: 1, eye: "#1a2a3a", acc: [] },
+  // v1.6: the Sorceress: slim, long dark hair, a long robe over the same armor items (see SORC_DIMS and sorcArmor)
+  sorc: { fam: "barb", pose: "barb", scale: 1, eye: "#2a1a3a", acc: [] },
   vendor: { fam: "vendor", pose: "vendor", scale: 1, eye: "#1a0e08", acc: [] },
   zombie: { fam: "zombie", pose: "zombie", scale: 1, eye: "#e8f0a0", acc: [] },
   fallen: { fam: "fallen", pose: "fallen", scale: 1, eye: "#ffe14a", acc: ["horns", "blade"] },
@@ -123,6 +127,9 @@ const DIMS: Record<Fam, Dims> = {
 
 /** v1.0 Amazon: narrower shoulders, slightly wider hips, slimmer limbs, a touch shorter than the Barbarian. */
 const AMA_DIMS: Dims = { hipZ: 12.8, hipW: 2.3, thigh: 6.4, shin: 6.4, torso: 8.1, shW: 3.85, upper: 5.2, fore: 4.9, neck: 2.5, headR: 3.0, limb: 1.18 };
+
+/** v1.6 Sorceress: the slimmest hero, a little shorter than the Amazon */
+const SORC_DIMS: Dims = { hipZ: 12.6, hipW: 2.1, thigh: 6.3, shin: 6.3, torso: 8.0, shW: 3.6, upper: 5.1, fore: 4.8, neck: 2.5, headR: 3.0, limb: 1.08 };
 
 const SIZE: Record<Fam, [number, number, number, number]> = {
   // w, h, anchorX, anchorY (feet)
@@ -641,6 +648,30 @@ function amaArmor(id?: string): { c: RGB; pat?: (x: number, y: number) => number
   }
 }
 
+/** v1.6 Sorceress take on the armor items: silk and velvet robes in violet, blue and crimson, gold and silver trim by tier. */
+function sorcArmor(id?: string): { c: RGB; trim: RGB; pat?: (x: number, y: number) => number } {
+  switch (id) {
+    case undefined:
+      return { c: hex("#5a3a78"), trim: hex("#c8a050") };
+    case "quilted_armor":
+      return { c: hex("#5c3c80"), trim: hex("#c8a050"), pat: (x, y) => ((x + y) % 5 === 0 ? 0.86 : 1) };
+    case "leather_armor":
+      return { c: hex("#3e3a86"), trim: hex("#c8a050") };
+    case "hard_leather":
+      return { c: hex("#2e4a8a"), trim: hex("#d0b060"), pat: (_x, y) => (y % 4 === 0 ? 0.84 : 1) };
+    case "studded_leather":
+      return { c: hex("#7a2a4a"), trim: hex("#d8b868"), pat: (x, y) => ((x % 4 === 0 && y % 4 === 0) ? 1.5 : 1) };
+    case "ring_mail":
+      return { c: hex("#6a2a7a"), trim: hex("#c8ccd8"), pat: (x, y) => ((x + (y % 2)) % 3 === 0 ? 0.88 : 1.04) };
+    case "scale_mail":
+      return { c: hex("#24407a"), trim: hex("#d8dce8"), pat: (x, y) => ((x + ((y >> 1) % 2)) % 3 === 0 ? 0.82 : 1.05) };
+    case "chain_mail":
+      return { c: hex("#8a1e3a"), trim: hex("#e8d088"), pat: (x, y) => ((x ^ y) & 1 ? 0.9 : 1.04) };
+    default:
+      return { c: hex("#4a3a70"), trim: hex("#c8a050") };
+  }
+}
+
 const tierColor = (id: string | undefined, leather: string, metal: string, metalFrom = 7) =>
   id ? hex(BASE_BY_ID[id].qlvl >= metalFrom ? metal : leather) : null;
 
@@ -655,6 +686,7 @@ function sizeOf(model: Model): [number, number, number, number] {
 }
 function dimsOf(model: Model): Dims {
   if (model === "amazon") return AMA_DIMS;
+  if (model === "sorc") return SORC_DIMS;
   const sp = SPECIES[model];
   const b = DIMS[sp.fam];
   if (sp.scale === 1 && !sp.thin && !sp.head) return b;
@@ -681,8 +713,10 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
   if (sp.pose === "float") p = { ...p, bob: p.bob + 3 + Math.sin((f / 4) * Math.PI) * 0.8, legL: leg(0.9, 1.6), legR: leg(0.7, 1.5) };
   const fam = sp.fam;
   const sk = solve(d, p);
-  const hero = model === "barb" || model === "amazon";
+  const hero = model === "barb" || model === "amazon" || model === "sorc";
   const ama = model === "amazon";
+  const sor = model === "sorc";
+  let trimC: RGB = hex("#c8a050");
   const mainKind = look.main ? BASE_BY_ID[look.main]?.kind : undefined;
   let bowSt: BowState = { nock: null, arrow: false };
   if (sp.pose === "barb" && anim !== "death") {
@@ -747,6 +781,16 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     bootC = hex("#3a2a1c");
     torsoC = hex("#3c7262");
     handC = skin;
+  } else if (sor) {
+    // v1.6: a long robe in the armor's colours (legs are robe too), soft boots, bare hands unless gloved
+    skin = hex("#e6b496");
+    const ar = sorcArmor(look.chest);
+    torsoC = ar.c;
+    torsoPat = ar.pat;
+    trimC = ar.trim;
+    legC = mul(ar.c, 0.85);
+    bootC = tierColor(look.boots, "#3a2840", "#8a8aa0", 12) ?? hex("#3a2840");
+    handC = tierColor(look.gloves, "#5a3a5a", "#9a9ab0", 12) ?? skin;
   } else if (ama) {
     // v1.0: same armor items, lighter look: leather and bronze scale instead of steel plates
     skin = hex("#d9a274");
@@ -795,6 +839,13 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     if (ama) cap(add(sk.knees[i], [0, 0, -0.8]), sk.feet[i], scale * 1.0, bootC, 0.1, (_x, y) => (y % 3 === 0 ? 0.78 : 1));
   }
   // torso
+  if (sor) {
+    // v1.6: the robe's skirt: a long cone from the waist to the ankles, with a trim at the hem
+    const hem: V = [0.3, 0, 1.4];
+    cap(hem, add(sk.P, [0, 0, 1]), d.shW * 0.9, legC, -0.1, (_x, y) => (y % 6 === 0 ? 0.88 : 1));
+    disc(hem, d.shW * 1.05, mul(legC, 0.9), -0.3, d.shW * 0.5);
+    disc(add(hem, [0, 0, -0.4]), d.shW * 1.05, trimC, -0.35, d.shW * 0.42);
+  }
   if (acc.has("robe")) {
     const hem: V = [0.4, 0, 1.2 * d.limb];
     cap(hem, sk.C, d.shW * 0.95, legC, -0.1, (_x, y) => (y % 5 === 0 ? 0.85 : 1));
@@ -808,8 +859,8 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     cap(add(sk.P, [0, -3, 1]), add(sk.P, [0, 3, 1]), 1, hex("#8a6a2a"), 4.4);
   } else {
     const belly = add(sk.P, [0, 0, 1]);
-    const tw = ama ? 2.85 : (fam === "fallen" ? 2.6 : fam === "boss" ? 5.2 : 3.6) * sp.scale * (sp.thin ? Math.max(0.8, sp.thin) : 1);
-    cap(ama ? add(sk.P, [0, 0, 2.2]) : belly, sk.C, tw, torsoC, 0, torsoPat);
+    const tw = ama ? 2.85 : sor ? 2.6 : (fam === "fallen" ? 2.6 : fam === "boss" ? 5.2 : 3.6) * sp.scale * (sp.thin ? Math.max(0.8, sp.thin) : 1);
+    cap(ama || sor ? add(sk.P, [0, 0, 2.2]) : belly, sk.C, tw, torsoC, 0, torsoPat);
     if (acc.has("belly")) {
       // swollen gut, drawn as a sphere around the lower torso so it shows from every side
       const c = add(sk.P, add(scl(fwd, tw * 0.35), [0, 0, d.torso * 0.4]));
@@ -822,6 +873,11 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
       disc(add(sk.P, [0.2, 0, -0.6]), 3.0, look.chest ? skirt : hex("#8a5a32"), 0.3, 2.6, (x) => (x % 2 === 0 ? 0.78 : 1));
       cap(add(sk.P, add(scl(sk.side, -2.4), [0, 0, 1])), add(sk.P, add(scl(sk.side, 2.4), [0, 0, 1])), 0.8, hex("#5a3a1e"), 2.2);
       if (!look.chest) cap(add(sk.C, scl(sk.side, -2)), add(sk.C, scl(sk.side, 2)), 1.6, hex("#8a3a2a"), 2.4);
+    }
+    if (sor) {
+      // a sash at the waist and a trimmed collar
+      cap(add(sk.P, add(scl(sk.side, -2.2), [0, 0, 1.6])), add(sk.P, add(scl(sk.side, 2.2), [0, 0, 1.6])), 0.75, trimC, 2.2);
+      cap(add(sk.C, scl(sk.side, -1.4)), add(sk.C, scl(sk.side, 1.4)), 0.6, trimC, 2.4);
     }
     if (model === "barb") {
       // fur loincloth and belt
@@ -839,6 +895,9 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     disc(sk.hand[i], scale * 0.95, i === 1 || model !== "barb" ? handC : handC, 0.5);
     if (model === "barb") disc(sk.sh[i], 1.9, look.chest && BASE_BY_ID[look.chest].qlvl >= 11 ? hex("#a2aab2") : C.fur, 0.6);
     if (ama && look.chest && BASE_BY_ID[look.chest].qlvl >= 7) disc(sk.sh[i], 1.35, BASE_BY_ID[look.chest].qlvl >= 11 ? hex("#b89a5a") : mul(torsoC, 0.85), 0.6, 1.1);
+    if (sor) cap(sk.sh[i], add(sk.sh[i], scl(sub(sk.el[i], sk.sh[i]), 0.55)), scale * 1.25, torsoC, 0.32, torsoPat); // sleeves
+    if (sor && look.chest && BASE_BY_ID[look.chest].qlvl >= 7) disc(sk.sh[i], 1.25, trimC, 0.6, 1.0);
+    if (sor && look.gloves) cap(add(sk.el[i], scl(sub(sk.hand[i], sk.el[i]), 0.45)), sk.hand[i], scale * 1.05, handC, 0.45);
     if (ama && look.gloves) cap(add(sk.el[i], scl(sub(sk.hand[i], sk.el[i]), 0.45)), sk.hand[i], scale * 1.02, handC, 0.45);
     if (acc.has("spikes")) cap(sk.sh[i], add(sk.sh[i], [0, i ? 1.5 * sp.scale : -1.5 * sp.scale, 4 * sp.scale]), 1, model === "boss" ? hex("#e2d6b8") : A1, 0.7);
     if (acc.has("flames")) disc(add(sk.hand[i], [0, 0, 1.2]), d.limb * 1.5, A2, 0.7, d.limb * 2);
@@ -862,6 +921,14 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
       cap(tie, t1, 1.05, hairC, -0.3);
       cap(t1, t2, 0.8, mul(hairC, 0.9), -0.3);
       if (faceVisible) disc(add(hd, add(scl(fwd, 0.9), [0, 0, 1.9])), hr * 0.62, hairC, 0.2, hr * 0.32); // fringe
+    }
+    if (sor) {
+      // long straight dark auburn hair falling down the back; a centre parting in front
+      const hairC = hex("#5a1e1a");
+      disc(add(hd, add(scl(fwd, -0.9), [0, 0, 0.8])), hr * 0.95, hairC, -0.1);
+      const b0 = add(hd, add(scl(fwd, -hr * 0.7), [0, 0, 0]));
+      cap(b0, add(b0, add(scl(fwd, -0.9), [0, 0, -5.2])), hr * 0.62, hairC, -0.35, (_x, y) => (y % 3 === 0 ? 0.85 : 1));
+      if (faceVisible) disc(add(hd, add(scl(fwd, 0.9), [0, 0, 1.8])), hr * 0.66, hairC, 0.2, hr * 0.3);
     }
     if (model === "barb") {
       // hair at the back, beard in front
@@ -939,6 +1006,15 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     for (const s of [-1, 1]) cap(add(band, scl(fwd, hr * 0.9)), add(band, add(scl(sk.side, s * hr * 0.95), scl(fwd, -hr * 0.2))), 0.55, hc, 0.3);
     if (q >= 11) for (const s of [-1, 1]) cap(add(hd, add(scl(sk.side, s * hr), [0, 0, 1.4])), add(hd, add(scl(sk.side, s * hr * 1.5), add(scl(fwd, -1.2), [0, 0, 3.2]))), 0.55, hex("#e8e0d0"), 0.4);
   }
+  if (sor && look.head) {
+    // v1.6: helms are circlets and diadems on her: a band, then a front jewel, then a taller crown
+    const q = BASE_BY_ID[look.head].qlvl;
+    const hc = q >= 11 ? hex("#e0c070") : q >= 5 ? hex("#c8ccd8") : hex("#8a7a5a");
+    const band = add(hd, [0, 0, 1.3]);
+    for (const s of [-1, 1]) cap(add(band, scl(fwd, hr * 0.9)), add(band, add(scl(sk.side, s * hr * 0.95), scl(fwd, -hr * 0.2))), 0.5, hc, 0.3);
+    if (q >= 5 && faceVisible) disc(add(band, add(scl(fwd, hr * 0.95), [0, 0, 0.4])), 0.7, q >= 11 ? hex("#ff3a5a") : hex("#5ab8ff"), 0.5);
+    if (q >= 11) cap(add(band, scl(fwd, hr * 0.85)), add(band, add(scl(fwd, hr * 0.7), [0, 0, 2])), 0.45, hc, 0.4);
+  }
   if (model === "barb" && look.head) {
     const q = BASE_BY_ID[look.head].qlvl;
     const hc = q >= 11 ? hex("#a8b0b8") : q >= 5 ? hex("#8e7458") : hex("#7a5636");
@@ -955,6 +1031,13 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     const w = sk.wdir[i];
     const perp: V = [w[2] !== 0 || w[0] !== 0 ? -w[2] : 0, 0, w[0]]; // in the swing plane, toward the edge
     const bias = 0.8;
+    if (b.kind === "orb") {
+      // v1.6: a glowing orb floating just above the open hand
+      const at = add(hnd, [0.6, 0, 1.6]);
+      disc(at, 1.8, hex("#4a6ad8"), 1.2);
+      disc(add(at, [0.3, 0, 0.5]), 0.8, hex("#cfe0ff"), 1.3);
+      return;
+    }
     if (b.slot === "shield") {
       const q = b.qlvl;
       const r = id === "buckler" ? 2.8 : id === "small_shield" ? 3.4 : 4;
@@ -1031,6 +1114,18 @@ function render(model: Model, look: Look, anim: Anim, dir: number, f: number): H
     } else if (b.kind === "spear") {
       cap(add(hnd, scl(w, -6)), add(hnd, scl(w, 11)), 0.5, hex("#9a6a3a"), bias);
       cap(add(hnd, scl(w, 10.5)), add(hnd, scl(w, 14)), 0.9, C.steel, bias + 0.1);
+    } else if (b.kind === "staff" && id === "battle_staff") {
+      // v1.6: a tall gnarled staff with a glowing gem in a claw at the top
+      cap(add(hnd, scl(w, -9)), add(hnd, scl(w, 12)), 0.7, hex("#5a3a22"), bias, (_x, y) => (y % 5 === 0 ? 0.8 : 1));
+      cap(add(hnd, add(scl(w, 11.6), scl(perp, -0.9))), add(hnd, add(scl(w, 13.4), scl(perp, -0.6))), 0.4, hex("#3a2616"), bias + 0.05);
+      cap(add(hnd, add(scl(w, 11.6), scl(perp, 0.9))), add(hnd, add(scl(w, 13.4), scl(perp, 0.6))), 0.4, hex("#3a2616"), bias + 0.05);
+      disc(add(hnd, scl(w, 13)), 1.15, hex("#ff7a2a"), bias + 0.1);
+      disc(add(hnd, scl(w, 13.2)), 0.5, hex("#ffe0a0"), bias + 0.12);
+    } else if (b.kind === "wand") {
+      // v1.6: a short bone-white wand with a dark grip and a bright tip
+      cap(add(hnd, scl(w, -1.2)), add(hnd, scl(w, 1)), 0.5, hex("#3a2616"), bias);
+      cap(add(hnd, scl(w, 1)), add(hnd, scl(w, 6)), 0.42, hex("#e2d8c0"), bias + 0.05);
+      disc(add(hnd, scl(w, 6.3)), 0.7, hex("#8ad0ff"), bias + 0.1);
     } else if (b.kind === "staff") {
       // held across the body: long both ways from the hand
       cap(add(hnd, scl(w, -9)), add(hnd, scl(w, 12)), 0.75, C.wood, bias);

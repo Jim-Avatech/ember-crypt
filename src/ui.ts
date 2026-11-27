@@ -7,7 +7,7 @@ import {
 } from "./data/items";
 import type { SaveData } from "./game";
 import { CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
-import { AMAZON_OFFHAND_MSG, AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
+import { NO_DUAL_MSG, AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
 import type { Settings } from "./save";
@@ -313,7 +313,9 @@ export class Ui {
     const prev = xpForLevel(p.level);
     const next = xpForLevel(p.level + 1);
     const xpPct = (p.xp - prev) / Math.max(1, next - prev);
-    const slots = p.slots.map((s) => (s ? `${s}:${(SKILL_BY_ID[s].mana?.(g.skillLevel(s)) ?? 0) <= p.mana ? 1 : 0}` : "-")).join(",");
+    // v1.6: a Sorceress spell on cooldown dims its button like a lack of mana does
+    const cool = (id: string | null | undefined) => !!id && (g.sorcCd[id] ?? 0) > g.time;
+    const slots = p.slots.map((s) => (s ? `${s}:${(SKILL_BY_ID[s].mana?.(g.skillLevel(s)) ?? 0) <= p.mana && !cool(s) ? 1 : 0}` : "-")).join(",");
     const ctx = g.contextAction();
     const tbuffs = g.timedBuffs();
     const key = [
@@ -321,7 +323,7 @@ export class Ui {
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
       tbuffs.map((b) => `${b.id}${Math.ceil(b.left)}/${b.full ? Math.round((b.left / b.full) * 24) : 0}x${b.stacks ?? 0}`).join(), g.maxFloor,
       g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
-      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, p.equip.off?.baseId, p.mainAtk, p.cls,
+      p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, p.equip.off?.baseId, p.mainAtk, p.cls, cool(g.mainSkill()),
       g.mainSkill() ? (SKILL_BY_ID[g.mainSkill()!].mana?.(g.skillLevel(g.mainSkill()!)) ?? 0) <= p.mana : -1, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
     ].join("|");
     if (key === this.lastHud) return;
@@ -343,7 +345,7 @@ export class Ui {
     const msk = g.mainSkill();
     const mskDef = msk ? SKILL_BY_ID[msk] : null;
     ab.classList.toggle("skill", !!mskDef);
-    ab.classList.toggle("nomana", !!mskDef && (mskDef.mana?.(g.skillLevel(msk!)) ?? 0) > p.mana);
+    ab.classList.toggle("nomana", !!mskDef && ((mskDef.mana?.(g.skillLevel(msk!)) ?? 0) > p.mana || cool(msk)));
     $(ab, "span").textContent = mskDef ? mskDef.glyph : mb === "basic_shoot" ? "↟" : throwing ? "➶" : "⚔";
     $(ab, ".ammo").textContent = mb === "basic_shoot" && bowArrows >= 0 ? `${bowArrows}` : thr && mb !== "basic_attack" ? `${(thr.qty ?? 0) + (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.thrown ? p.equip.off!.qty ?? 0 : 0)}` : thr && !p.mainAtk ? `${(thr.qty ?? 0) + (BASE_BY_ID[p.equip.off?.baseId ?? ""]?.thrown ? p.equip.off!.qty ?? 0 : 0)}` : "";
     $(r, "#btn-hp b").textContent = `${p.hpPots}`;
@@ -369,7 +371,7 @@ export class Ui {
         const cost = s.mana?.(g.skillLevel(id)) ?? 0;
         el.innerHTML = `<span class="g">${s.glyph}</span><span class="n">${esc(s.name)}</span>`;
         el.classList.remove("empty");
-        el.classList.toggle("nomana", cost > p.mana);
+        el.classList.toggle("nomana", cost > p.mana || cool(id));
       }
     }
     const tb = $(r, "#btn-town");
@@ -1191,6 +1193,7 @@ export class Ui {
           <div class="kv sub"><span>Attack rating · speed</span><b>${h.ar} · ${aps.toFixed(1)}/s</b></div>`;
       })
       .join("");
+    const spell = g.mainSpell();
     const fz = p.frenzy.stacks
       ? `<div class="kv"><span>Frenzy</span><b class="frz">×${p.frenzy.stacks} · +${Math.round(d.ias * 100)}% attack speed</b></div>`
       : "";
@@ -1200,11 +1203,12 @@ export class Ui {
         <div class="char-xp">Experience ${p.xp.toLocaleString()} / ${next.toLocaleString()}</div>
         ${row("str", "Strength", dmgNote.str)}
         ${row("dex", "Dexterity", dmgNote.dex)}
-        ${row("vit", "Vitality", "+4 life each")}
-        ${row("ene", "Energy", "+1.5 mana each")}
+        ${row("vit", "Vitality", `+${CLASS_DEF[p.cls].lifePerVit} life each`)}
+        ${row("ene", "Energy", `+${CLASS_DEF[p.cls].manaPerEne} mana each`)}
         <div class="spoints ${p.statPoints ? "has" : ""}">${p.statPoints ? `${p.statPoints} stat points to spend` : "Gain 5 stat points each level"}</div>
       </div>
       <div class="char-right">
+        ${spell ? `<div class="kv dpsrow spelldps"><span>Spell DPS <small>${esc(SKILL_BY_ID[spell.id].name)} lv ${spell.lvl}, one target</small></span><b>${fmtDps(spell.dps)}</b></div>` : ""}
         <div class="kv dpsrow"><span>DPS <small>⚔ normal attack, crits in, before misses</small></span><b>${fmtDps(d.dps)} <small>· ${d.aps.toFixed(2)}/s</small></b></div>
         ${d.dual ? `<div class="kv dualtag"><span>Dual wielding</span><b>attacks alternate hands</b></div>` : ""}
         ${hands}
@@ -1377,7 +1381,7 @@ export class Ui {
           // stays in Game.equipError, and dragging a weapon onto her off-hand toasts a short refusal
           const offErr = g.equipError(it, "off");
           btns.push(`<button class="gbtn" data-act="equip" data-slot="main" ${g.meetsReq(it) ? "" : "disabled"}>Main hand</button>`);
-          if (offErr !== AMAZON_OFFHAND_MSG) btns.push(`<button class="gbtn" data-act="equip" data-slot="off" ${offErr ? "disabled" : ""} title="${offErr ? esc(offErr) : ""}">Off-hand</button>`);
+          if (!offErr || !Object.values(NO_DUAL_MSG).includes(offErr)) btns.push(`<button class="gbtn" data-act="equip" data-slot="off" ${offErr ? "disabled" : ""} title="${offErr ? esc(offErr) : ""}">Off-hand</button>`);
         }
         else if (b.slot === "ring")
           btns.push(
@@ -1753,7 +1757,7 @@ export class Ui {
         <p>Left side: put your thumb down anywhere and drag to move. Lift to stop.</p>
         <p>Right side: tap or hold ⚔ to attack. The three small buttons use skills you learn: in Skills, pick a skill and tap 1–3 to put it on a button. ⌂ Town (top right) takes you back to camp.</p>
         <p>Kill monsters for experience. Each level gives 1 skill point and 5 stat points.</p>
-        <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. Brann the Runesmith (northwest of the campfire) adds a random affix to an item for gold, up to 4 affixes. A Barbarian can put a one-handed weapon in the off-hand to dual wield; an Amazon can't (like Diablo II): her off-hand takes a shield, or a quiver with a bow.</p>
+        <p>Tap an item's name on the ground to pick it up. In the Bag, drag items around the grid or onto a slot to equip. Brann the Runesmith (northwest of the campfire) adds a random affix to an item for gold, up to 4 affixes. A Barbarian can put a one-handed weapon in the off-hand to dual wield; an Amazon or a Sorceress can't (like Diablo II): the Amazon's off-hand takes a shield, or a quiver with a bow; the Sorceress's a shield or an orb.</p>
         <p>Kill the boss to open the stairs to the next level. Each act has 20 levels; the 20th holds the act's final boss, who drops an artifact ✧ and opens the way to the next act. In camp, sell loot to Hilde and buy potions. The waypoint ✦ in camp takes you to any waypoint level you’ve reached: level 1 and every 5th level of each act. Only those levels have a waypoint stone, so that’s where your progress is kept.</p>
         <p>Some monsters hit with fire, cold, lightning or poison. Resist gear cuts that damage (up to 75%). Cold slows you, poison hurts over time.</p>
         <p>Tap ⌂ Town (top right) any time in the crypt to return to camp. Stand still for a moment; monsters can’t interrupt it, walking cancels it. A blue portal ◎ in camp takes you back to the exact spot. Items never need identifying.</p>

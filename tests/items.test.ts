@@ -21,7 +21,8 @@ const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, le
 describe("item classes", () => {
   it("has one base per class", () => {
     const ids = ITEM_BASES.map((b) => b.id).sort();
-    expect(ids).toEqual(["amulet", "armor", "arrows", "axe", "belt", "boots", "gloves", "great_sword", "helm", "hp_potion", "javelin", "long_bow", "mace", "mp_potion", "quarterstaff", "ring", "shield", "short_bow", "spear", "sword", "throwing_axe", "throwing_knife"]);
+    // v1.6: battle staff, wand and orb (Sorceress)
+    expect(ids).toEqual(["amulet", "armor", "arrows", "axe", "battle_staff", "belt", "boots", "gloves", "great_sword", "helm", "hp_potion", "javelin", "long_bow", "mace", "mp_potion", "orb", "quarterstaff", "ring", "shield", "short_bow", "spear", "sword", "throwing_axe", "throwing_knife", "wand"]);
   });
 
   it("class sets spread and speed, level sets the numbers", () => {
