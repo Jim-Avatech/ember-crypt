@@ -18,7 +18,7 @@ import {
   BC_DMG, BERSERK_DEF_T, SKILL_SLOTS, WW_DUR, WW_TICK, bcDef, bcDur, bcmdBonus, bcmdDur, berserkAR, berserkDmg, concAR, concDef, concDmg,
   findItemChance, grimDur, grimRadius, natRes, stamLife, stamRegen, tauntDmg, tauntDur, warCryDmg, warCryStun, wwAR, wwDmg,
   type BasicId, type HeroClass, CLASS_NAME, isBasic, avoidChance, chargedStrikeBolts, chargedStrikeDmg, coldArrowChill, coldArrowDmg, critStrike, decoyDur,
-  dodgeChance, evadeChance, explodingDmg, fendAR, fendDmg, fireArrowDmg, freezingDmg, freezingFreeze, furyBolts, furyDmg, guidedDmg, iceArrowDmg,
+  dodgeChance, evadeChance, explodingDmg, fendAR, fendDmg, fireArrowDmg, freezingDmg, freezingFreeze, FURY_JAV_HIT, furyBolts, furyDmg, guidedDmg, iceArrowDmg,
   iceArrowFreeze, immolationDmg, immolationDps, immolationDur, impaleAR, impaleDmg, innerSightDef, innerSightDur, jabAR, jabDmg, lightningBoltDmg,
   lightningStrikeDmg, lightningStrikeHits, magicArrowDmg, multiShotArrows, multiShotPer, strafeDur, penetrateAR, pierceChance, plagueDps, poisonJavDps,
   powerStrikeLight, slowMissilesDur, strafeArrows, strafeDmg, valkDmg, valkLife,
@@ -2691,7 +2691,8 @@ export class Game {
       return false;
     }
     if (sk === "lightning_fury") {
-      this.playerHit(m, q.hand, { knock: 1 });
+      // v1.4: the javelin's own hit is FURY_JAV_HIT of a normal throw (the bolts carry the skill), see furyDmg
+      this.playerHit(m, q.hand, { knock: 1, mult: FURY_JAV_HIT });
       this.chain({ x: q.x, y: q.y }, furyBolts(lvl), avg * (furyDmg(lvl) / 100), 6, true);
       return false;
     }

@@ -16,6 +16,7 @@ export const PATCH_NOTES: PatchNote[] = [
       "New in camp: Brann the Runesmith, northwest of the campfire. For gold he adds one random affix to an item in your backpack or one you're wearing: normal → magic (1 affix) → magic (2) → rare (3) → rare (4). Four is the most an item can hold. Each step costs more (and more for higher item levels); he shows the price and asks first, and takes carried gold before stash gold.",
       "Affixes are one pool now: any affix can roll in any slot, with no prefix/suffix limits. Magic items still get 1–2 and rares 3–4.",
       "The same stat can never roll twice on one item (before, two Magic Find rows or two Attack Rating rows could). Items you already have with a doubled stat were merged into one row, keeping the higher value. Nothing was removed.",
+      "Lightning Fury rebalanced: it did 1.4–2× Lightning Strike's damage, now about 85–90% of it (it's the safer, ranged one). Its bolts reach as many enemies as Strike's chain (3 at level 1 up to 9) for 40% of your hit at level 1, up 10.5% a level (13% past level 10), and the javelin itself hits for half. Lightning Strike is unchanged.",
     ],
   },
   {

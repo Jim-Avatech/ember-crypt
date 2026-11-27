@@ -130,8 +130,19 @@ export const fendDmg = (l: number) => 40 + (l - 1) * 10;
 export const fendAR = (l: number) => 40 + (l - 1) * 10;
 export const lightningStrikeHits = (l: number) => Math.min(8, 2 + Math.floor(l / 3));
 export const lightningStrikeDmg = (l: number) => 80 + (l - 1) * 25;
-export const furyBolts = (l: number) => Math.min(10, 2 + Math.floor(l / 2));
-export const furyDmg = (l: number) => 90 + (l - 1) * 25;
+/**
+ * v1.4: Lightning Fury rebalanced to about 85-90% of Lightning Strike's DPS at the same skill level and gear (Fury is
+ * the safer, ranged one). Before, its thrown javelin (more damage than a stab, and the Amazon throws 15% faster) hit in
+ * full and its bolts did 90%+25%/level, so it did 1.4x-2x Strike's DPS. Now the javelin's own hit is FURY_JAV_HIT of a
+ * normal throw, the bolts reach as many enemies as Strike's chain (bolts = Strike's chain + 1, it also zaps its target)
+ * and each does 40% + 10.5% a level (13% a level past 10) of your hit, tuned in a real-game-loop sim (tests/furySim.ts). Lightning Strike is unchanged.
+ */
+export const FURY_JAV_HIT = 0.5;
+export const furyBolts = (l: number) => Math.min(9, 3 + Math.floor(l / 3));
+export const furyDmg = (l: number) => Math.round(40 + (l - 1) * 10.5 + Math.max(0, l - 10) * 2.5);
+/** Before v1.4 (kept for the balance test's before/after table). */
+export const furyBoltsV13 = (l: number) => Math.min(10, 2 + Math.floor(l / 2));
+export const furyDmgV13 = (l: number) => 90 + (l - 1) * 25;
 export const innerSightDef = (l: number) => Math.min(70, 30 + (l - 1) * 4);
 export const innerSightDur = (l: number) => 8 + l * 4;
 export const critStrike = (l: number) => (l <= 0 ? 0 : Math.min(75, Math.round((75 * l) / (l + 3.7))));
@@ -524,7 +535,7 @@ export const SKILLS: SkillDef[] = [
     id: "lightning_fury", name: "Lightning Fury", tab: "javelin", reqLvl: 30, row: 5, col: 2, glyph: "☈", prereq: ["plague_javelin"], implemented: true,
     blurb: "A thrown javelin that bursts into lightning bolts on impact, striking enemies around it.",
     mana: () => 10,
-    effect: (l) => `${furyBolts(l)} bolts, ${furyDmg(l)}% of your hit each`,
+    effect: (l) => `${furyBolts(l)} bolts, ${furyDmg(l)}% of your hit each; the javelin itself hits for ${Math.round(FURY_JAV_HIT * 100)}%`,
   }),
   // ================= v1.0 basic attacks (every class) =================
   S({
