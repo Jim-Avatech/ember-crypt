@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.5: Where you are, fair DPS, coloured resistances
+
+- Act and level (`whereLabel` in src/data/acts.ts, `#where` in the HUD): "Act 3 · Level 42" (the level number waypoints use) or "Ember Camp", 13px bold, directly above the minimap, below the buff bar; part of the boss bar's `hudAvoid` boxes.
+- DPS with missing requirements: `Game.reqMetPreview(it, slot)` puts the item in the slot and raises only what's short (Strength / Dexterity counted with the other working gear, never the item's own +Str/+Dex; level) to exactly the requirement, then reads `derived()`, and restores everything. `weaponDps` (every item card: bag, worn, stash, shop, compare cards) and `compare()`'s DPS / damage / attacks rows (`DPS_METRICS`) use it. `meetsReq` / `usable` are untouched, so the item still shows red.
+- Amazon: no "Main hand only" line, no off-hand compare card or red note, no Off-hand button. `equipError` still refuses with `AMAZON_OFFHAND_MSG` ("Amazons can't dual wield"), toasted on a drag.
+- Colours (`src/tints.ts`, styles.css `.r-poison/.r-light/.r-fire/.r-cold/.lleech/.mleech`): Character screen has one "Resistances" row (poison, lightning, fire, cold) and a coloured leech row; item lines (`modLine`) colour resistances and leech everywhere, All Resistances gets one dot per colour.
+- Tests: `tests/v15.test.ts`, `scripts/v15-shots.mjs` (screenshots/v15). SW cache v31.
+
 ## v1.4: Brann the Runesmith, one affix pool, no doubled affixes
 
 - `src/data/affixes.ts`: one flat pool (`AffixDef` has no side any more). `rollMore` picks uniformly over the (affix, tier) pairs that fit the item type and level and share no stat with the item (`statsOf`). Magic: 1–2 (`MAGIC_TWO`), rare: 3–4 (`RARE_COUNTS`). The magic-find prefix and suffix are one `mf` affix now. Names (`magicName`, `rareName`) come from what rolled and never decide it.

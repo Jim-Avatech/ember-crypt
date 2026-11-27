@@ -515,6 +515,8 @@ export interface TimedBuff {
 /** v1.3: DPS shown with one decimal under 100, whole numbers above, thousands separated */
 export const fmtDps = (v: number) => (v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString("en-US"));
 
+/** v1.5: compare rows read with reqMetPreview (a weapon's output as if its missing requirements were just met). */
+export const DPS_METRICS = new Set(["dps", "dmg", "dmg2", "aps"]);
 /** The stats the compare tooltip diffs, all read from derived(). */
 export const COMPARE_METRICS: { id: string; label: string; get: (d: Derived) => number; digits?: number; unit?: string; lowerBetter?: boolean }[] = [
   { id: "dps", label: "DPS", get: (d) => d.dps, digits: 1 },
@@ -659,7 +661,7 @@ const MELEE_SKILLS = new Set(["bash", "double_swing", "stun", "frenzy", "concent
 const SPEAR_MELEE = new Set(["jab", "power_strike", "impale", "charged_strike", "fend", "lightning_strike"]);
 const JAV_THROWS = new Set(["poison_javelin", "lightning_bolt", "plague_javelin", "lightning_fury"]);
 /** v1.3.2: like Diablo II, only the Barbarian dual wields; the Amazon's off-hand takes a shield (or a quiver with a bow) */
-export const AMAZON_OFFHAND_MSG = "The Amazon can't dual wield: her off-hand takes a shield (or a quiver with a bow)";
+export const AMAZON_OFFHAND_MSG = "Amazons can't dual wield";
 /** v1.3.2: a weapon (not a shield or quiver) */
 export const isWeaponItem = (it: Item | undefined | null) => !!it && BASE_BY_ID[it.baseId]?.slot === "weapon";
 /** v1.3.1: the colour of a pierce (tag, sparks, arrow streak): used by no element, crit or magic, so it shows on any arrow */
@@ -1651,8 +1653,45 @@ export class Game {
     const b = BASE_BY_ID[it.baseId];
     if (!b || b.slot !== "weapon") return null;
     const p = this.player;
-    const d = p.equip.main === it || p.equip.off === it ? this.derived() : this.previewEquip(it, "main");
+    const sl: EquipSlot = p.equip.off === it ? "off" : "main";
+    // v1.5: a weapon you lack the Strength / Dexterity / level for: its DPS as if you had just enough (reqMetPreview)
+    const d = this.reqMetPreview(it, sl);
     return { dps: d.dps, aps: d.aps };
+  }
+
+  /**
+   * v1.5: derived stats with `it` in `slot`, as if the hero had exactly the required amount of each requirement it
+   * misses (80 Dexterity with 90 required counts as 90). Only what's short is raised; a stat at or above its
+   * requirement keeps its real value. Used for DPS everywhere it shows (item cards, compare, shop). The item still
+   * reads as unusable (meetsReq / usable are not touched).
+   */
+  reqMetPreview(it: Item, slot: EquipSlot): Derived {
+    const p = this.player;
+    const saved = { ...p.equip };
+    const base = { str: p.base.str, dex: p.base.dex, lvl: p.level };
+    if (p.equip[slot] !== it) {
+      p.equip[slot] = it;
+      if (slot === "main" && offBlocked(it, p.equip.off)) delete p.equip.off;
+    }
+    try {
+      const r = itemReqs(it);
+      for (let pass = 0; pass < 4 && this.inactiveSlots().has(slot); pass++) {
+        // the item's own requirement counts the other working gear, never its own +Str / +Dex
+        const off = this.inactiveSlots();
+        let str = p.base.str;
+        let dex = p.base.dex;
+        for (const sl of EQUIP_ORDER) if (sl !== slot && p.equip[sl] && !off.has(sl)) { str += modTotal(p.equip[sl], "str"); dex += modTotal(p.equip[sl], "dex"); }
+        if (str < r.str) p.base.str += r.str - str;
+        if (dex < r.dex) p.base.dex += r.dex - dex;
+        if (p.level < r.lvl) p.level = r.lvl;
+      }
+      return this.derived();
+    } finally {
+      p.equip = saved;
+      p.base.str = base.str;
+      p.base.dex = base.dex;
+      p.level = base.lvl;
+    }
   }
 
   /** What derived stats would be with an item put in a slot (for tooltips). */
@@ -1677,10 +1716,12 @@ export class Game {
   compare(it: Item, slot: EquipSlot): CompareRow[] {
     const now = this.derived();
     const then = this.previewEquip(it, slot);
+    // v1.5: the weapon-output rows use just-enough stats for what the item's requirements are short of
+    const thenDps = BASE_BY_ID[it.baseId]?.slot === "weapon" ? this.reqMetPreview(it, slot) : then;
     const rows: CompareRow[] = [];
     for (const m of COMPARE_METRICS) {
       const a = m.get(now);
-      const b = m.get(then);
+      const b = m.get(DPS_METRICS.has(m.id) ? thenDps : then);
       const diff = b - a;
       if (Math.abs(diff) < (m.digits ? 0.5 * 10 ** -m.digits : 0.5)) continue;
       rows.push({ id: m.id, label: m.label, diff, digits: m.digits ?? 0, unit: m.unit ?? "", good: m.lowerBetter ? diff < 0 : diff > 0 });

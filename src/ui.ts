@@ -1,5 +1,6 @@
 import { GAME_VERSION, PATCH_NOTES } from "./data/patchNotes";
 import { MAX_AFFIXES, affixCount, modText } from "./data/affixes";
+import { RES_LABEL, RES_ORDER, modLine } from "./tints";
 import {
   BASE_BY_ID, EQUIP_LABEL, type EquipSlot, type Item, QUALITY_LABEL, SLOT_LABEL, baseDamage, baseDefense, beltSlotsOf, ilvlOf,
   isBow, isThrowing, offBlocked, itemDamage, itemDefense, itemName, itemPrice, itemReqs, qualityOf, sellPrice,
@@ -13,7 +14,7 @@ import type { Settings } from "./save";
 import { type GuideSec, guideHtml } from "./guide";
 import { itemIconUrl } from "./sprites/items";
 import { artifactIcon } from "./sprites/artifacts";
-import { ACTS, ARTIFACTS, LEVELS_PER_ACT, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, levelInAct } from "./data/acts";
+import { ACTS, ARTIFACTS, LEVELS_PER_ACT, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, levelInAct, whereLabel } from "./data/acts";
 import { MONSTERS } from "./data/monsters";
 
 const artUrl = new Map<string, string>();
@@ -116,6 +117,12 @@ export interface UiHooks {
   save: SaveTools;
 }
 
+/**
+ * v1.5: resistances and leech in their colours everywhere (Character screen, item cards, shop, compare): green poison,
+ * yellow lightning, red fire, blue cold; life leech red, mana leech blue. Order on the Character row: poison,
+ * lightning, fire, cold.
+ */
+
 export class Ui {
   root: HTMLElement;
   panel: HTMLElement;
@@ -160,6 +167,7 @@ export class Ui {
       <div id="hud">
         <div class="hud-tl">
           <div id="buffs"></div>
+          <div id="where" aria-live="polite"></div>
           <canvas id="minimap" width="150" height="90"></canvas>
         </div>
         <div class="hud-tr">
@@ -373,6 +381,10 @@ export class Ui {
     btn.dataset.kind = ctx ?? "";
     const nx = g.floor + 1;
     btn.textContent = ctx === "descend" ? (levelInAct(nx) === 1 ? `▼ Enter Act ${actDef(nx).roman}: ${actDef(nx).area}` : `▼ Descend to Level ${levelInAct(nx)}`) : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "craft" ? "⚒ Craft with Brann" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)}` : "";
+    // v1.5: where you are, right above the minimap ("Act 3 · Level 42"; level = the level number the waypoints use)
+    const where = whereLabel(g.inTown ? 0 : g.floor);
+    const wEl = $(r, "#where");
+    if (wEl.textContent !== where) wEl.textContent = where;
     // v1.3: one buff bar for everything timed, both classes: icon, seconds left and a draining bar (no rings on the
     // skill buttons: thumbs cover them)
     $(r, "#buffs").innerHTML = tbuffs
@@ -1201,9 +1213,8 @@ export class Ui {
         <div class="kv"><span>Life</span><b>${Math.ceil(p.hp)} / ${d.maxHp}</b></div>
         <div class="kv"><span>Mana</span><b>${Math.ceil(p.mana)} / ${d.maxMana}</b></div>
         <div class="kv"><span>Critical strike</span><b>${d.crit}%</b></div>
-        <div class="kv"><span>Resist fire · cold</span><b>${d.res.fire}% · ${d.res.cold}%</b></div>
-        <div class="kv"><span>Resist lightning · poison</span><b>${d.res.light}% · ${d.res.poison}%</b></div>
-        ${d.ll || d.ml ? `<div class="kv"><span>Life · mana leech</span><b class="mod">${d.ll}% · ${d.ml}%</b></div>` : ""}
+        <div class="kv resrow"><span>Resistances</span><b>${RES_ORDER.map((k) => `<i class="r-${k}" title="${RES_LABEL[k]}" aria-label="${RES_LABEL[k]} ${d.res[k]}%">${d.res[k]}%</i>`).join(" ")}</b></div>
+        ${d.ll || d.ml ? `<div class="kv leechrow"><span>Life · mana leech</span><b><i class="lleech" title="Life leech">${d.ll}%</i> · <i class="mleech" title="Mana leech">${d.ml}%</i></b></div>` : ""}
         ${d.gearIas || d.frw ? `<div class="kv"><span>Attack speed · run speed</span><b class="mod">+${d.gearIas}% · +${d.frw}%</b></div>` : ""}
         ${d.gf || d.mf ? `<div class="kv"><span>Gold find · magic find</span><b class="mod">+${d.gf}% · +${d.mf}%</b></div>` : ""}
         <div class="kv"><span>Gold</span><b class="gold">${p.gold.toLocaleString()}</b></div>
@@ -1235,7 +1246,6 @@ export class Ui {
       if (b.reach) lines.push(`Long reach · two-handed thrust · Spear Mastery`);
       // v1.3.2: only the Barbarian dual wields
       lines.push(`Speed: ${b.speedLabel}${b.hands === 1 ? (g.canDualWield() ? " · can dual wield" : "") : ""}`);
-      if (b.hands === 1 && !g.canDualWield()) lines.push(`<span class="offnol">Main hand only: Amazons don't dual wield</span>`);
       // v1.3: DPS of your ⚔ normal attack with this weapon (your stats and skills, crits in; misses not)
       const wd = g.weaponDps(it);
       // (item cards list their own stats with no deltas; the DPS difference is in the compare stat list)
@@ -1257,7 +1267,7 @@ export class Ui {
       if (r.dex) lines.push(`<span class="${st.dex < r.dex ? "bad" : ""}">Required Dexterity: ${r.dex}</span>`);
       if (r.lvl) lines.push(`<span class="${g.player.level < r.lvl ? "bad" : ""}">Required Level: ${r.lvl}</span>`);
     }
-    for (const m of it.mods ?? []) lines.push(`<span class="mod">${esc(modText(m))}</span>`);
+    for (const m of it.mods ?? []) lines.push(modLine(m));
     return lines.map((l) => `<div>${l}</div>`).join("");
   }
 
@@ -1363,12 +1373,11 @@ export class Ui {
         btns.push(`<button class="gbtn dim" data-act="drop">Drop</button>`);
       } else {
         if (b.slot === "weapon" && b.hands === 1) {
-          // v1.3.2: an Amazon's Off-hand button stays, disabled, and says why (tap it for the reason)
+          // v1.5: an Amazon gets no Off-hand button at all (v1.3.2 showed it disabled with a red note); the block itself
+          // stays in Game.equipError, and dragging a weapon onto her off-hand toasts a short refusal
           const offErr = g.equipError(it, "off");
-          btns.push(
-            `<button class="gbtn" data-act="equip" data-slot="main" ${g.meetsReq(it) ? "" : "disabled"}>Main hand</button>`,
-            `<button class="gbtn${offErr === AMAZON_OFFHAND_MSG ? " offno" : ""}" data-act="equip" data-slot="off" ${offErr ? "disabled" : ""} title="${offErr ? esc(offErr) : ""}">Off-hand</button>`,
-          );
+          btns.push(`<button class="gbtn" data-act="equip" data-slot="main" ${g.meetsReq(it) ? "" : "disabled"}>Main hand</button>`);
+          if (offErr !== AMAZON_OFFHAND_MSG) btns.push(`<button class="gbtn" data-act="equip" data-slot="off" ${offErr ? "disabled" : ""} title="${offErr ? esc(offErr) : ""}">Off-hand</button>`);
         }
         else if (b.slot === "ring")
           btns.push(
@@ -1408,18 +1417,9 @@ export class Ui {
       ${qualityOf(x) === "rare" ? `<div class="iname q-rare sub">${esc(BASE_BY_ID[x.baseId].name)}</div>` : ""}
       <div class="itype">${SLOT_LABEL[BASE_BY_ID[x.baseId].slot]} · ${QUALITY_LABEL[qualityOf(x)]} · Item level ${ilvlOf(x)}</div>
       <div class="clines">${this.itemLines(x)}</div></div>`;
+    // v1.5: for an Amazon a one-hander is compared with the main hand only, with no off-hand card or red note
     const slots = g.compareSlots(it);
-    // v1.3.2: for an Amazon a one-hander is compared with the main hand only; the off-hand card says why it can't go there
-    const amzOff = g.equipError(it, "off") === AMAZON_OFFHAND_MSG && BASE_BY_ID[it.baseId].hands === 1;
-    if (amzOff) slots.push("off");
     const eq = slots.map((sl) => {
-      if (sl === "off" && amzOff) {
-        const cur = p.equip.off;
-        const no = `<div class="offno">✕ Can't go in the off-hand: Amazons don't dual wield. Her off-hand takes a shield, or a quiver with a bow.</div>`;
-        return cur
-          ? card(cur, `Equipped · ${EQUIP_LABEL.off}`, "eqc").replace('<div class="iname', `${no}<div class="iname`)
-          : `<div class="ccard eqc empty"><div class="chead">Equipped · ${EQUIP_LABEL.off}</div>${no}</div>`;
-      }
       const cur = p.equip[sl];
       const label = `Equipped · ${sl === "ring1" ? "Left ring" : sl === "ring2" ? "Right ring" : EQUIP_LABEL[sl]}`;
       if (cur) return card(cur, label, "eqc");

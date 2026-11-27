@@ -1613,9 +1613,6 @@ body.portrait #rotate {
 .kv.dpsrow > span { color: #e8d9a0; }
 
 /* v1.3.2: an Amazon's off-hand refuses a second weapon (compare sheet, tooltips, disabled Off-hand button) */
-div.offno { color: #ff9a8a; font-size: 12px; line-height: 1.3; margin: 4px 0 6px; padding: 4px 6px; border: 1px solid rgba(255, 120, 100, 0.45); border-radius: 6px; background: rgba(120, 20, 10, 0.35); }
-.gbtn.offno { text-decoration: line-through; }
-.offnol { color: #ff9a8a; }
 
 /* v1.4: Brann the Runesmith (crafting) */
 .pbody-craft { display: flex; gap: 10px; }
@@ -1630,3 +1627,21 @@ div.offno { color: #ff9a8a; font-size: 12px; line-height: 1.3; margin: 4px 0 6px
 .cstep { margin: 6px 0; font-size: 13px; }
 .cnew { color: #8aff8a; font-size: 13px; margin-bottom: 6px; }
 .craftwhy { margin: 6px 0; }
+
+/* v1.5: act and level above the minimap */
+#where {
+  display: inline-block; margin-top: 3px; padding: 2px 7px; border-radius: 4px; background: rgba(0, 0, 0, 0.55);
+  color: #f2dcaa; font: 700 13px/1.25 system-ui, sans-serif; letter-spacing: 0.2px; text-shadow: 0 1px 2px #000;
+  white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box;
+}
+#where:empty { display: none; }
+/* v1.5: resistance and leech colours (Character screen, item cards, shop, compare) */
+.r-poison, .mod.r-poison, .kv b .r-poison { color: #5fd35f; }
+.r-light, .mod.r-light, .kv b .r-light { color: #ffe14a; }
+.r-fire, .mod.r-fire, .kv b .r-fire { color: #ff5a3c; }
+.r-cold, .mod.r-cold, .kv b .r-cold { color: #5aa8ff; }
+.lleech, .mod.lleech, .kv b .lleech { color: #ff4f5e; }
+.mleech, .mod.mleech, .kv b .mleech { color: #6a8cff; }
+.resrow b i, .leechrow b i { font-style: normal; font-weight: 800; }
+.resrow b i + i { margin-left: 6px; }
+.rall i { font-style: normal; font-size: 10px; margin-left: 1px; }

@@ -63,15 +63,17 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await page.waitForTimeout(400);
   const sh = await ev(() => ({
     cards: [...document.querySelectorAll(".cmpsheet .ccard .chead")].map((e) => e.textContent),
-    no: document.querySelector(".cmpsheet .ccard div.offno")?.textContent ?? "",
+    no: document.querySelector(".cmpsheet .offno, .cmpsheet .offnol") ? "red note" : "",
+    red: /Main hand only|Can't go in the off-hand/.test(document.querySelector(".cmpsheet")?.textContent ?? ""),
     off: (() => { const b = [...document.querySelectorAll(".cmpsheet .ibtns button")].find((x) => x.textContent.trim() === "Off-hand"); return b ? { disabled: b.disabled, title: b.title } : null; })(),
     main: !![...document.querySelectorAll(".cmpsheet .ibtns button")].find((x) => x.textContent.trim() === "Main hand" && !x.disabled),
     tip: document.querySelector(".cmpsheet .selc .offnol")?.textContent ?? "",
     dual: /can dual wield/.test(document.querySelector(".cmpsheet .selc")?.textContent ?? ""),
   }));
-  C("compare sheet: the off-hand card says the Amazon can't dual wield", sh.cards.some((c) => /Off-hand/i.test(c)) && /dual wield/.test(sh.no) && /shield/.test(sh.no), JSON.stringify(sh));
-  C("Off-hand button disabled with the reason; Main hand works", sh.off?.disabled === true && /dual wield/.test(sh.off.title) && sh.main, JSON.stringify(sh.off));
-  C("the sword's card says main hand only (no 'can dual wield')", /Main hand only/.test(sh.tip) && !sh.dual, sh.tip);
+  // v1.5: no off-hand card, no Off-hand button and no red "Main hand only" note for an Amazon (the block stays)
+  C("v1.5 compare sheet: main hand card only, no off-hand card, no red note", !sh.cards.some((c) => /Off-hand/i.test(c)) && sh.cards.some((c) => /Main hand/i.test(c)) && !sh.no && !sh.red, JSON.stringify(sh));
+  C("v1.5 no Off-hand button; Main hand works", sh.off === null && sh.main, JSON.stringify(sh.off));
+  C("v1.5 the sword's card has no 'Main hand only' and no 'can dual wield'", !sh.tip && !sh.dual, sh.tip);
   await page.screenshot({ path: `${out}/01-amazon-offhand-blocked${sfx}.png` });
   await page.locator('[data-act="cmp-close"]').click();
   await page.waitForTimeout(250);

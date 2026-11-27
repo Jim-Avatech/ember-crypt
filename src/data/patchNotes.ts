@@ -10,6 +10,16 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.5",
+    title: "Where you are, fair DPS, coloured resistances",
+    notes: [
+      "The act and level you're on (like “Act 3 · Level 42”) now show above the minimap, top left.",
+      "A weapon you don't have the Strength, Dexterity or level for now shows the DPS you'd get with just enough of what's missing (80 Dexterity with 90 required counts as 90). Stats you already have enough of count as they are. It still shows red until you meet the requirements.",
+      "No more red “Main hand only” notes or Off-hand button for the Amazon. She still can't put a weapon in her off-hand; trying says so briefly.",
+      "Character screen: one Resistances row in colour: green poison, yellow lightning, red fire, blue cold. Items, the shop and compare use the same colours, and life leech (red) and mana leech (blue) are coloured too.",
+    ],
+  },
+  {
     version: "1.4",
     title: "Brann the Runesmith, one affix pool, no doubled affixes",
     notes: [

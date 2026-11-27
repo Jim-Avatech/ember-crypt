@@ -143,7 +143,7 @@ function placeToast() {
   if (toastEl && top !== toastTop) toastEl.style.top = toastTop = top;
 }
 {
-  const els = ["#hud .hud-tr", "#buffs", "#minimap", "#xpbar"].map((s) => document.querySelector<HTMLElement>(s));
+  const els = ["#hud .hud-tr", "#buffs", "#where", "#minimap", "#xpbar"].map((s) => document.querySelector<HTMLElement>(s));
   renderer.hudAvoid = () => {
     const c = canvas.getBoundingClientRect();
     return els.filter((e): e is HTMLElement => !!e).map((e) => {
