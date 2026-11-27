@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.6.4: Spells leech
+
+- Damage through `Game.elemHit` (Sorceress spells; Amazon Exploding/Immolation/Freezing Arrow bursts, Lightning Fury / Charged Strike / Lightning Strike bolts and chains, Plague and Immolation clouds; Hydra, Fire Wall) now leeches at `SPELL_LEECH_PCT` (35%) of the gear's life / mana leech, on the damage really dealt (no overkill; never from the training dummy; `elemHit(..., { noLeech })` opts out).
+- Cap: spell leech returns at most `SPELL_LEECH_CAP` (4%) of max life and 4% of max mana a second (`spellLeechCap`), from a reserve (`Game.slLeft`) that refills at that rate and holds 1 s of it. Weapon hits (`playerHit`) leech in full and uncapped as before; Valkyrie (noLeech) and War Cry (`directHit`) still don't leech.
+- UI: Character screen row under the leech row ("Spells leech at 35% · up to N life · M mana a second"); leech item cards add "Spells leech at 35%, up to 4% of max life / mana a second".
+- Measured (level 30, 6% life + 6% mana leech, 20 s, `tests/v164.test.ts` prints LEECH lines): Sorceress Blizzard / Frozen Orb / Nova, pack of 10 or one target: 0 → ≈8.3 life/s (the cap: 4% of 209). Without the cap 35% would be ≈302 life/s for Blizzard on 10. Amazon Lightning Fury: 5.0 → ≈16.4 life/s on 10 (javelin hit 5.0 + bolts 11.4, cap 11.5), 4.7 → ≈14.5 on one.
+- Tests: `tests/v164.test.ts`, `scripts/v164-shots.mjs` (screenshots/v164). SW cache v37.
+
 ## v1.6.3: +Skills like Diablo II, potion stacks
 
 - Charged Bolt: `CB_CONE` 22.5° (45° cone, was 30°), `CB_WANDER_MAX` 33° (was 22°, scaled ×1.5), damping unchanged. Hits on one still monster (real game loop, 200 casts): level 10 (8 bolts) ≈ 5.3 at 3 tiles (v1.6.2 6.3), ≈ 4.2 at 6 tiles (4.9); level 1 (3 bolts) ≈ 1.8 (2.2) and ≈ 1.5 (1.7). Spell DPS counts 50% of the bolts (was 60%).

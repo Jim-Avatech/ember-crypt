@@ -50,10 +50,11 @@ function castRun(g: Game, id: string, secs = 0.7) {
 
 describe("v1.6.1 version, cache", () => {
   it("version 1.6.1 with a patch note on top; service worker cache v34", () => {
-    expect(GAME_VERSION).toBe("1.6.3");
-    expect(PATCH_NOTES[2].version).toBe("1.6.1");
-    expect(PATCH_NOTES[2].notes.length).toBe(5);
-    expect(swSrc).toMatch(/shell-v36/);
+    expect(GAME_VERSION).toBe("1.6.4");
+    const n161 = PATCH_NOTES.find((q) => q.version === "1.6.1")!;
+    expect(n161.version).toBe("1.6.1");
+    expect(n161.notes.length).toBe(5);
+    expect(swSrc).toMatch(/shell-v\d+/);
   });
 });
 

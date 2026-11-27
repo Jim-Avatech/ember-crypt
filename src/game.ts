@@ -571,6 +571,15 @@ export const STAT_COMPARE: Record<StatKey, string[]> = {
 export const BASE_RUN = 4.6;
 
 export const BASE_POTS = 4;
+/**
+ * v1.6.4: damage from spells and skill effects (everything through Game.elemHit: Sorceress spells, Amazon bursts,
+ * bolts, chains, Plague and Immolation clouds) leeches at this % of the gear's life / mana leech. Weapon hits
+ * (playerHit) leech in full as before.
+ */
+export const SPELL_LEECH_PCT = 35;
+/** v1.6.4: spell leech returns at most this % of max life (and of max mana) per second, with a 1 s reserve */
+export const SPELL_LEECH_CAP = 4;
+export const spellLeechCap = (max: number) => Math.max(1, (max * SPELL_LEECH_CAP) / 100);
 export const VENDOR_W = 10;
 export const VENDOR_H = 10; // v1.0: room for bows, a spear and arrows
 export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
@@ -1894,6 +1903,12 @@ export class Game {
   }
 
   private updatePlayer(dt: number, input: FrameInput, d: Derived) {
+    // v1.6.4: spell leech reserve refills at its per-second cap (up to 1 s of it)
+    this.slD = { ll: d.ll, ml: d.ml, maxHp: d.maxHp, maxMana: d.maxMana };
+    const capH = spellLeechCap(d.maxHp);
+    const capM = spellLeechCap(d.maxMana);
+    this.slLeft.hp = Math.min(capH, this.slLeft.hp + capH * dt);
+    this.slLeft.mp = Math.min(capM, this.slLeft.mp + capM * dt);
     // v1.6.3: a skill gear granted is gone (item off, broken requirement): off the buttons
     if (this.dropLostSkills()) this.events.changed();
     // v1.6.3: potions move from the backpack into the belt whenever it has room
@@ -2086,6 +2101,35 @@ export class Game {
   }
   /** v1.6.3: skills gear granted at the last check (a newly granted active skill goes on an empty button once) */
   private grantedSeen = new Set<string>();
+  /** v1.6.4: this frame's leech stats (set in updatePlayer, so a 40-monster Blizzard tick doesn't rebuild Derived) */
+  private slD = { ll: 0, ml: 0, maxHp: 1, maxMana: 1 };
+  /** v1.6.4: spell leech still allowed now (refills at spellLeechCap(max) a second, holds at most 1 s of it) */
+  slLeft = { hp: 0, mp: 0 };
+  /** v1.6.4: life / mana returned by spell leech and by weapon-hit leech so far (for the balance tests) */
+  spellLeechGot = { hp: 0, mp: 0 };
+  atkLeechGot = { hp: 0, mp: 0 };
+  /** v1.6.4: reduced, capped leech from spell / skill-effect damage actually dealt */
+  private spellLeech(dmg: number) {
+    const L = this.slD;
+    const p = this.player;
+    if (p.dead || dmg <= 0) return;
+    if (L.ll > 0) {
+      const g = Math.min((dmg * L.ll * SPELL_LEECH_PCT) / 10000, this.slLeft.hp, L.maxHp - p.hp);
+      if (g > 0) {
+        p.hp += g;
+        this.slLeft.hp -= g;
+        this.spellLeechGot.hp += g;
+      }
+    }
+    if (L.ml > 0) {
+      const g = Math.min((dmg * L.ml * SPELL_LEECH_PCT) / 10000, this.slLeft.mp, L.maxMana - p.mana);
+      if (g > 0) {
+        p.mana += g;
+        this.slLeft.mp -= g;
+        this.spellLeechGot.mp += g;
+      }
+    }
+  }
   /** v1.6.3: take skills the hero no longer has (a granting item came off) off the buttons and ⚔; put a newly
    * granted active skill on the first empty button */
   dropLostSkills(assignNew = false) {
@@ -2765,10 +2809,12 @@ export class Game {
     return ((h.min + h.max) / 2) * (1 + h.dmgPct / 100);
   }
   /** Elemental (non-weapon) damage: always hits; cold can slow or freeze. */
-  elemHit(m: Monster, dmg: number, elem: Elem, o: { chill?: number; freeze?: number; quiet?: boolean } = {}) {
+  elemHit(m: Monster, dmg: number, elem: Elem, o: { chill?: number; freeze?: number; quiet?: boolean; noLeech?: boolean } = {}) {
     if (m.state === "dead") return;
     if (m.state === "idle") this.aggroPack(m);
     const n = Math.max(1, Math.round(dmg));
+    // v1.6.4: spells leech at SPELL_LEECH_PCT of gear leech, on the damage really dealt (no overkill), capped a second
+    if (!m.dummy && !o.noLeech) this.spellLeech(Math.min(n, Math.max(0, m.hp)));
     m.hp -= n;
     m.flash = 1;
     m.lastHurt = this.time;
@@ -3569,8 +3615,16 @@ export class Game {
     // life / mana leech from gear (never from the training dummy)
     const dv = this.derived();
     if (m.dummy) o = { ...o, noLeech: true };
-    if (dv.ll > 0 && !o.noLeech) p.hp = Math.min(dv.maxHp, p.hp + (dmg * dv.ll) / 100);
-    if (dv.ml > 0 && !o.noLeech) p.mana = Math.min(dv.maxMana, p.mana + (dmg * dv.ml) / 100);
+    if (dv.ll > 0 && !o.noLeech) {
+      const h0 = p.hp;
+      p.hp = Math.min(dv.maxHp, p.hp + (dmg * dv.ll) / 100);
+      this.atkLeechGot.hp += p.hp - h0;
+    }
+    if (dv.ml > 0 && !o.noLeech) {
+      const m0 = p.mana;
+      p.mana = Math.min(dv.maxMana, p.mana + (dmg * dv.ml) / 100);
+      this.atkLeechGot.mp += p.mana - m0;
+    }
     const dx = m.x - p.x;
     const dy = m.y - p.y;
     const l = Math.hypot(dx, dy) || 1;

@@ -29,7 +29,7 @@ function dummyMon(g: Game, x: number, y: number, extra: Partial<Monster> = {}): 
 }
 
 describe("v1.3 version", () => {
-  it("label", () => expect(GAME_VERSION).toBe("1.6.3"));
+  it("label", () => expect(GAME_VERSION).toBe("1.6.4"));
 });
 
 describe("v1.3 buff bar: every timed effect, both classes", () => {

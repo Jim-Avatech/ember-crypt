@@ -1676,3 +1676,18 @@ body.portrait #rotate {
 .sfrom b {
   color: #8fa8ff;
 }
+/* v1.6.4: spell leech note (Character screen row, item cards) */
+.kv.leechnote span,
+.kv.leechnote b {
+  font-size: 11px;
+  color: #b8a888;
+  font-weight: 400;
+}
+.kv.leechnote b i {
+  font-style: normal;
+  font-weight: 600;
+}
+.leechnote {
+  font-size: 11px;
+  color: #b8a888;
+}

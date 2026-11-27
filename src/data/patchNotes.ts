@@ -10,6 +10,13 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.6.4",
+    title: "Spells leech",
+    notes: [
+      "Life and mana leech now work with spells and skill effects too (Sorceress spells, Exploding/Freezing Arrow bursts, Lightning Fury and Charged Strike bolts, Plague and Immolation clouds) at 35% of your leech, and they return at most 4% of your max life and 4% of your max mana a second, so a big pack can't heal you outright. Weapon hits leech in full as before.",
+    ],
+  },
+  {
     version: "1.6.3",
     title: "+Skills like Diablo II, potion stacks",
     notes: [

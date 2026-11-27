@@ -69,13 +69,13 @@ function giveAndEquip(g: Game, it: Item, slot?: "main" | "head") {
 
 describe("v1.6.3 release", () => {
   it("version, patch note, cache v36", () => {
-    expect(GAME_VERSION).toBe("1.6.3");
-    expect(PATCH_NOTES[0].version).toBe("1.6.3");
-    const t = PATCH_NOTES[0].notes.join(" ");
+    expect(GAME_VERSION).toBe("1.6.4");
+    expect(PATCH_NOTES.some((q) => q.version === "1.6.3")).toBe(true);
+    const t = PATCH_NOTES.find((q) => q.version === "1.6.3")!.notes.join(" ");
     expect(t).toMatch(/Charged Bolt/);
     expect(t).toMatch(/potion/i);
     expect(t).toMatch(/\+1 to Frozen Armor|grant/i);
-    expect(swSrc).toContain("ember-crypt-shell-v36");
+    expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
   });
 });
 

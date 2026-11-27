@@ -7,7 +7,7 @@ import {
 } from "./data/items";
 import type { SaveData } from "./game";
 import { CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
-import { NO_DUAL_MSG, AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
+import { NO_DUAL_MSG, AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, SPELL_LEECH_CAP, SPELL_LEECH_PCT, spellLeechCap, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, POT_STACK, STASH_H, STASH_W, overlapping, potQty, sizeOf } from "./inventory";
 import type { Settings } from "./save";
@@ -1222,7 +1222,8 @@ export class Ui {
         <div class="kv"><span>Mana</span><b>${Math.ceil(p.mana)} / ${d.maxMana}</b></div>
         <div class="kv"><span>Critical strike</span><b>${d.crit}%</b></div>
         <div class="kv resrow"><span>Resistances</span><b>${RES_ORDER.map((k) => `<i class="r-${k}" title="${RES_LABEL[k]}" aria-label="${RES_LABEL[k]} ${d.res[k]}%">${d.res[k]}%</i>`).join(" ")}</b></div>
-        ${d.ll || d.ml ? `<div class="kv leechrow"><span>Life · mana leech</span><b><i class="lleech" title="Life leech">${d.ll}%</i> · <i class="mleech" title="Mana leech">${d.ml}%</i></b></div>` : ""}
+        ${d.ll || d.ml ? `<div class="kv leechrow"><span>Life · mana leech</span><b><i class="lleech" title="Life leech">${d.ll}%</i> · <i class="mleech" title="Mana leech">${d.ml}%</i></b></div>
+        <div class="kv leechnote"><span>Spells leech at ${SPELL_LEECH_PCT}%</span><b>up to <i class="lleech">${Math.round(spellLeechCap(d.maxHp))}</i> life · <i class="mleech">${Math.round(spellLeechCap(d.maxMana))}</i> mana a second</b></div>` : ""}
         ${d.gearIas || d.frw ? `<div class="kv"><span>Attack speed · run speed</span><b class="mod">+${d.gearIas}% · +${d.frw}%</b></div>` : ""}
         ${d.gf || d.mf ? `<div class="kv"><span>Gold find · magic find</span><b class="mod">+${d.gf}% · +${d.mf}%</b></div>` : ""}
         <div class="kv"><span>Gold</span><b class="gold">${p.gold.toLocaleString()}</b></div>
@@ -1277,6 +1278,8 @@ export class Ui {
       if (r.lvl) lines.push(`<span class="${g.player.level < r.lvl ? "bad" : ""}">Required Level: ${r.lvl}</span>`);
     }
     for (const m of it.mods ?? []) lines.push(modLine(m));
+    // v1.6.4: spells and skill effects leech at a reduced, capped rate
+    if ((it.mods ?? []).some((m) => m.s === "ll" || m.s === "ml")) lines.push(`<span class="leechnote">Spells leech at ${SPELL_LEECH_PCT}%, up to ${SPELL_LEECH_CAP}% of max life / mana a second</span>`);
     return lines.map((l) => `<div>${l}</div>`).join("");
   }
 
