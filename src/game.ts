@@ -9,6 +9,7 @@ import {
 } from "./data/monsters";
 import {
   ACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, hasWaypoint, MAX_FLOOR, actDef, actOf, floorName, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
+  type ActDef,
 } from "./data/acts";
 import {
   FRENZY_HOLD, FRENZY_MAX_STACKS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, bashAR, bashDmg, boDur, boPct, doubleSwingAR, doubleThrowAR,
@@ -24,7 +25,7 @@ import {
   powerStrikeLight, slowMissilesDur, strafeArrows, strafeDmg, valkDmg, valkLife,
 } from "./data/skills";
 import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
-import { type Level, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
+import { type Level, type Room, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
 import { Rng, chance, rand, randInt } from "./rng";
 
 /** v0.9.1 drop rates: a normal monster drops an item 8.5% of the time (was 17%); a champion has a 50% chance of one item (was always 1). */
@@ -45,6 +46,14 @@ export const CLASS_WEAPONS: Record<HeroClass, string[]> = {
 const EQUIP_ORDER: EquipSlot[] = ["main", "off", "head", "chest", "gloves", "boots", "belt", "ring1", "ring2", "amulet"];
 /** v1.1: how many sold items Hilde keeps for buy-back */
 export const BUYBACK_MAX = 8;
+/**
+ * v1.4: each act's level holds this many times the monsters its own pack rolls give (Act I: 1, untouched). Tuned so
+ * the average monsters per level is Act I's × 1.25^(act-1): the acts' own rolls average 44.2 / 38.7 / 40.2 / 39.0
+ * (Act II-IV packs are smaller), so the targets 55.2 / 69.0 / 86.3 need these factors (tests/v14density.test.ts).
+ */
+export const ACT_MONSTER_MULT = [1, 1.427, 1.719, 2.211];
+/** v1.4: the added packs never fill a room past this many monsters per open tile. */
+export const ROOM_CROWD = 0.6;
 export const CURVE_END = 60;
 export const CURVE_HP0 = 0.8;
 export const CURVE_DMG0 = 0.9;
@@ -1250,7 +1259,46 @@ export class Game {
         this.boss = this.spawnBoss(floor, room.cx + 0.5, room.cy + 0.5, pack);
       }
     }
+    this.addActPacks(rng, act, ml, pack);
     this.exploreAround(true);
+  }
+
+  /**
+   * v1.4: more monsters act by act. Act I is untouched (the rolls above are the same as before); every later act adds
+   * normal packs of its own monsters until the level holds ACT_MONSTER_MULT[act] × what the rolls above gave, which
+   * makes each act's average 25% more than the act before (Act II 1.25×, III 1.5625×, IV 1.953× Act I's average).
+   * The added packs go to the least crowded rooms (never the start room or the boss room), each monster on a free
+   * room tile (not a wall or doorway edge, so corridors stay clear) and no room past ROOM_CROWD monsters per tile.
+   */
+  private addActPacks(rng: Rng, act: ActDef, ml: number, pack: number) {
+    const mult = ACT_MONSTER_MULT[act.n - 1] ?? 1;
+    if (mult <= 1) return;
+    const base = this.monsters.filter((m) => m.def.rank === "normal" && !m.dummy).length;
+    const want = Math.floor(base * (mult - 1) + rng.next());
+    const rooms = this.level.rooms.filter((r) => r !== this.level.start && r !== this.level.bossRoom);
+    const area = (r: Room) => Math.max(1, (r.w - 2) * (r.h - 2));
+    const inRoom = (r: Room) => this.monsters.filter((m) => m.x >= r.x && m.x < r.x + r.w && m.y >= r.y && m.y < r.y + r.h).length;
+    let added = 0;
+    while (added < want) {
+      const room = rooms.map((r) => ({ r, d: inRoom(r) / area(r) })).filter((o) => o.d < ROOM_CROWD).sort((a, b) => a.d - b.d)[0]?.r;
+      if (!room) break;
+      pack++;
+      const kind: MonsterKind = act.monsters[rng.int(0, act.monsters.length - 1)];
+      const [lo, hi] = MONSTERS[kind].pack;
+      const room_cap = Math.floor(area(room) * ROOM_CROWD) - inRoom(room);
+      const n = Math.max(1, Math.min(rng.int(lo, hi), want - added, room_cap));
+      for (let i = 0; i < n; i++) {
+        let x = 0;
+        let y = 0;
+        for (let t = 0; t < 12; t++) {
+          x = rng.int(room.x + 1, room.x + room.w - 2) + 0.5;
+          y = rng.int(room.y + 1, room.y + room.h - 2) + 0.5;
+          if (!this.monsters.some((m) => Math.hypot(m.x - x, m.y - y) < 0.9)) break;
+        }
+        this.spawn(kind, ml, x, y, pack);
+        added++;
+      }
+    }
   }
 
   /**

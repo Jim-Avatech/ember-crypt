@@ -9,7 +9,7 @@ import { BASE_BY_ID, CLASS_DROP_WEIGHTS, ITEM_BASES, type Item, dropWeight, item
 import { SKILL_BY_ID } from "../src/data/skills";
 import { GAME_VERSION } from "../src/data/patchNotes";
 import {
-  AMAZON_SPEED, BOSS_GIVE_UP, BOSS_LEASH, BOW_RELEASE, BUYBACK_MAX, CHASE_LOST_S, CLASS_WEAPONS, CURVE_END, FALLEN_SCATTER_S, Game, type GameEvents,
+  ACT_MONSTER_MULT, AMAZON_SPEED, BOSS_GIVE_UP, BOSS_LEASH, BOW_RELEASE, BUYBACK_MAX, CHASE_LOST_S, CLASS_WEAPONS, CURVE_END, FALLEN_SCATTER_S, Game, type GameEvents,
   curveDmg, curveHp,
 } from "../src/game";
 import { CORRIDOR_W, bfs, generateLevel, idx, isFloor, lineOfSight } from "../src/map";
@@ -36,7 +36,12 @@ describe("v1.1 difficulty curve", () => {
   });
 
   const old = v101Monsters as unknown as Snap;
+  // v1.4 adds packs in Acts II-IV (ACT_MONSTER_MULT, tests/v14density.test.ts); these v1.1 checks compare the level's
+  // own pack rolls with v1.0.1, so they snapshot with the v1.4 packs switched off
+  const keepMult = [...ACT_MONSTER_MULT];
+  ACT_MONSTER_MULT.fill(1);
   const now = monsterSnapshot();
+  keepMult.forEach((v, i) => (ACT_MONSTER_MULT[i] = v));
   it("floors 60–80 are exactly as in v1.0.1 (same monsters, life and damage, bosses included)", () => {
     for (let f = 60; f <= 80; f++) expect(now[f], `floor ${f}`).toEqual(old[f]);
   });
