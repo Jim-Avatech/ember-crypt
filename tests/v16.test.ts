@@ -60,10 +60,10 @@ function cast(g: Game, id: string) {
 
 describe("v1.6 version and cache", () => {
   it("label, patch note on top, SW cache v34 (v1.6.1)", () => {
-    expect(GAME_VERSION).toBe("1.6.1");
+    expect(GAME_VERSION).toBe("1.6.2");
     expect(PATCH_NOTES.find((n) => n.version === "1.6")?.title).toMatch(/Sorceress/);
     expect(PATCH_NOTES.findIndex((n) => n.version === "1.5.1")).toBe(PATCH_NOTES.findIndex((n) => n.version === "1.6") + 1);
-    expect(swSrc).toContain("ember-crypt-shell-v34");
+    expect(swSrc).toContain("ember-crypt-shell-v35");
   });
 });
 

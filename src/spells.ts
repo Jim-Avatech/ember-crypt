@@ -38,6 +38,9 @@ export interface Missile {
   freeze?: number;
   pierce?: boolean;
   wander?: boolean;
+  /** v1.6.2 Charged Bolt: the point the cast aimed at (the target's spot, or straight ahead) and the aim's angle;
+   * the wander stays within CB_WANDER_MAX of the line toward it */
+  home?: { x: number; y: number; ang: number };
   knock?: number;
   stun?: number;
   /** Frozen Orb: sheds ice shards as it flies */
@@ -96,6 +99,12 @@ export interface SorcHost {
 }
 
 const alive = (m: Monster) => m.state !== "dead";
+/** v1.6.2 Charged Bolt: half of the launch cone (15° each side, 30° in all) */
+export const CB_CONE = (15 * Math.PI) / 180;
+/** v1.6.2 Charged Bolt: the most a bolt's heading may wander off the line to its aimed point, and how much of a
+ * random turn is kept (the rest pulls it back toward that line) */
+export const CB_WANDER_MAX = (22 * Math.PI) / 180;
+export const CB_WANDER_DAMP = 0.7;
 export const sb = (p: Player & { sb?: SorcBuffs }): SorcBuffs => (p.sb ??= {});
 
 /** + % spell damage from the mastery of an element */
@@ -303,12 +312,16 @@ export function castSorc(g: SorcHost, id: string, lvl: number) {
     }
     // ---------------- lightning ----------------
     case "charged_bolt": {
+      // v1.6.2: every bolt leaves inside a 30° cone (±15°) around the aim (was ±41°), then wanders toward the aimed
+      // point, erratically but never more than CB_WANDER_MAX off that line (the wander used to be an unbounded walk)
       const a = aimOf(g, 8);
       const n = chargedBoltN(lvl);
       const base = Math.atan2(a.ay, a.ax);
+      const home = a.target ? { x: a.target.x, y: a.target.y, ang: base } : { x: p.x + a.ax * 7, y: p.y + a.ay * 7, ang: base };
       for (let i = 0; i < n; i++) {
-        const an = base + (n > 1 ? (i / (n - 1) - 0.5) * 1.2 : 0) + rand(-0.12, 0.12);
-        missile(g, id, Math.cos(an), Math.sin(an), 6.5, 7, hit(chargedBoltK(lvl)), "light", { wander: true, size: 0.8 });
+        const off = (n > 1 ? (i / (n - 1) - 0.5) * 2 * CB_CONE * 0.85 : 0) + rand(-0.04, 0.04);
+        const an = base + Math.max(-CB_CONE, Math.min(CB_CONE, off));
+        missile(g, id, Math.cos(an), Math.sin(an), 6.5, 7.5, hit(chargedBoltK(lvl)), "light", { wander: true, size: 0.8, home });
       }
       g.events.sound("bolt");
       return;
@@ -533,7 +546,18 @@ function segDist(x: number, y: number, s: Wall) {
 
 function stepMissile(g: SorcHost, q: Missile, dt: number): boolean {
   if (q.wander && Math.random() < dt * 8) {
-    const an = Math.atan2(q.vy, q.vx) + rand(-0.55, 0.55);
+    let an = Math.atan2(q.vy, q.vx) + rand(-0.55, 0.55);
+    if (q.home) {
+      // v1.6.2: keep the jink, but bounded and damped around the line to the aimed point (past it: the aim's angle)
+      const h = q.home;
+      // (the line to the aimed point never strays more than the cone's half-angle from the aim)
+      const fwd = (h.x - q.x) * Math.cos(h.ang) + (h.y - q.y) * Math.sin(h.ang);
+      const toHome = Math.atan2(Math.sin(Math.atan2(h.y - q.y, h.x - q.x) - h.ang), Math.cos(Math.atan2(h.y - q.y, h.x - q.x) - h.ang));
+      const want = h.ang + (fwd > 0.5 ? Math.max(-CB_CONE, Math.min(CB_CONE, toHome)) : 0);
+      let dev = Math.atan2(Math.sin(an - want), Math.cos(an - want)) * CB_WANDER_DAMP;
+      dev = Math.max(-CB_WANDER_MAX, Math.min(CB_WANDER_MAX, dev));
+      an = want + dev;
+    }
     const sp = Math.hypot(q.vx, q.vy);
     q.vx = Math.cos(an) * sp;
     q.vy = Math.sin(an) * sp;
@@ -665,7 +689,7 @@ export function spellDps(g: Pick<SorcHost, "player" | "skillLevel" | "castTime">
     case "glacial_spike": return h(glacialK(lvl)) / per;
     case "blizzard": return (h(blizzardK(lvl)) * BLIZZARD_DUR) / per;
     case "frozen_orb": return (h(frozenOrbK(lvl)) * 5) / per;
-    case "charged_bolt": return (h(chargedBoltK(lvl)) * chargedBoltN(lvl) * 0.5) / per;
+    case "charged_bolt": return (h(chargedBoltK(lvl)) * chargedBoltN(lvl) * 0.6) / per; // v1.6.2: ~60% of the bolts hit one target at 6 tiles (was ~10%; 0.5 assumed)
     case "telekinesis": return h(teleK(lvl)) / per;
     case "nova": return h(novaK(lvl)) / per;
     case "lightning": return h(lightningK(lvl)) / per;

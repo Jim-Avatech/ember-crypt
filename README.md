@@ -3,6 +3,13 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.6.2: Charged Bolt aims better
+
+- Launch: every bolt leaves within ±`CB_CONE` (15°) of the aim, spread evenly ±12.75° plus ±2° jitter (v1.6.1: ±34° spread ±7° jitter, about 82° in all). Range 7.5 tiles (was 7).
+- Wander: still a random turn of up to ±32° about 8 times a second, but each bolt remembers the aimed point (`Missile.home`: the target's spot, or 7 tiles ahead); a turn keeps 70% (`CB_WANDER_DAMP`) of its offset from the line to that point and never more than 22° (`CB_WANDER_MAX`); that line is held within the cone. v1.6.1's wander was an unbounded random walk.
+- Hits on one still monster (real game loop, 200 casts each): skill level 10 (8 bolts) 1.9 → 6.3 at 3 tiles, 0.8 → 4.9 at 6 tiles; level 1 (3 bolts) 0.6 → 2.2 and 0.2 → 1.7. Spell DPS counts 60% of the bolts (was 50%).
+- Tests: `tests/v162.test.ts`, `scripts/v162-shots.mjs` (screenshots/v162). SW cache v35.
+
 ## v1.6.1: Sorceress fixes
 
 - Tooltips: `spellDamageText` / `SPELL_K` (src/spells.ts) turn "N% of your spell base" into real numbers for the hero ("= 600–812 fire", ±15% roll, mastery in); the skill panel adds "Spell base damage 74 at character level 40 · Fire Mastery +79%". Character screen: Spell base damage and Cast time rows (Sorceress).

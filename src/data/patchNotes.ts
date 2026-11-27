@@ -10,6 +10,13 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.6.2",
+    title: "Charged Bolt aims better",
+    notes: [
+      "Charged Bolt: every bolt now leaves inside a 30° cone around your aim (was about 80°). They still jink and wiggle, but each one keeps heading roughly toward the spot you aimed at, so most of them reach an enemy 6 tiles away (about 6 of 10 there, was about 1 of 10).",
+    ],
+  },
+  {
     version: "1.6.1",
     title: "Sorceress fixes",
     notes: [
