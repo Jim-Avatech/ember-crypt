@@ -61,7 +61,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await ev(() => { __ec.game.goDungeon(42); __ec.game.events.changed(); });
   await page.waitForTimeout(900);
   bx = await boxes();
-  C("Act 3 · Level 42 on level 42", bx.text === "Act 3 · Level 42", bx.text);
+  C("v1.5.1: overall level 42 reads Act 3 · Level 2 (level within the act)", bx.text === "Act 3 · Level 2", bx.text);
   C("top-left, directly above the minimap, readable (≥ 12px)", bx.where.l < 40 && bx.where.t < 80 && bx.where.b <= bx.map.t + 1 && bx.map.t - bx.where.b < 8 && bx.font >= 12, JSON.stringify(bx));
   C("no overlap with the minimap or the menu buttons", !overlap(bx.where, bx.map) && !overlap(bx.where, bx.tr), JSON.stringify(bx));
   await shot("01-act-level-label");

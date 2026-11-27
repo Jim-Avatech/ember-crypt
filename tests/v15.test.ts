@@ -27,19 +27,20 @@ const realDps = (cls: "amazon" | "barbarian", str: number, dex: number, level: n
 
 describe("v1.5 version", () => {
   it("label and patch note", () => {
-    expect(GAME_VERSION).toBe("1.5");
-    expect(PATCH_NOTES[0].notes.length).toBe(4);
+    expect(GAME_VERSION).toBe("1.5.1");
+    expect(PATCH_NOTES.find((n) => n.version === "1.5")!.notes.length).toBe(4);
   });
 });
 
 describe("v1.5 act and level above the minimap", () => {
-  it("Act N · Level (the level number waypoints use); camp", () => {
+  it("Act N · Level within the act (v1.5.1); camp", () => {
     expect(whereLabel(0)).toBe("Ember Camp");
     expect(whereLabel(1)).toBe("Act 1 · Level 1");
     expect(whereLabel(20)).toBe("Act 1 · Level 20");
-    expect(whereLabel(21)).toBe("Act 2 · Level 21");
-    expect(whereLabel(42)).toBe("Act 3 · Level 42");
-    expect(whereLabel(80)).toBe("Act 4 · Level 80");
+    expect(whereLabel(21)).toBe("Act 2 · Level 1");
+    expect(whereLabel(42)).toBe("Act 3 · Level 2");
+    expect(whereLabel(67)).toBe("Act 4 · Level 7");
+    expect(whereLabel(80)).toBe("Act 4 · Level 20");
   });
 });
 

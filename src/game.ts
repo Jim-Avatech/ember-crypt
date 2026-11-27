@@ -4363,7 +4363,7 @@ export class Game {
     }
     this.portal = { x: px, y: py, floor, snap };
     this.events.sound("stairs");
-    this.events.toast(`Back in Ember Camp. The blue portal returns you to Level ${floor}.`);
+    this.events.toast(`Back in Ember Camp. The blue portal returns you to ${floorName(floor)}.`);
     this.events.changed();
   }
 
@@ -4398,7 +4398,7 @@ export class Game {
     // monsters that were chasing you lose interest while you were away
     for (const m of this.monsters) if (m.state !== "dead") { m.state = "idle"; }
     this.events.sound("stairs");
-    this.events.toast(`Ember Crypt — Level ${this.floor}`);
+    this.events.toast(floorName(this.floor));
     this.events.changed();
     return true;
   }

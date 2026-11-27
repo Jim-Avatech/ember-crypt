@@ -10,10 +10,17 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.5.1",
+    title: "Levels numbered within each act",
+    notes: [
+      "Level numbers count 1–20 within each act everywhere you see them: above the minimap (“Act 4 · Level 7”, not “Level 67”), the waypoint list, arrival and portal messages, and the Character screen's deepest level.",
+    ],
+  },
+  {
     version: "1.5",
     title: "Where you are, fair DPS, coloured resistances",
     notes: [
-      "The act and level you're on (like “Act 3 · Level 42”) now show above the minimap, top left.",
+      "The act and level you're on (like “Act 3 · Level 2”) now show above the minimap, top left.",
       "A weapon you don't have the Strength, Dexterity or level for now shows the DPS you'd get with just enough of what's missing (80 Dexterity with 90 required counts as 90). Stats you already have enough of count as they are. It still shows red until you meet the requirements.",
       "No more red “Main hand only” notes or Off-hand button for the Amazon. She still can't put a weapon in her off-hand; trying says so briefly.",
       "Character screen: one Resistances row in colour: green poison, yellow lightning, red fire, blue cold. Items, the shop and compare use the same colours, and life leech (red) and mana leech (blue) are coloured too.",
@@ -87,7 +94,7 @@ export const PATCH_NOTES: PatchNote[] = [
     version: "1.1",
     title: "Gentler early levels, class loot, stash gold, buy-back",
     notes: [
-      "Early levels are easier: on level 1 monsters have 20% less life and deal 10% less damage, easing back to normal by level 60. Levels 60–80 are unchanged; boss damage is unchanged everywhere.",
+      "Early levels are easier: on level 1 monsters have 20% less life and deal 10% less damage, easing back to normal by the end of Act III. Act IV is unchanged; boss damage is unchanged everywhere.",
       "Loot leans to your class (Amazons find more bows, javelins and spears; Barbarians more swords, axes and maces). Hilde always stocks a magic weapon for your class.",
       "+skill items match the item: bows give Bow skills, javelins and spears give Javelin skills, other weapons and helms give Barbarian skills, amulets mostly your own class.",
       "Gear you no longer meet the requirements for turns red and stops working until you do.",

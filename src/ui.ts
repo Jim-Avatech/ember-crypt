@@ -381,7 +381,7 @@ export class Ui {
     btn.dataset.kind = ctx ?? "";
     const nx = g.floor + 1;
     btn.textContent = ctx === "descend" ? (levelInAct(nx) === 1 ? `▼ Enter Act ${actDef(nx).roman}: ${actDef(nx).area}` : `▼ Descend to Level ${levelInAct(nx)}`) : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "craft" ? "⚒ Craft with Brann" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)}` : "";
-    // v1.5: where you are, right above the minimap ("Act 3 · Level 42"; level = the level number the waypoints use)
+    // v1.5: where you are, right above the minimap; v1.5.1: the level within the act ("Act 4 · Level 7")
     const where = whereLabel(g.inTown ? 0 : g.floor);
     const wEl = $(r, "#where");
     if (wEl.textContent !== where) wEl.textContent = where;
@@ -1218,7 +1218,7 @@ export class Ui {
         ${d.gearIas || d.frw ? `<div class="kv"><span>Attack speed · run speed</span><b class="mod">+${d.gearIas}% · +${d.frw}%</b></div>` : ""}
         ${d.gf || d.mf ? `<div class="kv"><span>Gold find · magic find</span><b class="mod">+${d.gf}% · +${d.mf}%</b></div>` : ""}
         <div class="kv"><span>Gold</span><b class="gold">${p.gold.toLocaleString()}</b></div>
-        <div class="kv"><span>Kills · deepest level</span><b>${p.kills} · ${g.maxFloor}</b></div>
+        <div class="kv"><span>Kills · deepest level</span><b>${p.kills} · ${whereLabel(g.maxFloor)}</b></div>
       </div>`;
   }
 
@@ -1702,7 +1702,7 @@ export class Ui {
     if (this.importOpen) {
       const pend = this.importPending;
       saveBox += pend
-        ? `<div class="savemsg">Replace your level ${this.game().player.level} hero with this level ${pend.player.level} hero (${pend.player.gold} gold, deepest level ${pend.maxFloor})? Your current hero goes into the backups.</div>
+        ? `<div class="savemsg">Replace your level ${this.game().player.level} hero with this level ${pend.player.level} hero (${pend.player.gold} gold, deepest ${whereLabel(pend.maxFloor)})? Your current hero goes into the backups.</div>
            <div class="srow2"><button class="gbtn" data-act="imp-yes">Replace</button><button class="gbtn dim" data-act="imp-no">Cancel</button></div>`
         : `<textarea id="impcode" class="codebox" rows="3" placeholder="Paste a save code here">${esc(this.importText)}</textarea>
            <div class="srow2"><button class="gbtn" data-act="imp-paste">Paste</button><button class="gbtn" data-act="imp-go">Load this code</button></div>`;

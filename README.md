@@ -3,6 +3,11 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.5.1: Levels numbered within each act
+
+- Every level number the player sees counts 1-20 within its act: `whereLabel` (map label, Character screen deepest level, save-import prompt) is "Act N · Level levelInAct(floor)"; the portal messages use `floorName` ("Burning Hells — Level 7"). Waypoint list, arrival toast and hero select were already per act. The v1.1 patch note no longer says "level 60". Floors stay 1-80 internally.
+- Tests: `tests/v151.test.ts`, `scripts/v151-shots.mjs` (screenshots/v151). SW cache v32.
+
 ## v1.5: Where you are, fair DPS, coloured resistances
 
 - Act and level (`whereLabel` in src/data/acts.ts, `#where` in the HUD): "Act 3 · Level 42" (the level number waypoints use) or "Ember Camp", 13px bold, directly above the minimap, below the buff bar; part of the boss bar's `hudAvoid` boxes.

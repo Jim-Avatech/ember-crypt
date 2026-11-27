@@ -113,8 +113,11 @@ export const mlvlOf = (floor: number) => {
 };
 /** "Sunken Tombs — Level 2" */
 export const floorName = (floor: number) => (floor <= 0 ? "Ember Camp" : `${actDef(floor).area} — Level ${levelInAct(floor)}`);
-/** v1.5: the act and level above the minimap ("Act 3 · Level 42"; the level number the waypoints use). */
-export const whereLabel = (floor: number) => (floor <= 0 ? "Ember Camp" : `Act ${actOf(floor)} · Level ${floor}`);
+/**
+ * v1.5: the act and level above the minimap. v1.5.1: the level within the act, 1-20 ("Act 4 · Level 7"), like every
+ * level number the player sees; floors stay 1-80 inside the game.
+ */
+export const whereLabel = (floor: number) => (floor <= 0 ? "Ember Camp" : `Act ${actOf(floor)} · Level ${levelInAct(floor)}`);
 export const shortFloorName = (floor: number) => (floor <= 0 ? "Camp" : `Act ${actDef(floor).roman} · ${levelInAct(floor)}/${LEVELS_PER_ACT}`);
 
 /**
