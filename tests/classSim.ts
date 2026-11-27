@@ -13,7 +13,7 @@ const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, le
 export const BAL_LEVELS = [1, 10, 30, 60] as const;
 export type BalLevel = (typeof BAL_LEVELS)[number];
 
-interface Build { main: string; skills: Record<string, number>; weapon: string; ranged: boolean }
+export interface Build { main: string; skills: Record<string, number>; weapon: string; ranged: boolean; center?: boolean }
 export const BUILDS: Record<HeroClass, Record<BalLevel, Build>> = {
   barbarian: {
     1: { main: "bash", skills: { bash: 1 }, weapon: "axe", ranged: false },
@@ -42,8 +42,17 @@ function stats(cls: HeroClass, L: number) {
   return { str: 10 + n, dex: 25, vit: 10 + 2 * n, ene: 35 + 2 * n };
 }
 
-export function simClear(cls: HeroClass, L: BalLevel, pack = 5, cap = 300): number {
-  const b = BUILDS[cls][L];
+/**
+ * v1.6.1: Whirlwind Barbarian builds (not part of the balance band; v1.6's Barbarian rows are Bash / Concentrate).
+ * Whirlwind hits everything within 1.25 tiles each tick, so the hero is put in the middle of the pack every frame.
+ */
+export const WW_BUILDS: Partial<Record<BalLevel, Build>> = {
+  30: { main: "whirlwind", skills: { bash: 1, leap: 1, double_swing: 1, stun: 1, leap_attack: 1, concentrate: 1, whirlwind: 12, axe_mastery: 12 }, weapon: "axe", ranged: false, center: true },
+  60: { main: "whirlwind", skills: { bash: 1, leap: 1, double_swing: 1, stun: 1, leap_attack: 1, concentrate: 1, whirlwind: 20, axe_mastery: 20, shout: 1, howl: 1, battle_orders: 11 }, weapon: "axe", ranged: false, center: true },
+};
+
+export function simClear(cls: HeroClass, L: BalLevel, pack = 5, cap = 300, build?: Build): number {
+  const b = build ?? BUILDS[cls][L];
   const g = new Game(events, null, 11, { cls, name: "" });
   const p = g.player;
   let floor = 1;
@@ -73,9 +82,9 @@ export function simClear(cls: HeroClass, L: BalLevel, pack = 5, cap = 300): numb
   const hold = { mx: 0, my: 0, mag: 0, attack: true, skills: [false, false, false] };
   for (let f = 0; f * dt < cap; f++) {
     // ranged builds stand 5 tiles off; melee builds step up to the next monster (walking time not counted)
-    const next = b.ranged ? null : ms.find((m) => m.state !== "dead");
-    p.x = next ? next.x - 1.1 : px;
-    p.y = next ? next.y : cy;
+    const next = b.ranged || b.center ? null : ms.find((m) => m.state !== "dead");
+    p.x = b.center ? cx : next ? next.x - 1.1 : px;
+    p.y = b.center ? cy : next ? next.y : cy;
     p.fx = 1; p.fy = 0; p.mana = 1e6; p.hp = 1e6; p.moveTarget = null;
     if (p.equip.main?.qty !== undefined) p.equip.main.qty = 150;
     g.update(dt, hold);

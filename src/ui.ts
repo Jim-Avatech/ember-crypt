@@ -16,6 +16,8 @@ import { itemIconUrl } from "./sprites/items";
 import { artifactIcon } from "./sprites/artifacts";
 import { ACTS, ARTIFACTS, LEVELS_PER_ACT, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, levelInAct, whereLabel } from "./data/acts";
 import { MONSTERS } from "./data/monsters";
+import { SPELL_ELEM, SORC_IDS, spellBase } from "./data/sorc";
+import { SPELL_K, type SorcHost, masteryPct, spellDamageText } from "./spells";
 
 const artUrl = new Map<string, string>();
 /** data: URL of an artifact icon (cached). */
@@ -1208,6 +1210,8 @@ export class Ui {
         <div class="spoints ${p.statPoints ? "has" : ""}">${p.statPoints ? `${p.statPoints} stat points to spend` : "Gain 5 stat points each level"}</div>
       </div>
       <div class="char-right">
+        ${p.cls === "sorceress" ? `<div class="kv spellbase"><span>Spell base damage <small>what a 100% spell hits for at level ${p.level}</small></span><b>${Math.round(spellBase(p.level))}</b></div>
+        <div class="kv casttime"><span>Cast time <small>${d.fcr ? `+${d.fcr}% faster cast rate` : "no faster cast rate"}</small></span><b>${g.castTime().toFixed(2)} s</b></div>` : ""}
         ${spell ? `<div class="kv dpsrow spelldps"><span>Spell DPS <small>${esc(SKILL_BY_ID[spell.id].name)} lv ${spell.lvl}, one target</small></span><b>${fmtDps(spell.dps)}</b></div>` : ""}
         <div class="kv dpsrow"><span>DPS <small>⚔ normal attack, crits in, before misses</small></span><b>${fmtDps(d.dps)} <small>· ${d.aps.toFixed(2)}/s</small></b></div>
         ${d.dual ? `<div class="kv dualtag"><span>Dual wielding</span><b>attacks alternate hands</b></div>` : ""}
@@ -1637,6 +1641,19 @@ export class Ui {
               )
               .join("")}${mainBtn}</div>`
           : "";
+      // v1.6.1: Sorceress spells show what "% of your spell base" really is for this hero, and the damage it makes
+      const host = g as unknown as SorcHost;
+      const dmgAt = (l: number) => {
+        const t = SORC_IDS.has(s.id) ? spellDamageText(host, s.id, l) : null;
+        return t ? ` <b class="sdmg">= ${esc(t)}</b>` : "";
+      };
+      let spellBaseLine = "";
+      if (SPELL_K[s.id]) {
+        const e = SPELL_ELEM[s.id];
+        const mp = masteryPct(host, e);
+        const mName = e === "fire" ? "Fire" : e === "cold" ? "Cold" : "Lightning";
+        spellBaseLine = `<div class="sbase">Spell base damage <b>${Math.round(spellBase(p.level))}</b> at character level ${p.level} (grows each level)${mp ? ` · ${mName} Mastery +${mp}%` : ""} · ±15% per hit</div>`;
+      }
       if (basic) {
         const main = g.mainBasic();
         const auto = !p.mainAtk;
@@ -1658,7 +1675,8 @@ export class Ui {
         <div class="iname">${s.glyph} ${esc(s.name)}</div>
         <div class="itype">${s.kind === "passive" ? "Passive" : "Active"} · Level ${lvl}/${MAX_SKILL_LVL}${p.level >= s.reqLvl && Math.min(MAX_SKILL_LVL, 1 + p.level - s.reqLvl) < MAX_SKILL_LVL ? ` (cap ${1 + p.level - s.reqLvl} at your level)` : ""}${s.mana && s.implemented ? ` · Mana ${s.mana(Math.max(1, lvl))}` : ""}</div>
         <div class="sblurb">${esc(s.blurb)}</div>
-        ${s.implemented && s.effect ? `${lvl ? `<div class="seff">Now: ${esc(s.effect(lvl))}</div>` : ""}${lvl < MAX_SKILL_LVL ? `<div class="seff next">Next: ${esc(s.effect(lvl + 1))}</div>` : ""}` : `<div class="seff soon">Coming soon</div>`}
+        ${s.implemented && s.effect ? `${lvl ? `<div class="seff">Now: ${esc(s.effect(lvl))}${dmgAt(lvl)}</div>` : ""}${lvl < MAX_SKILL_LVL ? `<div class="seff next">Next: ${esc(s.effect(lvl + 1))}${dmgAt(lvl + 1)}</div>` : ""}` : `<div class="seff soon">Coming soon</div>`}
+        ${spellBaseLine}
         <div class="sreq ${p.level < s.reqLvl ? "bad" : ""}">Required level: ${s.reqLvl}</div>
         ${pre ? `<div class="sreq">${esc(pre)}</div>` : ""}
         <div class="ibtns">

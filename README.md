@@ -3,6 +3,16 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.6.1: Sorceress fixes
+
+- Tooltips: `spellDamageText` / `SPELL_K` (src/spells.ts) turn "N% of your spell base" into real numbers for the hero ("= 600–812 fire", ±15% roll, mastery in); the skill panel adds "Spell base damage 74 at character level 40 · Fire Mastery +79%". Character screen: Spell base damage and Cast time rows (Sorceress).
+- Affixes (one flat pool, Brann uses the same pool): `clsk` "+1–2 to <Class> Skill Levels" (tiers at item level 10 / 30) and `tabsk` "+1–3 to <Tree>" (6 / 16 / 28) on weapons, orbs, helms and amulets. `itemClassFor` decides the class like `skillPoolFor`: staves, wands, orbs → Sorceress; bows, spears, javelins → Amazon; other weapons and helms → Barbarian; amulets the finder's class 70%, else any. They only raise learned skills of the hero's own class (`gearSkillBonus`). Compare rows `skill:cls:<class>` / `skill:tab:<tree>`.
+- Faster Cast Rate (`fcr`, +10/20/30% at item level 4/12/24): staves and wands (no other weapon), orbs (both 3× as likely via `AffixDef.lean`), amulets, rings, helms. Cast time `castTimeFor(fcr)` = 0.5 s × 100 / (100 + FCR), FCR capped at 100% (0.25 s). Used by the cast action and `spellDps`; compare row "cast speed".
+- Static Field: radius 6.5 + 0.25/level, max 10 (was 3.5 + 0.35/level, max 8: 3.85 tiles at level 1, nearer than ranged monsters stand); needs line of sight; at least 1 damage above the floor; its ring (`Ring.full`) snaps to the real radius and fades instead of growing from nothing.
+- Mana: Sorceress regen ×2 (was ×1.5); Warmth +60% +20%/level (was +30% +12%/level).
+- Balance print adds a Whirlwind Barbarian column (`WW_BUILDS`, reference only).
+- Tests: `tests/v161.test.ts`, `scripts/v161-shots.mjs` (screenshots/v161). SW cache v34.
+
 ## v1.6: The Sorceress
 
 - New class `sorceress` (hero select now shows three cards). D2 starting stats 10/25/10/35, 40 life (+1/level, +2 per Vitality), 35 mana (+2/level, +2 per Energy), mana regen ×1.5. Starts with a Battle Staff, a Wand in the bag and 3 mana potions. Own puppet model (`sorc` in src/sprites/puppet.ts): long robe that changes colour and trim with the armour worn, circlets for helms, staff/wand/orb art.

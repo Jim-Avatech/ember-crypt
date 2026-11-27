@@ -259,14 +259,17 @@ export class Renderer {
     // rings
     for (const rg of game.rings) {
       const kk = rg.t / rg.life;
-      const rx = rg.radius * kk * HW * 1.41;
-      ctx.fillStyle = `${rg.color}${(1 - kk).toFixed(2)})`;
+      // v1.6.1: a "full" ring (Static Field) shows its real reach at once: a quick snap out to the edge, then a fade
+      const grow = rg.full ? Math.min(1, kk * 6) : kk;
+      const rx = rg.radius * grow * HW * 1.41;
+      ctx.fillStyle = `${rg.color}${(rg.full ? 0.9 * (1 - kk) : 1 - kk).toFixed(2)})`;
       const cx = this.ax(rg.x, rg.y);
       const cy = this.ay(rg.x, rg.y);
-      const n = Math.max(16, Math.round(rx * 1.5));
+      const n = Math.max(16, Math.round(rx * (rg.full ? 3 : 1.5)));
+      const sz = rg.full ? 2 : 1;
       for (let j = 0; j < n; j++) {
         const a = (j / n) * Math.PI * 2;
-        ctx.fillRect(Math.round(cx + Math.cos(a) * rx), Math.round(cy + Math.sin(a) * rx * 0.5), 1, 1);
+        ctx.fillRect(Math.round(cx + Math.cos(a) * rx), Math.round(cy + Math.sin(a) * rx * 0.5), sz, sz);
       }
     }
     // boss novas: a warning ring on the ground, then the burst

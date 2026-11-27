@@ -18,7 +18,7 @@ import {
   stunAR, stunDur, skillCap,
   BC_DMG, BERSERK_DEF_T, SKILL_SLOTS, WW_DUR, WW_TICK, bcDef, bcDur, bcmdBonus, bcmdDur, berserkAR, berserkDmg, concAR, concDef, concDmg,
   findItemChance, grimDur, grimRadius, natRes, stamLife, stamRegen, tauntDmg, tauntDur, warCryDmg, warCryStun, wwAR, wwDmg,
-  type BasicId, type HeroClass, CLASS_NAME, isBasic, avoidChance, chargedStrikeBolts, chargedStrikeDmg, coldArrowChill, coldArrowDmg, critStrike, decoyDur,
+  type BasicId, type HeroClass, type Tab, CLASS_NAME, TAB_NAMES, isBasic, avoidChance, chargedStrikeBolts, chargedStrikeDmg, coldArrowChill, coldArrowDmg, critStrike, decoyDur,
   dodgeChance, evadeChance, explodingDmg, fendAR, fendDmg, fireArrowDmg, freezingDmg, freezingFreeze, FURY_JAV_HIT, furyBolts, furyDmg, guidedDmg, iceArrowDmg,
   iceArrowFreeze, immolationDmg, immolationDps, immolationDur, impaleAR, impaleDmg, innerSightDef, innerSightDur, jabAR, jabDmg, lightningBoltDmg,
   lightningStrikeDmg, lightningStrikeHits, magicArrowDmg, multiShotArrows, multiShotPer, strafeDur, penetrateAR, pierceChance, plagueDps, poisonJavDps,
@@ -27,7 +27,7 @@ import {
 import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
 import { type Level, type Room, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
 import { Rng, chance, rand, randInt } from "./rng";
-import { SORC_CAST, SORC_IDS, warmthRegen } from "./data/sorc";
+import { FCR_CAP, SORC_IDS, castTimeFor, warmthRegen } from "./data/sorc";
 import { DAMAGE_SPELLS, type SorcBuffs, type SorcHost, type Spell, castSorc, spellDps, enchantBonus, sorcBlock, sorcDefPct, sorcOnHurt, updateSorc } from "./spells";
 
 /** v0.9.1 drop rates: a normal monster drops an item 8.5% of the time (was 17%); a champion has a 50% chance of one item (was always 1). */
@@ -405,6 +405,8 @@ export interface Ring {
   life: number;
   radius: number;
   color: string;
+  /** v1.6.1: drawn at its full radius from the start (fading), so its reach shows (Static Field) */
+  full?: boolean;
 }
 
 export interface FrameInput {
@@ -470,6 +472,8 @@ export interface Derived {
   /** % faster run/walk and increased attack speed from gear */
   frw: number;
   gearIas: number;
+  /** v1.6.1: % faster cast rate from gear (capped at FCR_CAP) */
+  fcr: number;
   gf: number;
   mf: number;
   /** total attributes, gear included */
@@ -543,6 +547,7 @@ export const COMPARE_METRICS: { id: string; label: string; get: (d: Derived) => 
   { id: "ml", label: "mana leech", get: (d) => d.ml, unit: "%" },
   { id: "frw", label: "run speed", get: (d) => d.frw, unit: "%" },
   { id: "ias", label: "attack speed", get: (d) => d.gearIas, unit: "%" },
+  { id: "fcr", label: "cast speed", get: (d) => d.fcr, unit: "%" },
   { id: "fres", label: "fire resist", get: (d) => d.res.fire, unit: "%" },
   { id: "cres", label: "cold resist", get: (d) => d.res.cold, unit: "%" },
   { id: "lres", label: "lightning resist", get: (d) => d.res.light, unit: "%" },
@@ -559,6 +564,7 @@ export const STAT_COMPARE: Record<StatKey, string[]> = {
   edmg: ["dmg"], mindmg: ["dmg"], maxdmg: ["dmg"], ar: ["ar"], str: ["str"], dex: ["dex"], vit: ["vit", "life"], ene: ["ene", "mana"],
   life: ["life"], mana: ["mana"], ll: ["ll"], ml: ["ml"], frw: ["frw"], ias: ["ias", "aps"], fres: ["fres"], cres: ["cres"], lres: ["lres"],
   pres: ["pres"], ares: ["fres", "cres", "lres", "pres"], edef: ["def"], def: ["def"], gf: ["gf"], mf: ["mf"], skill: ["skill:*"],
+  fcr: ["fcr"], clsk: ["skill:*"], tabsk: ["skill:*"],
 };
 
 /** Base walking speed in tiles per second (v0.3: raised from 3.5 to keep the v0.1 on-screen speed after the pixel-art rescale). */
@@ -574,7 +580,7 @@ export const CLASS_DEF: Record<HeroClass, { stats: Stats; life: number; lifePerV
   amazon: { stats: { str: 20, dex: 25, vit: 20, ene: 15 }, life: 50, lifePerVit: 3, mana: 15, manaPerEne: 1.5 },
   // v1.6: D2 Sorceress: 10 Str, 25 Dex, 10 Vit, 35 Energy; 40 life (+1 a level, +2 per Vitality), 35 mana (+2 a level,
   // +2 per Energy). Her mana also comes back 1.5× as fast as the others' (more with Warmth).
-  sorceress: { stats: { str: 10, dex: 25, vit: 10, ene: 35 }, life: 40, lifePerVit: 2, mana: 35, manaPerEne: 2, lifePerLvl: 1, manaPerLvl: 2, manaRegen: 1.5 },
+  sorceress: { stats: { str: 10, dex: 25, vit: 10, ene: 35 }, life: 40, lifePerVit: 2, mana: 35, manaPerEne: 2, lifePerLvl: 1, manaPerLvl: 2, manaRegen: 2 },
 };
 export const isHeroClass = (c: unknown): c is HeroClass => c === "barbarian" || c === "amazon" || c === "sorceress";
 
@@ -1563,7 +1569,7 @@ export class Game {
       ias,
       dmgMin: m.min, dmgMax: m.max, dmgPct: m.dmgPct, ar: m.ar, crit: m.crit, swing: m.speed / (1 + ias), weaponKind: m.kind,
       res: { fire: cap(g("fres") + all), cold: cap(g("cres") + all), light: cap(g("lres") + all), poison: cap(g("pres") + all) },
-      ll: g("ll"), ml: g("ml"), frw, gearIas, gf: g("gf"), mf: g("mf"), stats: s,
+      ll: g("ll"), ml: g("ml"), frw, gearIas, fcr: Math.min(FCR_CAP, g("fcr")), gf: g("gf"), mf: g("mf"), stats: s,
     };
   }
 
@@ -1780,7 +1786,11 @@ export class Game {
     // +skills (whether or not the skill is learned yet)
     const skillsOf = (x: Item | undefined) => {
       const out: Record<string, number> = {};
-      for (const md of x?.mods ?? []) if (md.s === "skill" && md.sk) out[md.sk] = (out[md.sk] ?? 0) + md.v;
+      for (const md of x?.mods ?? []) {
+        // v1.6.1: whole-class and whole-tree +skills get their own rows
+        const k = md.s === "skill" ? md.sk : md.s === "clsk" ? `cls:${md.sk}` : md.s === "tabsk" ? `tab:${md.sk}` : null;
+        if (k && md.sk) out[k] = (out[k] ?? 0) + md.v;
+      }
       return out;
     };
     const p = this.player;
@@ -1790,7 +1800,8 @@ export class Game {
     const after = skillsOf(it);
     for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
       const diff = (after[k] ?? 0) - (before[k] ?? 0);
-      if (diff) rows.push({ id: `skill:${k}`, label: `to ${SKILL_BY_ID[k]?.name ?? k}`, diff, digits: 0, unit: "", good: diff > 0 });
+      const label = k.startsWith("cls:") ? `to ${CLASS_NAME[k.slice(4) as HeroClass] ?? k} skills` : k.startsWith("tab:") ? `to ${TAB_NAMES[k.slice(4) as Tab] ?? k}` : `to ${SKILL_BY_ID[k]?.name ?? k}`;
+      if (diff) rows.push({ id: `skill:${k}`, label, diff, digits: 0, unit: "", good: diff > 0 });
     }
     // requirements: lower is better
     const cur = p.equip[slot];
@@ -2024,18 +2035,36 @@ export class Game {
   skillLevel(id: string) {
     const hard = this.player.skills[id] ?? 0;
     if (!hard) return 0;
-    let bonus = 0;
-    for (const it of this.worn()) for (const m of it.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
+    let bonus = this.gearSkillBonus(id);
     if (this.player.buffs.bcmd > 0) bonus += bcmdBonus(this.gearLevel("battle_command"));
     return hard + bonus;
+  }
+
+  /** v1.6.1: seconds a spell cast takes with the faster cast rate on worn gear (capped, see FCR_CAP) */
+  castTime(): number {
+    return castTimeFor(this.gear("fcr"));
+  }
+  /**
+   * +skill levels from worn gear for one skill: "+N to <skill>", v1.6.1 "+N to <Class> Skill Levels" (the hero's own
+   * class only) and "+N to <Tree>" (that tree's skills).
+   */
+  private gearSkillBonus(id: string): number {
+    const sd = SKILL_BY_ID[id];
+    let bonus = 0;
+    for (const it of this.worn())
+      for (const m of it.mods ?? []) {
+        if (m.s === "skill" && m.sk === id) bonus += m.v;
+        else if (m.s === "clsk" && sd && m.sk === sd.cls && sd.cls === this.player.cls) bonus += m.v;
+        else if (m.s === "tabsk" && sd && m.sk === sd.tab && sd.cls === this.player.cls) bonus += m.v;
+      }
+    return bonus;
   }
 
   /** Hard points + gear (no Battle Command), so Battle Command doesn't feed itself. */
   private gearLevel(id: string) {
     const hard = this.player.skills[id] ?? 0;
     if (!hard) return 0;
-    let bonus = 0;
-    for (const it of this.worn()) for (const m of it.mods ?? []) if (m.s === "skill" && m.sk === id) bonus += m.v;
+    let bonus = this.gearSkillBonus(id);
     return hard + bonus;
   }
 
@@ -3017,7 +3046,7 @@ export class Game {
         p.fx = t.x - p.x;
         p.fy = t.y - p.y;
       }
-      p.action = { type: "spell", skill: id, t: 0, dur: SORC_CAST, done: false };
+      p.action = { type: "spell", skill: id, t: 0, dur: this.castTime(), done: false };
       return true;
     }
     if (BOW_SKILLS.has(id)) {

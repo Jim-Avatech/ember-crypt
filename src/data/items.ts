@@ -13,12 +13,14 @@ export type Quality = "normal" | "magic" | "rare";
 
 export type StatKey =
   | "edmg" | "mindmg" | "maxdmg" | "ar" | "str" | "dex" | "vit" | "ene" | "life" | "mana" | "ll" | "ml"
-  | "frw" | "ias" | "fres" | "cres" | "lres" | "pres" | "ares" | "edef" | "def" | "gf" | "mf" | "skill";
+  | "frw" | "ias" | "fres" | "cres" | "lres" | "pres" | "ares" | "edef" | "def" | "gf" | "mf" | "skill"
+  // v1.6.1: faster cast rate, +N to all skills of a class, +N to one skill tree
+  | "fcr" | "clsk" | "tabsk";
 
 export interface Mod {
   s: StatKey;
   v: number;
-  /** skill id for "+N to <skill>" */
+  /** skill id for "+N to <skill>"; v1.6.1: the class for "clsk" ("sorceress"), the tree for "tabsk" ("fire") */
   sk?: string;
 }
 

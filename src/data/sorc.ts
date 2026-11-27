@@ -14,7 +14,8 @@ const grow = (k: number, g: number) => (l: number) => Math.max(0, k * (1 + g * (
 
 // ---- Fire ----
 export const fireBoltK = grow(1.05, 0.2);
-export const warmthRegen = (l: number) => (l <= 0 ? 0 : 30 + (l - 1) * 12); // % faster mana regeneration
+/** v1.6.1: % faster mana regeneration (was 30 + 12/level; now 60 + 20/level so casters rarely wait on mana) */
+export const warmthRegen = (l: number) => (l <= 0 ? 0 : 60 + (l - 1) * 20);
 export const infernoK = grow(0.85, 0.2);
 export const INFERNO_RANGE = 3.6;
 export const blazeK = grow(0.55, 0.18); // per second, per flame
@@ -60,7 +61,12 @@ export const coldMastery = (l: number) => (l <= 0 ? 0 : 25 + (l - 1) * 5);
 export const chargedBoltN = (l: number) => Math.min(10, 3 + Math.floor(l / 2));
 export const chargedBoltK = grow(0.42, 0.17);
 export const staticPct = 25; // of current life
-export const staticR = (l: number) => Math.min(8, 3.5 + l * 0.35);
+/**
+ * v1.6.1: Static Field radius in tiles. v1.6 was 3.5 + 0.35/level (3.85 at level 1: about 140 screen px, closer than
+ * every ranged monster stands); now 6.5 at level 1 (past ranged monsters' 6–6.5 tile reach), +0.25 a level, max 10.
+ * It also needs a clear line of sight now (it no longer hits through walls into the next corridor).
+ */
+export const staticR = (l: number) => Math.min(10, 6.5 + (Math.max(1, l) - 1) * 0.25);
 /** Static Field never takes a boss or act boss below this share of its life */
 export const STATIC_BOSS_FLOOR = 0.5;
 export const teleK = grow(0.5, 0.15);
@@ -81,8 +87,12 @@ export const esDur = (l: number) => 144 + l * 16;
 export const lightMastery = (l: number) => (l <= 0 ? 0 : 50 + (l - 1) * 12);
 /** cooldowns in seconds (D2 has them on the big area spells) */
 export const SORC_COOLDOWN: Record<string, number> = { meteor: 1.2, blizzard: 1.8, fire_wall: 1.4, frozen_orb: 1.0, hydra: 0.6 };
-/** seconds a spell cast takes (D2 sorceress at 0% faster cast rate is about 0.55 s) */
+/** seconds a spell cast takes at 0% faster cast rate (D2 sorceress at 0% faster cast rate is about 0.55 s) */
 export const SORC_CAST = 0.5;
+/** v1.6.1: faster cast rate from gear counts up to this much (100% = casts take half as long, 0.25 s) */
+export const FCR_CAP = 100;
+/** v1.6.1: a cast's time with this much faster cast rate */
+export const castTimeFor = (fcr: number) => (SORC_CAST * 100) / (100 + Math.max(0, Math.min(FCR_CAP, fcr)));
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 type Def = Omit<SkillDef, "cls" | "implemented" | "kind" | "prereq"> & Partial<Pick<SkillDef, "kind" | "prereq">>;

@@ -13,7 +13,7 @@ import { type Elem, ELEM_COLOR } from "./data/monsters";
 import { rand } from "./rng";
 import {
   BLIZZARD_DUR, BLIZZARD_R, ES_MANA_PER_LIFE, FIRE_BALL_R, FIRE_WALL_DUR, FROST_NOVA_R, GLACIAL_R, HYDRA_DUR, HYDRA_MAX, HYDRA_RATE,
-  INFERNO_RANGE, LIGHTNING_RANGE, METEOR_DELAY, METEOR_R, NOVA_R, SORC_CAST, SORC_COOLDOWN, SPELL_ELEM, STATIC_BOSS_FLOOR, THUNDER_R,
+  INFERNO_RANGE, LIGHTNING_RANGE, METEOR_DELAY, METEOR_R, NOVA_R, SORC_COOLDOWN, SPELL_ELEM, STATIC_BOSS_FLOOR, THUNDER_R,
   armorDur, blazeDur, blazeK, blizzardK, chainHits, chainK, chargedBoltK, chargedBoltN, chillingDef, chillingK, coldMastery, enchantDur,
   enchantK, esAbsorb, esDur, fireBallK, fireBoltK, fireMastery, fireWallK, frostNovaK, frozenArmorDef, frozenArmorFreeze, frozenOrbK,
   glacialFreeze, glacialK, hydraK, iceBlastFreeze, iceBlastK, iceBoltChill, iceBoltK, infernoK, lightMastery, lightningK, meteorBurnK,
@@ -91,6 +91,8 @@ export interface SorcHost {
   nearestMonster(maxDist: number, requireLos?: boolean): Monster | null;
   skillLevel(id: string): number;
   hint(text: string): void;
+  /** v1.6.1: seconds a cast takes now (faster cast rate from gear) */
+  castTime(): number;
 }
 
 const alive = (m: Monster) => m.state !== "dead";
@@ -312,18 +314,22 @@ export function castSorc(g: SorcHost, id: string, lvl: number) {
       return;
     }
     case "static_field": {
+      // v1.6.1: a bigger radius, drawn at its real size (the old ring grew from nothing and faded out, so its edge
+      // never showed), and only what she can see (no hits through walls)
       const r = staticR(lvl);
-      g.rings.push({ x: p.x, y: p.y, t: 0, life: 0.5, radius: r, color: "rgba(160,190,255," });
+      g.rings.push({ x: p.x, y: p.y, t: 0, life: 0.55, radius: r, color: "rgba(160,190,255,", full: true });
       let n = 0;
       for (const m of [...g.monsters]) {
         if (!alive(m) || Math.hypot(m.x - p.x, m.y - p.y) > r + m.def.radius) continue;
+        if (!lineOfSight(g.level, p.x, p.y, m.x, m.y)) continue;
         if (m.dummy) {
           // the dummy has a million life: it would show a silly number, so it takes a quarter of a level-matched monster
           g.elemHit(m, spellBase(p.level) * 4 * (staticPct / 100), "light");
           continue;
         }
         const floor = m.def.rank === "boss" || m.def.rank === "final" ? m.maxHp * STATIC_BOSS_FLOOR : 1;
-        const dmg = Math.floor(Math.min(m.hp * (staticPct / 100), m.hp - floor));
+        // v1.6.1: at least 1 while the monster is above its floor (a 3-life monster used to take 0 and show nothing)
+        const dmg = Math.floor(Math.min(Math.max(1, m.hp * (staticPct / 100)), m.hp - floor));
         if (dmg >= 1) {
           g.elemHit(m, dmg, "light");
           n++;
@@ -639,11 +645,12 @@ export const DAMAGE_SPELLS = ["fire_bolt", "inferno", "blaze", "fire_ball", "fir
  * takes per cast ÷ the time between casts (the cast time, or the cooldown when longer). Timed effects count their whole
  * damage on a monster standing in them; Charged Bolt counts half its bolts, Frozen Orb five shards, Hydra three heads.
  */
-export function spellDps(g: Pick<SorcHost, "player" | "skillLevel">, id: string, lvl = g.skillLevel(id)): number {
+export function spellDps(g: Pick<SorcHost, "player" | "skillLevel" | "castTime">, id: string, lvl = g.skillLevel(id)): number {
   if (!lvl) return 0;
   const e: SpellElem = SPELL_ELEM[id] ?? "fire";
   const h = (k: number) => spellHit(g, e, k);
-  const per = Math.max(SORC_CAST, SORC_COOLDOWN[id] ?? 0);
+  // v1.6.1: faster cast rate shortens the cast (cooldowns still hold the big spells back)
+  const per = Math.max(g.castTime(), SORC_COOLDOWN[id] ?? 0);
   switch (id) {
     case "fire_bolt": return h(fireBoltK(lvl)) / per;
     case "inferno": return h(infernoK(lvl)) / per;
@@ -666,4 +673,28 @@ export function spellDps(g: Pick<SorcHost, "player" | "skillLevel">, id: string,
     case "thunder_storm": return h(thunderK(lvl)) / thunderRate(lvl);
   }
   return 0;
+}
+
+/**
+ * v1.6.1 tooltips: the multiple of the spell base a skill's main hit uses at a skill level, and what it is per
+ * (hit, second, shard...). Null for skills that don't deal spell-base damage (buffs, Static Field, Teleport).
+ */
+export const SPELL_K: Record<string, { k: (l: number) => number; per?: string }> = {
+  fire_bolt: { k: fireBoltK }, inferno: { k: infernoK }, blaze: { k: blazeK, per: "/s" }, fire_ball: { k: fireBallK },
+  fire_wall: { k: fireWallK, per: "/s" }, enchant: { k: enchantK, per: " per attack" }, meteor: { k: meteorK }, hydra: { k: hydraK, per: " per bolt" },
+  ice_bolt: { k: iceBoltK }, frost_nova: { k: frostNovaK }, ice_blast: { k: iceBlastK }, shiver_armor: { k: shiverK, per: " per hit taken" },
+  glacial_spike: { k: glacialK }, blizzard: { k: blizzardK, per: "/s" }, chilling_armor: { k: chillingK, per: " per bolt" },
+  frozen_orb: { k: frozenOrbK, per: " per shard" }, charged_bolt: { k: chargedBoltK, per: " per bolt" }, telekinesis: { k: teleK },
+  nova: { k: novaK }, lightning: { k: lightningK }, chain_lightning: { k: chainK, per: " per enemy" }, thunder_storm: { k: thunderK, per: " per strike" },
+};
+const ELEM_WORD: Record<SpellElem, string> = { fire: "fire", cold: "cold", light: "lightning" };
+/** v1.6.1: the damage a skill level really does for this hero, e.g. "331–448 fire per shard" (±15% roll), or null */
+export function spellDamageText(g: Pick<SorcHost, "player" | "skillLevel">, id: string, lvl: number): string | null {
+  const s = SPELL_K[id];
+  if (!s || lvl <= 0) return null;
+  const e: SpellElem = SPELL_ELEM[id] ?? "fire";
+  const avg = spellHit(g, e, s.k(lvl));
+  const lo = Math.max(1, Math.round(avg * 0.85));
+  const hi = Math.max(1, Math.round(avg * 1.15));
+  return `${lo === hi ? lo : `${lo}–${hi}`} ${ELEM_WORD[e]}${s.per ?? ""}`;
 }

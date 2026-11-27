@@ -7,7 +7,7 @@ import uiSrc from "../src/ui.ts?raw";
 
 describe("v1.5.1 version", () => {
   it("label and patch note", () => {
-    expect(GAME_VERSION).toBe("1.6");
+    expect(GAME_VERSION).toBe("1.6.1");
     expect(PATCH_NOTES.find((n) => n.version === "1.5.1")!.notes.join(" ")).toMatch(/Act 4 · Level 7/);
   });
   it("no patch note quotes an overall level number (21-80) as a level", () => {

@@ -38,8 +38,11 @@ describe("item comparison covers every stat", () => {
       if (cat !== "weapon") g.player.equip.main = plain("sword");
       g.player.equip[slot] = plain(BASE_FOR[cat]);
       const withMod: Item = plain(BASE_FOR[cat]);
-      withMod.mods = [k === "skill" ? { s: "skill", v: 2, sk: "bash" } : { s: k, v: 8 }];
-      const want = STAT_COMPARE[k].map((id) => (id === "skill:*" ? "skill:bash" : id));
+      // v1.6.1: whole-class / whole-tree +skills compare as their own rows
+      const sk = k === "skill" ? "bash" : k === "clsk" ? "barbarian" : k === "tabsk" ? "combat" : undefined;
+      withMod.mods = [sk ? { s: k, v: 2, sk } : { s: k, v: 8 }];
+      const key = k === "clsk" ? `cls:${sk}` : k === "tabsk" ? `tab:${sk}` : sk;
+      const want = STAT_COMPARE[k].map((id) => (id === "skill:*" ? `skill:${key}` : id));
       const gain = g.compare(withMod, slot);
       for (const id of want) {
         const r = gain.find((x) => x.id === id);

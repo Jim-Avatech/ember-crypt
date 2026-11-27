@@ -1,6 +1,6 @@
 import { CLASS_NAME, SKILLS } from "./data/skills";
 import "./styles.css";
-import { AFFIXES, enchant, mergeDuplicateMods, rollDrop } from "./data/affixes";
+import { AFFIXES, craftAffix, enchant, mergeDuplicateMods, rollDrop } from "./data/affixes";
 import { ITEM_BASES, lookOf, makeItem, migrateItem } from "./data/items";
 import type { HeroClass } from "./data/skills";
 import { HeroSelect, type HeroCard } from "./heroes";
@@ -596,7 +596,7 @@ if (DEBUG) (window as unknown as { __ec: unknown }).__ec = {
   input,
   ui,
   settings,
-  items: { makeItem, enchant, rollDrop, migrateItem },
+  items: { makeItem, enchant, rollDrop, migrateItem, craftAffix },
   data: { ITEM_BASES, AFFIXES, SKILLS },
   get fps() {
     return fps;

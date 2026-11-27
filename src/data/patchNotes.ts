@@ -10,6 +10,17 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.6.1",
+    title: "Sorceress fixes",
+    notes: [
+      "Spell tooltips now show your spell base damage (what a 100% spell hits for at your level) and the real damage each level does, e.g. “Fire Ball … = 331–448 fire”. The Character screen shows your spell base damage and cast time.",
+      "New affixes: +1–2 to all skills of a class (“+1 to Sorceress Skill Levels”) and +1–3 to one skill tree (“+2 to Fire Spells”). Staves, wands and orbs roll them for the Sorceress, bows, spears and javelins for the Amazon, other weapons and helms for the Barbarian, amulets mostly for your own class. Brann can add them too.",
+      "New affix: Faster Cast Rate (+10/20/30%), mostly on staves, wands and orbs, also on amulets, rings and helms. It shortens a spell's 0.5 s cast (up to twice as fast at +100%) and counts in Spell DPS.",
+      "Static Field reaches much further (6.5 tiles at level 1, was 3.9; up to 10), shows its full reach when cast, no longer hits through walls, and always takes at least 1 life from a monster that has some to lose.",
+      "Mana comes back faster: the Sorceress regenerates 2× as fast as the others (was 1.5×) and Warmth gives +60% at level 1 and +20% a level (was +30% and +12%).",
+    ],
+  },
+  {
     version: "1.6",
     title: "The Sorceress",
     notes: [

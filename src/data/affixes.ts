@@ -5,7 +5,7 @@
  * names only build magic item names ("Jagged Axe of the Fox") and never decide what rolls.
  */
 import { BASE_BY_ID, SORC_ITEM_BASES, type Item, type Mod, type Quality, type StatKey, makeItem, rollBase } from "./items";
-import { CLASS_NAME, SKILLS, SKILL_BY_ID } from "./skills";
+import { CLASS_NAME, CLASS_TABS, HERO_CLASSES, type HeroClass, SKILLS, SKILL_BY_ID, TAB_NAMES, type Tab } from "./skills";
 
 export type Cat = "weapon" | "armor" | "helm" | "shield" | "orb" | "gloves" | "boots" | "belt" | "ring" | "amulet";
 type Range = [StatKey, number, number];
@@ -18,6 +18,10 @@ export interface AffixDef {
   id: string;
   cats: Cat[];
   tiers: Tier[];
+  /** v1.6.1: on weapons, only these bases may roll it (Faster Cast Rate: staves and wands) */
+  weapons?: Set<string>;
+  /** v1.6.1: these bases see it this many times as often (Faster Cast Rate leans to staves, wands and orbs) */
+  lean?: { bases: Set<string>; mul: number };
 }
 
 const ARMORS: Cat[] = ["armor", "helm", "shield", "gloves", "boots", "belt"];
@@ -85,6 +89,18 @@ export const AFFIXES: AffixDef[] = [
     T(1, "of Worth", ["mindmg", 1, 2]), T(8, "of Measure", ["mindmg", 3, 5]), T(16, "of Excellence", ["mindmg", 6, 9])),
   A("gf", ["gloves", "boots", "belt", ...JEWEL],
     T(1, "of Greed", ["gf", 25, 40]), T(12, "of Wealth", ["gf", 41, 80])),
+  // v1.6.1 Faster Cast Rate (shortens a Sorceress's 0.5 s cast): staves, wands and orbs (3× as likely there), also
+  // amulets, rings and helms like D2
+  { ...A("fcr", ["weapon", "orb", "helm", ...JEWEL],
+    T(4, "of the Apprentice", ["fcr", 10, 10]), T(12, "of the Magus", ["fcr", 20, 20]), T(24, "of the Archmage", ["fcr", 30, 30])),
+    weapons: new Set(["battle_staff", "wand"]), lean: { bases: SORC_ITEM_BASES, mul: 3 } },
+  // v1.6.1: +N to all skills of the item's class, and +N to one of that class's trees (D2's class items). The class
+  // follows the item like the single +skill rolls do (skillPoolFor): staves, wands, orbs → Sorceress; bows, spears and
+  // javelins → Amazon; other weapons and helms → Barbarian; amulets the finder's class mostly
+  A("clsk", ["weapon", "orb", "helm", "amulet"],
+    T(10, "Exalted", ["clsk", 1, 1]), T(30, "Archon's", ["clsk", 2, 2])),
+  A("tabsk", ["weapon", "orb", "helm", "amulet"],
+    T(6, "Adept's", ["tabsk", 1, 1]), T(16, "Master's", ["tabsk", 2, 2]), T(28, "Grandmaster's", ["tabsk", 3, 3])),
 ];
 export const AFFIX_BY_ID: Record<string, AffixDef> = Object.fromEntries(AFFIXES.map((a) => [a.id, a]));
 /** v1.4: an affix by id; items from before v1.4 store "p:edmg" / "s:life" style keys */
@@ -130,6 +146,28 @@ export function skillPoolFor(baseId: string, r: Rng = Math.random, cls?: string)
   return SKILLABLE();
 }
 
+/**
+ * v1.6.1: whose class an item's "+N to <Class> Skills" / "+N to <Tree>" rolls belong to (same rule as skillPoolFor):
+ * staves, wands and orbs the Sorceress; bows, spears and javelins the Amazon; other weapons and helms the Barbarian;
+ * amulets mostly the finder's class (AMULET_OWN_CLASS), else any class.
+ */
+export function itemClassFor(baseId: string, r: Rng = Math.random, cls?: string): HeroClass {
+  const b = BASE_BY_ID[baseId];
+  if (SORC_ITEM_BASES.has(baseId)) return "sorceress";
+  if (b?.slot === "weapon") return b.kind === "bow" || b.kind === "spear" ? "amazon" : "barbarian";
+  if (b?.slot === "helm") return "barbarian";
+  if (cls && (HERO_CLASSES as string[]).includes(cls) && r() < AMULET_OWN_CLASS) return cls as HeroClass;
+  return HERO_CLASSES[Math.floor(r() * HERO_CLASSES.length)];
+}
+/** v1.6.1: the skill trees of a class (not the shared Basic tab) */
+export const classTrees = (c: HeroClass): Tab[] => CLASS_TABS[c].filter((t) => t !== "basic");
+
+/** v1.6.1: what a roll needs to know about the item: its base (Faster Cast Rate) and whose class its +skills are */
+export interface RollCtx {
+  baseId?: string;
+  cls?: () => HeroClass;
+}
+
 interface Pick {
   def: AffixDef;
   tier: Tier;
@@ -139,12 +177,14 @@ interface Pick {
  * v1.4: every (affix, tier) that can still roll on an item: right item type, tier level ≤ item level, and none of its
  * stats already on the item. One flat pool, uniform over affix tiers (as before v1.4, minus the side split).
  */
-function pool(cat: Cat, ilvl: number, taken: Set<StatKey>): Pick[] {
+function pool(cat: Cat, ilvl: number, taken: Set<StatKey>, baseId?: string): Pick[] {
   const out: Pick[] = [];
   for (const a of AFFIXES) {
     if (!a.cats.includes(cat)) continue;
+    if (a.weapons && cat === "weapon" && !(baseId && a.weapons.has(baseId))) continue;
     if ([...statsOf(a)].some((st) => taken.has(st))) continue;
-    for (const tier of a.tiers) if (tier.lvl <= ilvl) out.push({ def: a, tier });
+    const times = a.lean && baseId && a.lean.bases.has(baseId) ? a.lean.mul : 1;
+    for (const tier of a.tiers) if (tier.lvl <= ilvl) for (let i = 0; i < times; i++) out.push({ def: a, tier });
   }
   return out;
 }
@@ -167,11 +207,11 @@ export const MAGIC_TWO = 0.5;
  * Roll `n` more affixes onto an item that already has `existing` mods (v1.4: none of them may share a stat with an
  * existing mod or with each other). Returns fewer when the pool runs dry.
  */
-export function rollMore(cat: Cat, ilvl: number, n: number, existing: Mod[], r: Rng = Math.random, skillPool?: () => string[]): Rolled {
+export function rollMore(cat: Cat, ilvl: number, n: number, existing: Mod[], r: Rng = Math.random, skillPool?: () => string[], ctx: RollCtx = {}): Rolled {
   const res: Rolled = { mods: [], aff: [], names: [] };
   const taken = new Set<StatKey>(existing.map((m) => m.s));
   for (let i = 0; i < n; i++) {
-    const pl = pool(cat, ilvl, taken);
+    const pl = pool(cat, ilvl, taken, ctx.baseId);
     if (!pl.length) break;
     const pk = pl[Math.floor(r() * pl.length)];
     for (const st of statsOf(pk.def)) taken.add(st);
@@ -182,6 +222,13 @@ export function rollMore(cat: Cat, ilvl: number, n: number, existing: Mod[], r: 
       if (s === "skill") {
         const ids = skillPool ? skillPool() : SKILLABLE();
         m.sk = ids[Math.floor(r() * ids.length)];
+      } else if (s === "clsk" || s === "tabsk") {
+        const c = ctx.cls ? ctx.cls() : HERO_CLASSES[Math.floor(r() * HERO_CLASSES.length)];
+        if (s === "clsk") m.sk = c;
+        else {
+          const trees = classTrees(c);
+          m.sk = trees[Math.floor(r() * trees.length)];
+        }
       }
       res.mods.push(m);
     }
@@ -190,10 +237,10 @@ export function rollMore(cat: Cat, ilvl: number, n: number, existing: Mod[], r: 
 }
 
 /** Roll a set of affixes from the one pool. Magic: 1–2. Rare: 3–4. Never the same stat twice. */
-export function rollAffixes(cat: Cat, ilvl: number, q: Quality, r: Rng = Math.random, skillPool?: () => string[]): Rolled {
+export function rollAffixes(cat: Cat, ilvl: number, q: Quality, r: Rng = Math.random, skillPool?: () => string[], ctx: RollCtx = {}): Rolled {
   if (q === "normal") return { mods: [], aff: [], names: [] };
   const n = q === "magic" ? (r() < MAGIC_TWO ? 2 : 1) : RARE_COUNTS[Math.floor(r() * RARE_COUNTS.length)];
-  return rollMore(cat, ilvl, n, [], r, skillPool);
+  return rollMore(cat, ilvl, n, [], r, skillPool, ctx);
 }
 
 /** v1.4: a magic item's name from its affixes' tier names: an "of …" name goes after the class name, any other before */
@@ -279,7 +326,7 @@ export function rareName(cat: Cat, r: Rng = Math.random) {
 export function enchant(it: Item, q: Quality, r: Rng = Math.random, cls?: string): Item {
   const cat = catOf(it.baseId);
   if (!cat || q === "normal") return it;
-  const rolled = rollAffixes(cat, it.ilvl ?? 1, q, r, () => skillPoolFor(it.baseId, r, cls));
+  const rolled = rollAffixes(cat, it.ilvl ?? 1, q, r, () => skillPoolFor(it.baseId, r, cls), { baseId: it.baseId, cls: () => itemClassFor(it.baseId, r, cls) });
   if (!rolled.mods.length) return it;
   it.q = q;
   it.mods = rolled.mods;
@@ -344,6 +391,12 @@ export function modText(m: Mod): string {
     case "def": return `+${m.v} Defense`;
     case "gf": return `${m.v}% Extra Gold from Monsters`;
     case "mf": return `${m.v}% Better Chance of Getting Magic Items`;
+    case "fcr": return `+${m.v}% Faster Cast Rate`;
+    case "clsk": return `+${m.v} to ${CLASS_NAME[m.sk as HeroClass] ?? "Class"} Skill Levels`;
+    case "tabsk": {
+      const owner = HERO_CLASSES.find((c) => CLASS_TABS[c].includes(m.sk as Tab));
+      return `+${m.v} to ${TAB_NAMES[m.sk as Tab] ?? "a skill tree"}${owner ? ` (${CLASS_NAME[owner]} Only)` : ""}`;
+    }
     case "skill": {
       const sd = SKILL_BY_ID[m.sk ?? ""];
       return sd && sd.cls !== "any" ? `+${m.v} to ${sd.name} (${CLASS_NAME[sd.cls]} Only)` : `+${m.v} to ${sd?.name ?? "a skill"}`;
@@ -364,7 +417,7 @@ export function craftBlock(it: Item): string | null {
   const q = it.q ?? "normal";
   if (q !== "normal" && q !== "magic" && q !== "rare") return "Only normal, magic and rare items can be enchanted";
   if (affixCount(it) >= MAX_AFFIXES) return `This item already has ${MAX_AFFIXES} affixes, the most an item can hold`;
-  if (!pool(cat, it.ilvl ?? 1, new Set((it.mods ?? []).map((m) => m.s))).length) return "No affix is left that can roll on this item at its level";
+  if (!pool(cat, it.ilvl ?? 1, new Set((it.mods ?? []).map((m) => m.s)), it.baseId).length) return "No affix is left that can roll on this item at its level";
   return null;
 }
 /**
@@ -377,7 +430,7 @@ export function craftAffix(it: Item, r: Rng = Math.random, cls?: string): { ok: 
   mergeDuplicateMods(it);
   const cat = catOf(it.baseId)!;
   const before = affixCount(it);
-  const rolled = rollMore(cat, it.ilvl ?? 1, 1, it.mods ?? [], r, () => skillPoolFor(it.baseId, r, cls));
+  const rolled = rollMore(cat, it.ilvl ?? 1, 1, it.mods ?? [], r, () => skillPoolFor(it.baseId, r, cls), { baseId: it.baseId, cls: () => itemClassFor(it.baseId, r, cls) });
   if (!rolled.mods.length) return { ok: false, why: "No affix is left that can roll on this item at its level", added: [] };
   it.mods = [...(it.mods ?? []), ...rolled.mods];
   it.aff = [...(it.aff ?? []), ...rolled.aff];

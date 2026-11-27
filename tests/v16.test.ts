@@ -59,11 +59,11 @@ function cast(g: Game, id: string) {
 }
 
 describe("v1.6 version and cache", () => {
-  it("label, patch note on top, SW cache v33", () => {
-    expect(GAME_VERSION).toBe("1.6");
-    expect(PATCH_NOTES[0].title).toMatch(/Sorceress/);
-    expect(PATCH_NOTES[1].version).toBe("1.5.1");
-    expect(swSrc).toContain("ember-crypt-shell-v33");
+  it("label, patch note on top, SW cache v34 (v1.6.1)", () => {
+    expect(GAME_VERSION).toBe("1.6.1");
+    expect(PATCH_NOTES.find((n) => n.version === "1.6")?.title).toMatch(/Sorceress/);
+    expect(PATCH_NOTES.findIndex((n) => n.version === "1.5.1")).toBe(PATCH_NOTES.findIndex((n) => n.version === "1.6") + 1);
+    expect(swSrc).toContain("ember-crypt-shell-v34");
   });
 });
 
@@ -86,7 +86,7 @@ describe("v1.6 Sorceress class", () => {
     const b = new Game(events, null, 7, { cls: "barbarian", name: "" });
     expect(b.derived().maxHp).toBeGreaterThan(d1.maxHp);
   });
-  it("mana comes back 1.5× as fast, more with Warmth", () => {
+  it("mana comes back 2× as fast (v1.6.1, was 1.5×), more with Warmth", () => {
     const regen = (cls: "sorceress" | "barbarian", warmth = 0) => {
       const g = new Game(events, null, 7, { cls, name: "" });
       g.player.level = 20;
@@ -95,8 +95,8 @@ describe("v1.6 Sorceress class", () => {
       g.update(1, idle);
       return g.player.mana / g.derived().maxMana;
     };
-    expect(regen("sorceress") / regen("barbarian")).toBeCloseTo(1.5, 1);
-    expect(regen("sorceress", 5) / regen("sorceress")).toBeCloseTo(1 + (30 + 4 * 12) / 100, 1);
+    expect(regen("sorceress") / regen("barbarian")).toBeCloseTo(2, 1);
+    expect(regen("sorceress", 5) / regen("sorceress")).toBeCloseTo(1 + (60 + 4 * 20) / 100, 1);
   });
   it("starts with a battle staff and armor, a wand in the bag, three tabs", () => {
     const g = new Game(events, null, 7, { cls: "sorceress", name: "" });
