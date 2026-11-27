@@ -50,7 +50,7 @@ function trial(dist: number, lvl: number, withMonster = true) {
 
 describe("v1.6.2 Charged Bolt", () => {
   it("version, patch note (now second), cache bumped since", () => {
-    expect(GAME_VERSION).toBe("1.6.4");
+    expect(GAME_VERSION).toBe("1.7");
     const n = PATCH_NOTES.find((q) => q.version === "1.6.2")!;
     expect(n.notes.join(" ")).toMatch(/Charged Bolt/);
     expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);

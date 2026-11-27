@@ -2,15 +2,44 @@
  * v1.6 Diablo II Sorceress: her three spell trees (names, required levels and prerequisites from D2, mapped onto our
  * rows: row 0 = level 1, 1 = 6, 2 = 12, 3 = 18, 4 = 24, 5 = 30) and every number the game and the tooltips share.
  *
- * Spell damage never uses the weapon: it is the sorceress spell base for her character level (spellBase) × the
- * skill's own multiple at its skill level × (1 + her mastery for that element). No synergies (kept simple for mobile).
+ * Spell damage is the hero's base spell damage (v1.7: spellBaseParts = character level + Energy + caster items)
+ * × the skill's own multiple at its skill level × (1 + her mastery for that element). No synergies (kept simple).
  */
 import type { SkillDef } from "./skills";
 
-/** the sorceress spell base: what a 100% spell hits for at a character level (grows like weapon damage does) */
+/** the spell base curve for a level (v1.6: what a 100% spell hit for; v1.7: the yardstick the three parts scale with) */
 export const spellBase = (clvl: number) => 7 + 1.2 * Math.max(1, clvl) + 0.012 * Math.max(1, clvl) ** 2;
-/** a spell's multiple of the base at skill level l: k at level 1, +g of that per level after */
-const grow = (k: number, g: number) => (l: number) => Math.max(0, k * (1 + g * (Math.max(1, l) - 1)));
+
+// ---- v1.7 base spell damage: character level + Energy + caster items ----
+/** share of the level curve every hero gets from character level alone */
+export const SPELL_LEVEL_SHARE = 0.6;
+/** Energy adds spellBase(level) × ene / (ene + SPELL_ENE_HALF): diminishing, so it never runs away */
+export const SPELL_ENE_HALF = 250;
+/** caster weapons add spellBase(item level) × this (a battle staff is two-handed: as much as a wand and an orb) */
+export const CASTER_SPELL_SHARE: Record<string, number> = { wand: 0.25, orb: 0.25, battle_staff: 0.5 };
+/**
+ * every spell multiple is divided by this, so a typical Sorceress (some Energy, a caster weapon of her level) hits
+ * about as hard as in v1.6 (level 0.6 + Energy ≈0.15–0.4 + staff 0.5 ≈ 1.25–1.5 of the old curve)
+ */
+export const SPELL_NORM = 1.25;
+/** "+N base spell damage" a caster item carries (0 on everything else) */
+export const casterSpellDmg = (baseId: string, ilvl: number) => {
+  const k = CASTER_SPELL_SHARE[baseId];
+  return k ? Math.round(spellBase(ilvl) * k) : 0;
+};
+export interface SpellBaseParts { level: number; energy: number; items: number; total: number }
+/** base spell damage = level part + Energy part + caster items part (what a 100% spell hits for) */
+export function spellBaseParts(clvl: number, ene: number, items: { baseId: string; ilvl: number }[]): SpellBaseParts {
+  const b = spellBase(clvl);
+  const level = b * SPELL_LEVEL_SHARE;
+  const e = Math.max(0, ene);
+  const energy = (b * e) / (e + SPELL_ENE_HALF);
+  let it = 0;
+  for (const i of items) it += casterSpellDmg(i.baseId, i.ilvl);
+  return { level, energy, items: it, total: level + energy + it };
+}
+/** a spell's multiple of the base at skill level l: k at level 1, +g of that per level after (v1.7: ÷ SPELL_NORM) */
+const grow = (k: number, g: number) => (l: number) => Math.max(0, (k / SPELL_NORM) * (1 + g * (Math.max(1, l) - 1)));
 
 // ---- Fire ----
 export const fireBoltK = grow(1.05, 0.2);

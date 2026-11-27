@@ -57,10 +57,11 @@ const f = (x: number) => x.toFixed(1);
 
 describe("v1.6.4 release", () => {
   it("version, patch note, cache v37", () => {
-    expect(GAME_VERSION).toBe("1.6.4");
-    expect(PATCH_NOTES[0].version).toBe("1.6.4");
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/leech/i);
-    expect(swSrc).toContain("ember-crypt-shell-v37");
+    expect(GAME_VERSION).toBe("1.7");
+    const n = PATCH_NOTES.find((q) => q.version === "1.6.4")!;
+    expect(n.version).toBe("1.6.4");
+    expect(n.notes.join(" ")).toMatch(/leech/i);
+    expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
   });
   it("constants: 35% of gear leech, capped at 4% of max life / mana a second", () => {
     expect(SPELL_LEECH_PCT).toBe(35);

@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.7: Base spell damage
+
+- `spellBaseParts(level, energy, items)` (src/data/sorc.ts), `Game.spellBaseParts()`, `Derived.sbase`: every hero's base spell damage = level part `spellBase(L) × 0.6` (`SPELL_LEVEL_SHARE`) + Energy part `spellBase(L) × ene / (ene + 250)` (`SPELL_ENE_HALF`, diminishing; Energy with gear) + caster items worn and usable `casterSpellDmg(base, ilvl) = spellBase(ilvl) × share` (`CASTER_SPELL_SHARE`: wand 0.25, orb 0.25, battle staff 0.5). Other weapons add nothing.
+- Every spell multiple (`grow`) is divided by `SPELL_NORM` 1.25; `spellHit` uses the summed base. Static Field's training-dummy hit uses it too.
+- UI: Character screen "Base spell damage · level L + Energy E + items I" (every class); spell tooltips "Base spell damage T = level + Energy + items"; wand / orb / staff cards "+N Base Spell Damage"; compare row `sbase` ("base spell damage"; Energy maps to it in `STAT_COMPARE`).
+- Saves: nothing stored changes (computed from level, Energy and item level), so every save loads as is.
+- Numbers (tests/v17.test.ts SPELLDPS lines, tests/v17balance.test.ts BAL lines): see the v1.7 report. Tests: `tests/v17.test.ts`, `tests/v17balance.test.ts`, `scripts/v17-shots.mjs` (screenshots/v17). SW cache v38.
+
 ## v1.6.4: Spells leech
 
 - Damage through `Game.elemHit` (Sorceress spells; Amazon Exploding/Immolation/Freezing Arrow bursts, Lightning Fury / Charged Strike / Lightning Strike bolts and chains, Plague and Immolation clouds; Hydra, Fire Wall) now leeches at `SPELL_LEECH_PCT` (35%) of the gear's life / mana leech, on the damage really dealt (no overkill; never from the training dummy; `elemHit(..., { noLeech })` opts out).

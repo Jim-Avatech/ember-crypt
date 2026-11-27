@@ -59,7 +59,8 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
     const g = __ec.game;
     return { base: document.querySelector(".sbase")?.textContent ?? "", dmg: [...document.querySelectorAll(".seff .sdmg")].map((e) => e.textContent), lvl: g.skillLevel("fire_ball") };
   });
-  C("Fire Ball tooltip: spell base damage 74 at level 40, Fire Mastery (5 points +1 class +2 tree = 8: +79%), real damage for Now and Next", /Spell base damage 74 at character level 40/.test(tip.base) && /Fire Mastery \+79%/.test(tip.base) && tip.dmg.length === 2 && tip.dmg.every((t) => /^= \d+–\d+ fire$/.test(t)) && tip.lvl === 15, JSON.stringify(tip));
+  // v1.7: the base is level + Energy + items now (107 for this hero: 45 + 25 + 37 with her level 40 staff)
+  C("Fire Ball tooltip: base spell damage (v1.7: level + Energy + items), Fire Mastery (5 points +1 class +2 tree = 8: +79%), real damage for Now and Next", /Base spell damage \d+ = level \d+ \+ Energy \d+ \+ items [1-9]\d*/.test(tip.base) && /Fire Mastery \+79%/.test(tip.base) && tip.dmg.length === 2 && tip.dmg.every((t) => /^= \d+–\d+ fire$/.test(t)) && tip.lvl === 15, JSON.stringify(tip));
   await shot("01-tooltip-fire-ball");
   await page.click('.stab[data-tree="cold"]');
   await page.waitForTimeout(150);
@@ -81,7 +82,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await page.click('[data-tab="char"]');
   await page.waitForTimeout(400);
   const ch = await ev(() => ({ base: document.querySelector(".spellbase")?.textContent.replace(/\s+/g, " ").trim(), cast: document.querySelector(".casttime")?.textContent.replace(/\s+/g, " ").trim(), dps: document.querySelector(".spelldps")?.textContent.replace(/\s+/g, " ").trim() }));
-  C("Character screen: spell base damage 74 and cast time 0.42 s (+20% faster cast rate)", /Spell base damage.*level 40 ?74$/.test(ch.base ?? "") && /\+20% faster cast rate ?0\.42 s/.test(ch.cast ?? ""), JSON.stringify(ch));
+  C("Character screen: base spell damage (v1.7: level + Energy + items) and cast time 0.42 s (+20% faster cast rate)", /Base spell damage level \d+ \+ Energy \d+ \+ items \d+ ?\d+$/.test(ch.base ?? "") && /\+20% faster cast rate ?0\.42 s/.test(ch.cast ?? ""), JSON.stringify(ch));
   await shot("04-character-spell-base");
   await ev(() => __ec.ui.close());
 

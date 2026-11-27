@@ -27,7 +27,7 @@ import {
 import { type BagEntry, STASH_H, STASH_W, addItem, addPotions, findSpot, fits, moveItem, potQty, POT_STACK, sizeOf, stackPotions, takeOnePotion } from "./inventory";
 import { type Level, type Room, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
 import { Rng, chance, rand, randInt } from "./rng";
-import { FCR_CAP, SORC_IDS, castTimeFor, warmthRegen } from "./data/sorc";
+import { FCR_CAP, SORC_IDS, type SpellBaseParts, castTimeFor, spellBaseParts, warmthRegen } from "./data/sorc";
 import { DAMAGE_SPELLS, type SorcBuffs, type SorcHost, type Spell, castSorc, spellDps, enchantBonus, sorcBlock, sorcDefPct, sorcOnHurt, updateSorc } from "./spells";
 
 /** v0.9.1 drop rates: a normal monster drops an item 8.5% of the time (was 17%); a champion has a 50% chance of one item (was always 1). */
@@ -474,6 +474,8 @@ export interface Derived {
   gearIas: number;
   /** v1.6.1: % faster cast rate from gear (capped at FCR_CAP) */
   fcr: number;
+  /** v1.7: base spell damage (character level + Energy + caster items) */
+  sbase: number;
   gf: number;
   mf: number;
   /** total attributes, gear included */
@@ -548,6 +550,7 @@ export const COMPARE_METRICS: { id: string; label: string; get: (d: Derived) => 
   { id: "frw", label: "run speed", get: (d) => d.frw, unit: "%" },
   { id: "ias", label: "attack speed", get: (d) => d.gearIas, unit: "%" },
   { id: "fcr", label: "cast speed", get: (d) => d.fcr, unit: "%" },
+  { id: "sbase", label: "base spell damage", get: (d) => Math.round(d.sbase) },
   { id: "fres", label: "fire resist", get: (d) => d.res.fire, unit: "%" },
   { id: "cres", label: "cold resist", get: (d) => d.res.cold, unit: "%" },
   { id: "lres", label: "lightning resist", get: (d) => d.res.light, unit: "%" },
@@ -561,7 +564,7 @@ export const COMPARE_METRICS: { id: string; label: string; get: (d: Derived) => 
  * affix stat won't compile until it's mapped here (and the unit test checks each one really changes).
  */
 export const STAT_COMPARE: Record<StatKey, string[]> = {
-  edmg: ["dmg"], mindmg: ["dmg"], maxdmg: ["dmg"], ar: ["ar"], str: ["str"], dex: ["dex"], vit: ["vit", "life"], ene: ["ene", "mana"],
+  edmg: ["dmg"], mindmg: ["dmg"], maxdmg: ["dmg"], ar: ["ar"], str: ["str"], dex: ["dex"], vit: ["vit", "life"], ene: ["ene", "mana", "sbase"],
   life: ["life"], mana: ["mana"], ll: ["ll"], ml: ["ml"], frw: ["frw"], ias: ["ias", "aps"], fres: ["fres"], cres: ["cres"], lres: ["lres"],
   pres: ["pres"], ares: ["fres", "cres", "lres", "pres"], edef: ["def"], def: ["def"], gf: ["gf"], mf: ["mf"], skill: ["skill:*"],
   fcr: ["fcr"], clsk: ["skill:*"], tabsk: ["skill:*"],
@@ -1582,6 +1585,7 @@ export class Game {
       dmgMin: m.min, dmgMax: m.max, dmgPct: m.dmgPct, ar: m.ar, crit: m.crit, swing: m.speed / (1 + ias), weaponKind: m.kind,
       res: { fire: cap(g("fres") + all), cold: cap(g("cres") + all), light: cap(g("lres") + all), poison: cap(g("pres") + all) },
       ll: g("ll"), ml: g("ml"), frw, gearIas, fcr: Math.min(FCR_CAP, g("fcr")), gf: g("gf"), mf: g("mf"), stats: s,
+      sbase: spellBaseParts(p.level, s.ene, this.worn().map((it) => ({ baseId: it.baseId, ilvl: ilvlOf(it) }))).total,
     };
   }
 
@@ -2068,6 +2072,11 @@ export class Game {
   }
 
   /** v1.6.1: seconds a spell cast takes with the faster cast rate on worn gear (capped, see FCR_CAP) */
+  /** v1.7: base spell damage (any class): character level + Energy (with gear) + caster items worn and usable */
+  spellBaseParts(): SpellBaseParts {
+    return spellBaseParts(this.player.level, this.stats().ene, this.worn().map((it) => ({ baseId: it.baseId, ilvl: ilvlOf(it) })));
+  }
+
   castTime(): number {
     return castTimeFor(this.gear("fcr"));
   }

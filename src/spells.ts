@@ -17,7 +17,7 @@ import {
   armorDur, blazeDur, blazeK, blizzardK, chainHits, chainK, chargedBoltK, chargedBoltN, chillingDef, chillingK, coldMastery, enchantDur,
   enchantK, esAbsorb, esDur, fireBallK, fireBoltK, fireMastery, fireWallK, frostNovaK, frozenArmorDef, frozenArmorFreeze, frozenOrbK,
   glacialFreeze, glacialK, hydraK, iceBlastFreeze, iceBlastK, iceBoltChill, iceBoltK, infernoK, lightMastery, lightningK, meteorBurnK,
-  meteorK, novaK, shiverDef, shiverK, spellBase, staticPct, staticR, teleK, teleportRange, thunderDur, thunderK, thunderRate,
+  meteorK, novaK, shiverDef, shiverK, type SpellBaseParts, staticPct, staticR, teleK, teleportRange, thunderDur, thunderK, thunderRate,
 } from "./data/sorc";
 
 export type SpellElem = "fire" | "cold" | "light";
@@ -96,6 +96,8 @@ export interface SorcHost {
   hint(text: string): void;
   /** v1.6.1: seconds a cast takes now (faster cast rate from gear) */
   castTime(): number;
+  /** v1.7: base spell damage now: character level + Energy + caster items */
+  spellBaseParts(): SpellBaseParts;
 }
 
 const alive = (m: Monster) => m.state !== "dead";
@@ -112,8 +114,8 @@ export function masteryPct(g: Pick<SorcHost, "skillLevel">, e: SpellElem): numbe
   return e === "fire" ? fireMastery(g.skillLevel("fire_mastery")) : e === "cold" ? coldMastery(g.skillLevel("cold_mastery")) : lightMastery(g.skillLevel("lightning_mastery"));
 }
 /** average damage of a spell multiple k for this hero (before the ±15% roll) */
-export function spellHit(g: Pick<SorcHost, "skillLevel" | "player">, e: SpellElem, k: number): number {
-  return spellBase(g.player.level) * k * (1 + masteryPct(g, e) / 100);
+export function spellHit(g: Pick<SorcHost, "skillLevel" | "player" | "spellBaseParts">, e: SpellElem, k: number): number {
+  return g.spellBaseParts().total * k * (1 + masteryPct(g, e) / 100);
 }
 const roll = (n: number) => n * rand(0.85, 1.15);
 
@@ -337,7 +339,7 @@ export function castSorc(g: SorcHost, id: string, lvl: number) {
         if (!lineOfSight(g.level, p.x, p.y, m.x, m.y)) continue;
         if (m.dummy) {
           // the dummy has a million life: it would show a silly number, so it takes a quarter of a level-matched monster
-          g.elemHit(m, spellBase(p.level) * 4 * (staticPct / 100), "light");
+          g.elemHit(m, g.spellBaseParts().total * 4 * (staticPct / 100), "light");
           continue;
         }
         const floor = m.def.rank === "boss" || m.def.rank === "final" ? m.maxHp * STATIC_BOSS_FLOOR : 1;
@@ -655,7 +657,7 @@ export function sorcOnHurt(g: SorcHost, dmg: number, how: "melee" | "missile" | 
 }
 
 /** fire added to each of her attacks while Enchant is up (0 otherwise) */
-export function enchantBonus(g: Pick<SorcHost, "player" | "skillLevel">): number {
+export function enchantBonus(g: Pick<SorcHost, "player" | "skillLevel" | "spellBaseParts">): number {
   const b = g.player.sb;
   if (!b?.ench || b.ench <= 0) return 0;
   return roll(spellHit(g, "fire", enchantK(g.skillLevel("enchant") || 1)));
@@ -669,7 +671,7 @@ export const DAMAGE_SPELLS = ["fire_bolt", "inferno", "blaze", "fire_ball", "fir
  * takes per cast ÷ the time between casts (the cast time, or the cooldown when longer). Timed effects count their whole
  * damage on a monster standing in them; Charged Bolt counts half its bolts, Frozen Orb five shards, Hydra three heads.
  */
-export function spellDps(g: Pick<SorcHost, "player" | "skillLevel" | "castTime">, id: string, lvl = g.skillLevel(id)): number {
+export function spellDps(g: Pick<SorcHost, "player" | "skillLevel" | "castTime" | "spellBaseParts">, id: string, lvl = g.skillLevel(id)): number {
   if (!lvl) return 0;
   const e: SpellElem = SPELL_ELEM[id] ?? "fire";
   const h = (k: number) => spellHit(g, e, k);
@@ -713,7 +715,7 @@ export const SPELL_K: Record<string, { k: (l: number) => number; per?: string }>
 };
 const ELEM_WORD: Record<SpellElem, string> = { fire: "fire", cold: "cold", light: "lightning" };
 /** v1.6.1: the damage a skill level really does for this hero, e.g. "331–448 fire per shard" (±15% roll), or null */
-export function spellDamageText(g: Pick<SorcHost, "player" | "skillLevel">, id: string, lvl: number): string | null {
+export function spellDamageText(g: Pick<SorcHost, "player" | "skillLevel" | "spellBaseParts">, id: string, lvl: number): string | null {
   const s = SPELL_K[id];
   if (!s || lvl <= 0) return null;
   const e: SpellElem = SPELL_ELEM[id] ?? "fire";

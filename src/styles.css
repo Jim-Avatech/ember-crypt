@@ -1691,3 +1691,7 @@ body.portrait #rotate {
   font-size: 11px;
   color: #b8a888;
 }
+/* v1.7: "+N Base Spell Damage" on wands, orbs and battle staves */
+.spelldmg {
+  color: #c9a8ff;
+}

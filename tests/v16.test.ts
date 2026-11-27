@@ -60,7 +60,7 @@ function cast(g: Game, id: string) {
 
 describe("v1.6 version and cache", () => {
   it("label, patch note on top, SW cache v34 (v1.6.1)", () => {
-    expect(GAME_VERSION).toBe("1.6.4");
+    expect(GAME_VERSION).toBe("1.7");
     expect(PATCH_NOTES.find((n) => n.version === "1.6")?.title).toMatch(/Sorceress/);
     expect(PATCH_NOTES.findIndex((n) => n.version === "1.5.1")).toBe(PATCH_NOTES.findIndex((n) => n.version === "1.6") + 1);
     expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
@@ -191,13 +191,16 @@ describe("v1.6 spells in the real game loop", () => {
       expect(m.hp, id).toBeLessThan(1e6);
     }
   });
-  it("spell damage scales with skill level and mastery, never with the weapon", () => {
+  it("spell damage scales with skill level and mastery (v1.7: and caster weapons by item level)", () => {
     const hit = (lvl: number, mastery: number, weapon: string, ilvl: number) => {
       const g = sorc(30, { fire_bolt: lvl, fire_mastery: mastery });
+      g.player.base.str = 200; // v1.7: a level 60 staff must be usable to count
       g.player.equip.main = makeItem(weapon, ilvl);
       return spellDps(g as never, "fire_bolt");
     };
-    expect(hit(10, 0, "battle_staff", 1)).toBeCloseTo(hit(10, 0, "battle_staff", 60), 6);
+    // v1.7: a caster weapon adds base spell damage by item level; a non-caster weapon adds none
+    expect(hit(10, 0, "battle_staff", 60)).toBeGreaterThan(hit(10, 0, "battle_staff", 1));
+    expect(hit(10, 0, "axe", 1)).toBeCloseTo(hit(10, 0, "axe", 60), 6);
     expect(hit(10, 0, "battle_staff", 1)).toBeGreaterThan(hit(1, 0, "battle_staff", 1) * 2);
     expect(hit(10, 5, "wand", 1) / hit(10, 0, "wand", 1)).toBeCloseTo(1 + (30 + 4 * 7) / 100, 5);
     expect(spellBase(60)).toBeGreaterThan(spellBase(30));

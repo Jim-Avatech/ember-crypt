@@ -13,7 +13,7 @@ const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, le
 export const BAL_LEVELS = [1, 10, 30, 60] as const;
 export type BalLevel = (typeof BAL_LEVELS)[number];
 
-export interface Build { main: string; skills: Record<string, number>; weapon: string; ranged: boolean; center?: boolean }
+export interface Build { main: string; skills: Record<string, number>; weapon: string; ranged: boolean; center?: boolean; stats?: (L: number) => { str: number; dex: number; vit: number; ene: number }; off?: string }
 export const BUILDS: Record<HeroClass, Record<BalLevel, Build>> = {
   barbarian: {
     1: { main: "bash", skills: { bash: 1 }, weapon: "axe", ranged: false },
@@ -58,8 +58,9 @@ export function simClear(cls: HeroClass, L: BalLevel, pack = 5, cap = 300, build
   let floor = 1;
   while (floor < MAX_FLOOR && mlvlOf(floor) < L) floor++;
   p.level = L;
-  p.base = stats(cls, L);
+  p.base = b.stats ? b.stats(L) : stats(cls, L);
   p.equip = { main: makeItem(b.weapon, L) };
+  if (b.off) p.equip.off = makeItem(b.off, L);
   g.goDungeon(floor);
   p.skills = { ...b.skills };
   p.mainAtk = b.main;

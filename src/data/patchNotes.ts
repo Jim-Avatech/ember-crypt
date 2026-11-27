@@ -10,6 +10,16 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.7",
+    title: "Base spell damage",
+    notes: [
+      "Every hero now has a base spell damage (what a 100% spell hits for), shown on the Character screen and in spell tooltips: character level + Energy + caster items.",
+      "Energy raises it (each point a little less than the one before), so a caster now chooses between Energy and Vitality.",
+      "Wands, orbs and battle staves carry “+N Base Spell Damage”, more the higher the item level (a battle staff as much as a wand and an orb together). Other weapons carry none: a Sorceress with a sword casts weaker spells.",
+      "Spell multiples are lower to match: with a caster weapon of her level and some Energy a Sorceress hits a little harder than before (about 10–18% more for mid- and high-level heroes); without a caster weapon about 25% less.",
+    ],
+  },
+  {
     version: "1.6.4",
     title: "Spells leech",
     notes: [

@@ -16,7 +16,7 @@ import { itemIconUrl } from "./sprites/items";
 import { artifactIcon } from "./sprites/artifacts";
 import { ACTS, ARTIFACTS, LEVELS_PER_ACT, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, levelInAct, whereLabel } from "./data/acts";
 import { MONSTERS } from "./data/monsters";
-import { SPELL_ELEM, SORC_IDS, spellBase } from "./data/sorc";
+import { SPELL_ELEM, SORC_IDS, casterSpellDmg } from "./data/sorc";
 import { SPELL_K, type SorcHost, masteryPct, spellDamageText } from "./spells";
 
 const artUrl = new Map<string, string>();
@@ -1206,12 +1206,16 @@ export class Ui {
         ${row("str", "Strength", dmgNote.str)}
         ${row("dex", "Dexterity", dmgNote.dex)}
         ${row("vit", "Vitality", `+${CLASS_DEF[p.cls].lifePerVit} life each`)}
-        ${row("ene", "Energy", `+${CLASS_DEF[p.cls].manaPerEne} mana each`)}
+        ${row("ene", "Energy", `+${CLASS_DEF[p.cls].manaPerEne} mana each · more spell damage`)}
         <div class="spoints ${p.statPoints ? "has" : ""}">${p.statPoints ? `${p.statPoints} stat points to spend` : "Gain 5 stat points each level"}</div>
       </div>
       <div class="char-right">
-        ${p.cls === "sorceress" ? `<div class="kv spellbase"><span>Spell base damage <small>what a 100% spell hits for at level ${p.level}</small></span><b>${Math.round(spellBase(p.level))}</b></div>
-        <div class="kv casttime"><span>Cast time <small>${d.fcr ? `+${d.fcr}% faster cast rate` : "no faster cast rate"}</small></span><b>${g.castTime().toFixed(2)} s</b></div>` : ""}
+        ${(() => {
+          // v1.7: every hero has a base spell damage: character level + Energy + caster items (wand, orb, battle staff)
+          const sp = g.spellBaseParts();
+          return `<div class="kv spellbase"><span>Base spell damage <small>level ${Math.round(sp.level)} + Energy ${Math.round(sp.energy)} + items ${Math.round(sp.items)}</small></span><b>${Math.round(sp.total)}</b></div>`;
+        })()}
+        ${p.cls === "sorceress" ? `<div class="kv casttime"><span>Cast time <small>${d.fcr ? `+${d.fcr}% faster cast rate` : "no faster cast rate"}</small></span><b>${g.castTime().toFixed(2)} s</b></div>` : ""}
         ${spell ? `<div class="kv dpsrow spelldps"><span>Spell DPS <small>${esc(SKILL_BY_ID[spell.id].name)} lv ${spell.lvl}, one target</small></span><b>${fmtDps(spell.dps)}</b></div>` : ""}
         <div class="kv dpsrow"><span>DPS <small>⚔ normal attack, crits in, before misses</small></span><b>${fmtDps(d.dps)} <small>· ${d.aps.toFixed(2)}/s</small></b></div>
         ${d.dual ? `<div class="kv dualtag"><span>Dual wielding</span><b>attacks alternate hands</b></div>` : ""}
@@ -1241,6 +1245,9 @@ export class Ui {
     // v1.1: a worn item whose requirements you no longer meet does nothing (Diablo II's red items)
     const worn = (Object.keys(g.player.equip) as EquipSlot[]).find((sl) => g.player.equip[sl] === it);
     if (worn && !g.usable(worn)) lines.push(`<span class="bad unusable">Unusable: requirements not met. It gives no damage, defense or bonuses until you meet them.</span>`);
+    // v1.7: caster items (wand, orb, battle staff) add base spell damage, more the higher the item level
+    const csd = casterSpellDmg(b.id, ilvlOf(it));
+    if (csd) lines.push(`<span class="spelldmg">+${csd} Base Spell Damage</span>`);
     if (b.slot === "weapon") {
       const [bl, bh] = baseDamage(b, L);
       const [lo, hi] = itemDamage(it);
@@ -1657,7 +1664,8 @@ export class Ui {
         const e = SPELL_ELEM[s.id];
         const mp = masteryPct(host, e);
         const mName = e === "fire" ? "Fire" : e === "cold" ? "Cold" : "Lightning";
-        spellBaseLine = `<div class="sbase">Spell base damage <b>${Math.round(spellBase(p.level))}</b> at character level ${p.level} (grows each level)${mp ? ` · ${mName} Mastery +${mp}%` : ""} · ±15% per hit</div>`;
+        const sp = g.spellBaseParts();
+        spellBaseLine = `<div class="sbase">Base spell damage <b>${Math.round(sp.total)}</b> = level ${Math.round(sp.level)} + Energy ${Math.round(sp.energy)} + items ${Math.round(sp.items)}${mp ? ` · ${mName} Mastery +${mp}%` : ""} · ±15% per hit</div>`;
       }
       if (basic) {
         const main = g.mainBasic();
