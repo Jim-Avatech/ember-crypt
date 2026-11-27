@@ -9,7 +9,7 @@ import type { SaveData } from "./game";
 import { CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
 import { NO_DUAL_MSG, AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
-import { GRID_H, GRID_W, STASH_H, STASH_W, overlapping, sizeOf } from "./inventory";
+import { GRID_H, GRID_W, POT_STACK, STASH_H, STASH_W, overlapping, potQty, sizeOf } from "./inventory";
 import type { Settings } from "./save";
 import { type GuideSec, guideHtml } from "./guide";
 import { itemIconUrl } from "./sprites/items";
@@ -1264,6 +1264,7 @@ export class Ui {
       lines.push(`Off-hand, with a bow`);
     } else if (b.potion) {
       lines.push(b.potion === "hp" ? "Restores 45% life over a few seconds" : "Restores 60% mana over a few seconds");
+      lines.push(`Stack: <b>${potQty(it)}</b> of ${POT_STACK} · goes into your belt by itself when there's room`); // v1.6.3
     } else if (b.defMul) {
       const dv = itemDefense(it);
       lines.push(`Defense: <b class="${dv !== baseDefense(b, L) ? "mod" : ""}">${dv}</b>`);
@@ -1284,7 +1285,7 @@ export class Ui {
     const sel = this.sel && this.sel.src === src && this.sel.uid === it.uid;
     const bad = src !== "vendor" && !b.potion && !this.game().meetsReq(it);
     return `<div class="gi q-${qualityOf(it)} ${sel ? "sel" : ""} ${bad ? "bad" : ""}" data-src="${src}" data-uid="${it.uid}" data-q="${qualityOf(it)}" style="left:${x * C}px;top:${y * C}px;width:${b.w * C}px;height:${b.h * C}px" ${extra}>
-      <img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false"/>${b.thrown || b.ammo ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : ""}</div>`;
+      <img src="${itemIconUrl(it)}" alt="${esc(b.name)}" draggable="false"/>${b.thrown || b.ammo ? `<span class="qty ${(it.qty ?? 0) === 0 ? "out" : ""}">${it.qty ?? 0}</span>` : b.potion && potQty(it) > 1 ? `<span class="qty pq">${potQty(it)}</span>` : ""}</div>`;
   }
 
   private bagGrid() {
@@ -1373,7 +1374,7 @@ export class Ui {
       if (b.potion) btns.push(beltBtn());
     } else if (s.src === "bag") {
       if (shop) {
-        price = `<div class="price">Sells for ${sellPrice(it)} gold</div>`;
+        price = `<div class="price">Sells for ${sellPrice(it) * potQty(it)} gold${potQty(it) > 1 ? ` (${potQty(it)} potions)` : ""}</div>`;
         btns.push(`<button class="gbtn" data-act="sell">Sell</button>`);
       } else if (b.potion) {
         btns.push(`<button class="gbtn" data-act="drink">Drink</button>`);
@@ -1587,7 +1588,7 @@ export class Ui {
           const y1 = a.row * RH + RH / 2;
           const x2 = s.col * CW + CW / 2;
           const y2 = s.row * RH + RH / 2;
-          const lit = g.skillLevel(q) > 0;
+          const lit = g.hardLevel(q) > 0; // v1.6.3: prerequisites need points, not gear
           const through = list.some((o) => {
             if (o === s || o === a) return false;
             const ox = o.col * CW + CW / 2;
@@ -1611,6 +1612,7 @@ export class Ui {
           "snode",
           s.id === this.selSkill ? "sel" : "",
           lvl || isBasic(s.id) ? "learned" : "",
+          lvl && !g.hardLevel(s.id) && !isBasic(s.id) ? "granted" : "",
           !s.implemented ? "soon" : "",
           can.ok ? "can" : "",
           p.level < s.reqLvl ? "locked" : "",
@@ -1674,13 +1676,14 @@ export class Ui {
       detail = `
         <div class="iname">${s.glyph} ${esc(s.name)}</div>
         <div class="itype">${s.kind === "passive" ? "Passive" : "Active"} · Level ${lvl}/${MAX_SKILL_LVL}${p.level >= s.reqLvl && Math.min(MAX_SKILL_LVL, 1 + p.level - s.reqLvl) < MAX_SKILL_LVL ? ` (cap ${1 + p.level - s.reqLvl} at your level)` : ""}${s.mana && s.implemented ? ` · Mana ${s.mana(Math.max(1, lvl))}` : ""}</div>
+        ${lvl > g.hardLevel(s.id) ? `<div class="sfrom">${g.hardLevel(s.id) ? `${g.hardLevel(s.id)} point${g.hardLevel(s.id) === 1 ? "" : "s"} + <b>${lvl - g.hardLevel(s.id)} from items</b>` : `<b>Granted by your gear (+${lvl})</b>. It goes away if you take the item off, and doesn't open the skills after it.`}</div>` : ""}
         <div class="sblurb">${esc(s.blurb)}</div>
         ${s.implemented && s.effect ? `${lvl ? `<div class="seff">Now: ${esc(s.effect(lvl))}${dmgAt(lvl)}</div>` : ""}${lvl < MAX_SKILL_LVL ? `<div class="seff next">Next: ${esc(s.effect(lvl + 1))}${dmgAt(lvl + 1)}</div>` : ""}` : `<div class="seff soon">Coming soon</div>`}
         ${spellBaseLine}
         <div class="sreq ${p.level < s.reqLvl ? "bad" : ""}">Required level: ${s.reqLvl}</div>
         ${pre ? `<div class="sreq">${esc(pre)}</div>` : ""}
         <div class="ibtns">
-          <button class="gbtn" data-act="learn" data-id="${s.id}" ${can.ok ? "" : "disabled"}>${can.ok ? (lvl ? "Add point" : "Learn") : esc(can.why ?? "")}</button>
+          <button class="gbtn" data-act="learn" data-id="${s.id}" ${can.ok ? "" : "disabled"}>${can.ok ? (g.hardLevel(s.id) ? "Add point" : "Learn") : esc(can.why ?? "")}</button>
           ${(p.skills[s.id] ?? 0) > 0 ? `<button class="gbtn dim" data-act="unskill" data-id="${s.id}" aria-label="Remove a point">− Point</button>` : ""}
         </div>
         ${slotBtns}`;

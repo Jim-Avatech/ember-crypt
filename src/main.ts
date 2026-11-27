@@ -1,3 +1,4 @@
+import { stackPotions } from "./inventory";
 import { CLASS_NAME, SKILLS } from "./data/skills";
 import "./styles.css";
 import { AFFIXES, craftAffix, enchant, mergeDuplicateMods, rollDrop } from "./data/affixes";
@@ -176,6 +177,7 @@ function syncStash() {
       game.mergedItems += merged;
       saveSharedStash(sh.at, items);
     }
+    stackPotions(items); // v1.6.3: loose potions in an older shared stash become stacks (same count)
     game.player.stash = items;
     game.stashAt = sh.at;
   } else if (!sh || game.stashAt > sh.at) saveSharedStash(game.stashAt || Date.now(), game.player.stash);

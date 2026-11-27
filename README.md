@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.6.3: +Skills like Diablo II, potion stacks
+
+- Charged Bolt: `CB_CONE` 22.5° (45° cone, was 30°), `CB_WANDER_MAX` 33° (was 22°, scaled ×1.5), damping unchanged. Hits on one still monster (real game loop, 200 casts): level 10 (8 bolts) ≈ 5.3 at 3 tiles (v1.6.2 6.3), ≈ 4.2 at 6 tiles (4.9); level 1 (3 bolts) ≈ 1.8 (2.2) and ≈ 1.5 (1.7). Spell DPS counts 50% of the bolts (was 60%).
+- +Skills (D2): `Game.grantedLevel(id)`: "+N to <skill>" on worn, usable gear gives that skill with 0 hard points if it's the hero's class and she meets its `reqLvl`. `skillLevel` = hard + gear bonus for any skill with a hard point or a grant; "+N to <Tree>" (`tabsk`) and "+N to <Class> Skill Levels" (`clsk`) never unlock a skill on their own. Prerequisites (`canLearn`) need hard points. `dropLostSkills()` runs every frame and after equipment changes: a skill that drops to level 0 leaves the skill buttons and ⚔; a newly granted active skill goes on the first empty button. The tree shows granted skills in blue with "Granted by your gear (+N)".
+- Potions: healing and mana potions stack up to `POT_STACK` (20) per cell (`Item.qty`, an old potion without qty counts as 1) in the backpack and stash (`stackPotions`, `addPotions`, `takeOnePotion` in src/inventory.ts). Pick-up fills the belt first, then existing stacks, then a new cell; potions auto-pick-up when the belt or a stack has room. `beltFromBag()` tops the belt up from the backpack every frame (after drinking, a bigger belt, a stash withdrawal). Selling a stack sells it whole. Save load merges loose potions in bag and stash into stacks (count unchanged).
+- Leech: unchanged (see the v1.6.3 report: only weapon hits through `playerHit` leech).
+- Tests: `tests/v163.test.ts`, `scripts/v163-shots.mjs` (screenshots/v163). SW cache v36.
+
 ## v1.6.2: Charged Bolt aims better
 
 - Launch: every bolt leaves within ±`CB_CONE` (15°) of the aim, spread evenly ±12.75° plus ±2° jitter (v1.6.1: ±34° spread ±7° jitter, about 82° in all). Range 7.5 tiles (was 7).

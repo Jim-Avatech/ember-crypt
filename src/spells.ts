@@ -99,11 +99,11 @@ export interface SorcHost {
 }
 
 const alive = (m: Monster) => m.state !== "dead";
-/** v1.6.2 Charged Bolt: half of the launch cone (15° each side, 30° in all) */
-export const CB_CONE = (15 * Math.PI) / 180;
+/** Charged Bolt: half of the launch cone. v1.6.3: 22.5° each side, 45° in all (v1.6.2: 30° was too strong early) */
+export const CB_CONE = (22.5 * Math.PI) / 180;
 /** v1.6.2 Charged Bolt: the most a bolt's heading may wander off the line to its aimed point, and how much of a
  * random turn is kept (the rest pulls it back toward that line) */
-export const CB_WANDER_MAX = (22 * Math.PI) / 180;
+export const CB_WANDER_MAX = (33 * Math.PI) / 180; // v1.6.3: scaled with the cone (×1.5; was 22°)
 export const CB_WANDER_DAMP = 0.7;
 export const sb = (p: Player & { sb?: SorcBuffs }): SorcBuffs => (p.sb ??= {});
 
@@ -312,7 +312,7 @@ export function castSorc(g: SorcHost, id: string, lvl: number) {
     }
     // ---------------- lightning ----------------
     case "charged_bolt": {
-      // v1.6.2: every bolt leaves inside a 30° cone (±15°) around the aim (was ±41°), then wanders toward the aimed
+      // v1.6.3: every bolt leaves inside a 45° cone (±22.5°) around the aim (v1.6.2 ±15°, before ±41°), then wanders toward the aimed
       // point, erratically but never more than CB_WANDER_MAX off that line (the wander used to be an unbounded walk)
       const a = aimOf(g, 8);
       const n = chargedBoltN(lvl);
@@ -689,7 +689,7 @@ export function spellDps(g: Pick<SorcHost, "player" | "skillLevel" | "castTime">
     case "glacial_spike": return h(glacialK(lvl)) / per;
     case "blizzard": return (h(blizzardK(lvl)) * BLIZZARD_DUR) / per;
     case "frozen_orb": return (h(frozenOrbK(lvl)) * 5) / per;
-    case "charged_bolt": return (h(chargedBoltK(lvl)) * chargedBoltN(lvl) * 0.6) / per; // v1.6.2: ~60% of the bolts hit one target at 6 tiles (was ~10%; 0.5 assumed)
+    case "charged_bolt": return (h(chargedBoltK(lvl)) * chargedBoltN(lvl) * 0.5) / per; // v1.6.3: ~50% of the bolts hit one target at 6 tiles with the 45° cone (v1.6.2 30° cone: 0.6)
     case "telekinesis": return h(teleK(lvl)) / per;
     case "nova": return h(novaK(lvl)) / per;
     case "lightning": return h(lightningK(lvl)) / per;

@@ -1658,3 +1658,21 @@ body.portrait #rotate {
 .resrow b i, .leechrow b i { font-style: normal; font-weight: 800; }
 .resrow b i + i { margin-left: 6px; }
 .rall i { font-style: normal; font-size: 10px; margin-left: 1px; }
+/* v1.6.3: a skill only granted by gear (blue, D2 magic colour) */
+.snode.granted .sg {
+  border-color: #6f8cff;
+  color: #b9c8ff;
+  background: linear-gradient(#1e2a52, #0c1228);
+}
+.snode.granted .sl {
+  border-color: #6f8cff;
+  color: #b9c8ff;
+}
+.sfrom {
+  font-size: 12px;
+  color: #b9c8ff;
+  margin: 2px 0;
+}
+.sfrom b {
+  color: #8fa8ff;
+}

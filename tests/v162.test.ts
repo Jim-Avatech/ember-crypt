@@ -49,37 +49,17 @@ function trial(dist: number, lvl: number, withMonster = true) {
 }
 
 describe("v1.6.2 Charged Bolt", () => {
-  it("version, patch note, cache v35", () => {
-    expect(GAME_VERSION).toBe("1.6.2");
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/Charged Bolt/);
-    expect(swSrc).toContain("ember-crypt-shell-v35");
+  it("version, patch note (now second), cache bumped since", () => {
+    expect(GAME_VERSION).toBe("1.6.3");
+    const n = PATCH_NOTES.find((q) => q.version === "1.6.2")!;
+    expect(n.notes.join(" ")).toMatch(/Charged Bolt/);
+    expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
   });
-  it("every bolt leaves within ±15° of the aim (30° cone)", () => {
-    expect(deg(CB_CONE)).toBeCloseTo(15, 6);
-    for (let i = 0; i < 40; i++) {
-      const r = trial(6, 10);
-      expect(r.n).toBe(8);
-      for (const a of r.launch) expect(Math.abs(deg(a))).toBeLessThanOrEqual(15.5);
-    }
-  });
-  it("still wanders (headings change), but its heading stays within cone + wander bound of the aim (±37°); mostly inside the cone", () => {
-    let all: number[] = [], cone: boolean[] = [];
-    for (let i = 0; i < 40; i++) {
-      const r = trial(6, 10, false);
-      all = all.concat(r.devs);
-      cone = cone.concat(r.inCone);
-    }
+  // v1.6.3: the cone is 45° now (CB_CONE 22.5°); the launch / wander / hit-share checks moved to v163.test.ts
+  it("the bolt still wanders within cone + wander bound (any cone)", () => {
+    let all: number[] = [];
+    for (let i = 0; i < 20; i++) all = all.concat(trial(6, 10, false).devs);
     expect(Math.max(...all)).toBeLessThanOrEqual(CB_CONE + CB_WANDER_MAX + 1e-6);
-    expect(all.filter((d) => d > 0.1).length / all.length).toBeGreaterThan(0.3); // erratic, not straight lines
-    expect(cone.filter(Boolean).length / cone.length).toBeGreaterThan(0.85);
+    expect(trial(6, 10).launch.every((a) => Math.abs(deg(a)) <= deg(CB_CONE) + 0.5)).toBe(true);
   });
-  it("a single monster takes a good share of the bolts at 3 and 6 tiles (but not all: they still go awry)", () => {
-    const avg = (d: number, lvl: number) => { let s = 0; for (let i = 0; i < 200; i++) s += trial(d, lvl).hits; return s / 200; };
-    const a3 = avg(3, 10), a6 = avg(6, 10), b6 = avg(6, 1);
-    console.log(`HITS lvl10 3t ${a3.toFixed(2)}/8 6t ${a6.toFixed(2)}/8; lvl1 3t ${avg(3, 1).toFixed(2)}/3 6t ${b6.toFixed(2)}/3`);
-    expect(a3 / 8).toBeGreaterThan(0.6);
-    expect(a6 / 8).toBeGreaterThan(0.45);
-    expect(a6 / 8).toBeLessThan(0.9);
-    expect(b6 / 3).toBeGreaterThan(0.4);
-  }, 120000);
 });

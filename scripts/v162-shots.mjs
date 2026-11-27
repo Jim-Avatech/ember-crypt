@@ -80,8 +80,9 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
     return { bolts, hits, maxLaunchDeg: Math.max(...devs), inFlight: g.spells.filter((s) => s.id === "charged_bolt").length };
   }, idle);
   await page.waitForTimeout(150);
-  C("every bolt leaves within ±15° of the aim", res.maxLaunchDeg <= 15.5, JSON.stringify(res));
-  C("a monster 6 tiles away takes at least 45% of the bolts (10 casts)", res.hits / res.bolts >= 0.45, `${res.hits}/${res.bolts}`);
+  // v1.6.3: the cone is 45° (±22.5°) now; v163-shots checks it closely
+  C("every bolt leaves within the cone (±22.5° since v1.6.3)", res.maxLaunchDeg <= 23, JSON.stringify(res));
+  C("a monster 6 tiles away takes at least 30% of the bolts (10 casts; 45% before v1.6.3)", res.hits / res.bolts >= 0.3, `${res.hits}/${res.bolts}`);
   await page.screenshot({ path: `${out}/01-charged-bolt-6-tiles${sfx}.png` });
   await ev(() => { delete __ec.game.update; });
   C("no page errors", errs.length === 0, errs.join(" | "));

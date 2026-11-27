@@ -165,11 +165,12 @@ describe("stat application", () => {
     expect(d.gf).toBe(40);
   });
 
-  it("+skill gear raises learned skills only", () => {
+  it("+skill gear grants the skill (v1.6.3, D2) and adds to points", () => {
     const g = new Game(events, null, 5);
     g.player.level = 10; // v1.1: the magic helm needs level 7 to work
     g.player.equip.head = { ...makeItem("helm", 10), q: "magic", mods: [{ s: "skill", v: 2, sk: "bash" }] };
-    expect(g.skillLevel("bash")).toBe(0);
+    expect(g.skillLevel("bash")).toBe(2);
+    expect(g.hardLevel("bash")).toBe(0);
     g.player.skills.bash = 1;
     expect(g.skillLevel("bash")).toBe(3);
     expect(g.hardLevel("bash")).toBe(1);

@@ -24,7 +24,7 @@ import {
   lightningStrikeDmg, lightningStrikeHits, magicArrowDmg, multiShotArrows, multiShotPer, strafeDur, penetrateAR, pierceChance, plagueDps, poisonJavDps,
   powerStrikeLight, slowMissilesDur, strafeArrows, strafeDmg, valkDmg, valkLife,
 } from "./data/skills";
-import { type BagEntry, STASH_H, STASH_W, addItem, findSpot, fits, moveItem, sizeOf } from "./inventory";
+import { type BagEntry, STASH_H, STASH_W, addItem, addPotions, findSpot, fits, moveItem, potQty, POT_STACK, sizeOf, stackPotions, takeOnePotion } from "./inventory";
 import { type Level, type Room, bfs, generateLevel, generateTown, idx, isFloor, lineOfSight } from "./map";
 import { Rng, chance, rand, randInt } from "./rng";
 import { FCR_CAP, SORC_IDS, castTimeFor, warmthRegen } from "./data/sorc";
@@ -799,6 +799,9 @@ function sanitizeV7(d: SaveData): SaveData {
         delete p.skills[id];
       }
     }
+  // v1.6.3: loose potions in the backpack and stash merge into stacks (same count, fewer cells; nothing is lost)
+  if (Array.isArray(p.bag)) stackPotions(p.bag);
+  if (Array.isArray(p.stash)) stackPotions(p.stash);
   // a slot holding a skill of another class (hand-edited save) is cleared; basic attacks are fine
   if (Array.isArray(p.slots)) p.slots = p.slots.map((s) => (s && (isBasic(s) || SKILL_BY_ID[s]?.cls === p.cls) ? s : null));
   return d;
@@ -1891,6 +1894,10 @@ export class Game {
   }
 
   private updatePlayer(dt: number, input: FrameInput, d: Derived) {
+    // v1.6.3: a skill gear granted is gone (item off, broken requirement): off the buttons
+    if (this.dropLostSkills()) this.events.changed();
+    // v1.6.3: potions move from the backpack into the belt whenever it has room
+    if (this.beltFromBag()) this.events.changed();
     const p = this.player;
     // regen + potions
     // v0.8: slower natural regen (was full mana in 22 s, full life in 160 s)
@@ -2021,7 +2028,8 @@ export class Game {
       if (g.t < 0.35) continue;
       if (g.item) {
         const pk = BASE_BY_ID[g.item.baseId].potion;
-        if (!pk || (pk === "hp" ? p.hpPots : p.mpPots) >= this.beltCap()) continue;
+        // v1.6.3: also when a backpack stack of that potion has room (it takes no new cell)
+        if (!pk || ((pk === "hp" ? p.hpPots : p.mpPots) >= this.beltCap() && !p.bag.some((e) => e.item.baseId === g.item!.baseId && potQty(e.item) < POT_STACK))) continue;
       }
       if (Math.hypot(g.x - p.x, g.y - p.y) < 0.75) {
         this.pickUp(g);
@@ -2031,10 +2039,14 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ skills & attacks
-  /** Skill level including +skill gear (gear only boosts skills you've learned). */
+  /**
+   * Skill level including +skill gear. v1.6.3 (D2): "+N to <skill>" on worn gear GRANTS that skill with no points in
+   * it, if it's the hero's own class and she meets its level requirement (grantedLevel). "+N to <Tree>" and "+N to
+   * <Class> Skill Levels" only add to skills she already has: a hard point, or granted by a "+N to <skill>".
+   */
   skillLevel(id: string) {
     const hard = this.player.skills[id] ?? 0;
-    if (!hard) return 0;
+    if (!hard && !this.grantedLevel(id)) return 0;
     let bonus = this.gearSkillBonus(id);
     if (this.player.buffs.bcmd > 0) bonus += bcmdBonus(this.gearLevel("battle_command"));
     return hard + bonus;
@@ -2060,10 +2072,54 @@ export class Game {
     return bonus;
   }
 
+  /**
+   * v1.6.3: levels of a skill that "+N to <skill>" gear gives a hero with no points in it (0 if none, another
+   * class's skill, or below its required level).
+   */
+  grantedLevel(id: string): number {
+    const sd = SKILL_BY_ID[id];
+    const p = this.player;
+    if (!sd || sd.cls !== p.cls || !sd.implemented || p.level < sd.reqLvl) return 0;
+    let n = 0;
+    for (const it of this.worn()) for (const m of it.mods ?? []) if (m.s === "skill" && m.sk === id) n += m.v;
+    return n;
+  }
+  /** v1.6.3: skills gear granted at the last check (a newly granted active skill goes on an empty button once) */
+  private grantedSeen = new Set<string>();
+  /** v1.6.3: take skills the hero no longer has (a granting item came off) off the buttons and ⚔; put a newly
+   * granted active skill on the first empty button */
+  dropLostSkills(assignNew = false) {
+    const p = this.player;
+    let changed = false;
+    const now = new Set<string>();
+    for (const it of this.worn()) for (const m of it.mods ?? []) if (m.s === "skill" && m.sk && !(p.skills[m.sk] ?? 0) && this.grantedLevel(m.sk) > 0) now.add(m.sk);
+    for (const id of now) {
+      if (!assignNew || this.grantedSeen.has(id) || SKILL_BY_ID[id]?.kind !== "active" || p.slots.includes(id) || p.mainAtk === id) continue;
+      const empty = p.slots.indexOf(null);
+      if (empty >= 0) {
+        p.slots[empty] = id;
+        changed = true;
+      }
+    }
+    this.grantedSeen = now;
+    p.slots = p.slots.map((s) => {
+      if (s && !isBasic(s) && this.skillLevel(s) <= 0) {
+        changed = true;
+        return null;
+      }
+      return s;
+    });
+    if (p.mainAtk && !isBasic(p.mainAtk) && this.skillLevel(p.mainAtk) <= 0) {
+      p.mainAtk = null;
+      changed = true;
+    }
+    return changed;
+  }
+
   /** Hard points + gear (no Battle Command), so Battle Command doesn't feed itself. */
   private gearLevel(id: string) {
     const hard = this.player.skills[id] ?? 0;
-    if (!hard) return 0;
+    if (!hard && !this.grantedLevel(id)) return 0;
     let bonus = this.gearSkillBonus(id);
     return hard + bonus;
   }
@@ -2084,7 +2140,8 @@ export class Game {
     if (lvl >= MAX_SKILL_LVL) return { ok: false, why: "Maxed" };
     if (p.level < s.reqLvl) return { ok: false, why: `Requires level ${s.reqLvl}` };
     if (lvl >= skillCap(p.level, s.reqLvl)) return { ok: false, why: `Next point at character level ${s.reqLvl + lvl}` };
-    const missing = s.prereq.filter((q) => !this.skillLevel(q));
+    // v1.6.3: prerequisites need points (a skill only granted by gear doesn't open the tree, like D2)
+    const missing = s.prereq.filter((q) => !this.hardLevel(q));
     if (missing.length) return { ok: false, why: `Requires ${missing.map((m) => SKILL_BY_ID[m].name).join(" and ")}` };
     if (p.skillPoints <= 0) return { ok: false, why: "No skill points" };
     return { ok: true };
@@ -4255,9 +4312,22 @@ export class Game {
       this.events.sound("gold");
     } else if (g.item) {
       const b = BASE_BY_ID[g.item.baseId];
-      if (b.potion === "hp" && p.hpPots < this.beltCap()) p.hpPots++;
-      else if (b.potion === "mp" && p.mpPots < this.beltCap()) p.mpPots++;
-      else if (!addItem(p.bag, g.item)) {
+      if (b.potion) {
+        // v1.6.3: a (stack of) potion(s) fills the belt first, then tops up backpack stacks, then new cells
+        let n = potQty(g.item);
+        const toBelt = Math.max(0, Math.min(n, this.beltCap() - (b.potion === "hp" ? p.hpPots : p.mpPots)));
+        if (b.potion === "hp") p.hpPots += toBelt;
+        else p.mpPots += toBelt;
+        n -= toBelt;
+        if (n > 0) n = addPotions(p.bag, b.id, n, makeItem);
+        if (n > 0) {
+          g.item.qty = n;
+          if (n < potQty(g.item) || toBelt) this.events.changed();
+          this.events.toast("Not enough room in your bag");
+          this.events.sound("nomana");
+          return false;
+        }
+      } else if (!addItem(p.bag, g.item)) {
         this.events.toast("Not enough room in your bag");
         this.events.sound("nomana");
         return false;
@@ -4565,6 +4635,7 @@ export class Game {
     if (!spot) return x === undefined ? "Your stash is full" : "It doesn't fit there";
     p.bag = p.bag.filter((q) => q !== e);
     p.stash.push({ item: e.item, ...spot });
+    stackPotions(p.stash); // v1.6.3
     this.stashAt = Date.now();
     this.events.sound("equip");
     this.events.changed();
@@ -4583,6 +4654,8 @@ export class Game {
     if (!spot) return x === undefined ? "Your backpack is full" : "It doesn't fit there";
     p.stash = p.stash.filter((q) => q !== e);
     p.bag.push({ item: e.item, ...spot });
+    stackPotions(p.bag); // v1.6.3
+    this.beltFromBag();
     this.stashAt = Date.now();
     this.events.sound("equip");
     this.events.changed();
@@ -4619,6 +4692,15 @@ export class Game {
     this.events.changed();
   }
 
+  /** v1.6.3: whenever the belt has room (drank, bigger belt, potions came into the bag) it fills from the backpack */
+  beltFromBag(): boolean {
+    const p = this.player;
+    const a = p.hpPots + p.mpPots;
+    this.refillBelt("hp");
+    this.refillBelt("mp");
+    return p.hpPots + p.mpPots !== a;
+  }
+
   /** v1.1: top the belt up with potions of this kind from the backpack (after drinking from the belt). */
   refillBelt(kind: "hp" | "mp") {
     const p = this.player;
@@ -4626,7 +4708,7 @@ export class Game {
     while ((kind === "hp" ? p.hpPots : p.mpPots) < cap) {
       const e = p.bag.find((q) => BASE_BY_ID[q.item.baseId].potion === kind);
       if (!e) break;
-      p.bag = p.bag.filter((q) => q !== e);
+      takeOnePotion(p.bag, e); // v1.6.3: one from the stack
       if (kind === "hp") p.hpPots++;
       else p.mpPots++;
     }
@@ -4642,13 +4724,15 @@ export class Game {
     if (!pk) return "Only potions go on the belt";
     if ((pk === "hp" ? p.hpPots : p.mpPots) >= this.beltCap()) return "Your belt is full";
     if (!inBag && !this.inTown) return "The stash is in Ember Camp";
-    if (inBag) p.bag = p.bag.filter((q) => q !== e);
-    else {
-      p.stash = p.stash.filter((q) => q !== e);
-      this.stashAt = Date.now();
+    // v1.6.3: as many of the stack as the belt has room for
+    const list = inBag ? p.bag : p.stash;
+    let room = this.beltCap() - (pk === "hp" ? p.hpPots : p.mpPots);
+    while (room-- > 0 && list.includes(e)) {
+      takeOnePotion(list, e);
+      if (pk === "hp") p.hpPots++;
+      else p.mpPots++;
     }
-    if (pk === "hp") p.hpPots++;
-    else p.mpPots++;
+    if (!inBag) this.stashAt = Date.now();
     this.events.changed();
     return null;
   }
@@ -4659,7 +4743,7 @@ export class Game {
     if (!e) return;
     const pk = BASE_BY_ID[e.item.baseId].potion;
     if (!pk || this.potionWait(pk) > 0) return;
-    p.bag = p.bag.filter((q) => q !== e);
+    takeOnePotion(p.bag, e); // v1.6.3: one from the stack
     this.drink(pk);
   }
 
@@ -4668,7 +4752,7 @@ export class Game {
     const p = this.player;
     const e = this.bagEntry(uid);
     if (!e || !this.inTown) return 0;
-    const price = sellPrice(e.item);
+    const price = sellPrice(e.item) * potQty(e.item); // v1.6.3: a potion stack sells whole
     p.bag = p.bag.filter((q) => q !== e);
     p.gold += price;
     if (!BASE_BY_ID[e.item.baseId].potion) {
@@ -4706,7 +4790,7 @@ export class Game {
     if (b.potion) {
       if (b.potion === "hp" && p.hpPots < this.beltCap()) p.hpPots++;
       else if (b.potion === "mp" && p.mpPots < this.beltCap()) p.mpPots++;
-      else if (!addItem(p.bag, makeItem(b.id))) return "Not enough room in your bag";
+      else if (addPotions(p.bag, b.id, 1, makeItem) > 0) return "Not enough room in your bag"; // v1.6.3: stacks
     } else {
       if (!addItem(p.bag, e.item)) return "Not enough room in your bag";
       this.vendorStock = this.vendorStock.filter((q) => q !== e);
@@ -4775,6 +4859,7 @@ export class Game {
   }
 
   private clampVitals() {
+    if (this.dropLostSkills(true)) this.events.changed();
     const d = this.derived();
     const p = this.player;
     p.hp = Math.min(p.hp, d.maxHp);

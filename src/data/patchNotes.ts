@@ -10,6 +10,16 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.6.3",
+    title: "+Skills like Diablo II, potion stacks",
+    notes: [
+      "Charged Bolt spreads a bit wider: a 45° cone around your aim (was 30°), with a bit more wander. About half of the bolts reach an enemy 6 tiles away (was about 6 of 10).",
+      "“+1 to Frozen Armor” (or any single skill) on an item now gives you that skill even with no points in it, as long as it's your class and you meet its level. It shows in blue in the skill tree, goes on an empty skill button, and leaves your buttons when you take the item off. It doesn't open the skills after it.",
+      "“+2 to Fire Spells” and “+1 to Sorceress Skill Levels” still only raise skills you have (points, or granted by an item), like Diablo II.",
+      "Healing and mana potions stack in the backpack and stash (up to 20 a cell), and move into your belt by themselves whenever it has room. Older saves merge their loose potions; none are lost.",
+    ],
+  },
+  {
     version: "1.6.2",
     title: "Charged Bolt aims better",
     notes: [
