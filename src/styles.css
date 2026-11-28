@@ -1698,3 +1698,5 @@ body.portrait #rotate {
 .spelldmg {
   color: #c9a8ff;
 }
+/* v1.8.1: Artifacts tab note about the altar and the Endless Tower */
+.artnote { font-size: 12px; color: #c8b88a; margin-top: 8px; line-height: 1.35; }

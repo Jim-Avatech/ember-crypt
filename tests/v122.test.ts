@@ -61,7 +61,7 @@ function fly(g: Game, onFrame?: (t: number) => void) {
 }
 
 describe("v1.2.2 Guided Arrow", () => {
-  it("version label", () => expect(GAME_VERSION).toBe("1.8"));
+  it("version label", () => expect(GAME_VERSION).toBe("1.8.1"));
 
   it("shot down a hall with no target in sight: acquires a monster in the room in flight and curves into it (not the back wall)", () => {
     const { g, mk } = hallRoom();

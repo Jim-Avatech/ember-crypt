@@ -4,10 +4,13 @@
  * separate full-resolution overlay so it stays sharp.
  */
 import { BASE_BY_ID, QUALITY_COLOR, itemName, lookOf, makeItem, qualityOf } from "./data/items";
-import { ARTIFACT_BY_ID, ARTIFACT_COLOR, type Theme, actDef } from "./data/acts";
+import { ARTIFACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, SANCTUM_FLOOR as SANCTUM_FLOOR_R, type Theme, actDef } from "./data/acts";
 import { ELEM_COLOR, ELITE_MODS } from "./data/monsters";
 import type { Ally, Game, GroundItem, Monster, MonsterShot, Nova, Projectile } from "./game";
-import { PIERCE_COLOR, fmtDps } from "./game";
+import { ALTAR_RISE, PIERCE_COLOR, TOWER_PORTAL_AT, fmtDps } from "./game";
+/** v1.8.1: portal colors (rgb): the blue camp portal and the Endless Tower's violet-and-gold one */
+const PORTAL_COLORS = { glow: "80,150,255", edge: "170,215,255", swirl: "90,160,255", core: "30,70,170" };
+const TOWER_PORTAL_COLORS = { glow: "200,140,255", edge: "255,214,120", swirl: "180,110,255", core: "70,30,130" };
 import { artifactIcon } from "./sprites/artifacts";
 import { idx, isFloor } from "./map";
 import { groundSprite, goldSprite } from "./sprites/items";
@@ -279,6 +282,10 @@ export class Renderer {
       ctx.drawImage(f, this.ax(wp.x - 0.5, wp.y - 0.5) - HW, this.ay(wp.x - 0.5, wp.y - 0.5));
     }
     if (game.portal && game.inTown) this.drawPortal(ctx, game.portal.x, game.portal.y, game.time, 1);
+    // v1.8.1: the Endless Tower's portal (violet and gold, taller) once Kharos is beaten
+    if (game.inTown && game.player.towerOpen) this.drawPortal(ctx, TOWER_PORTAL_AT.x, TOWER_PORTAL_AT.y, game.time, 1.3, TOWER_PORTAL_COLORS);
+    // v1.8.1: the Sanctum's altar of the four
+    if (game.altar && !game.inTown) this.drawAltar(ctx, game);
     // rings
     for (const rg of game.rings) {
       const kk = rg.t / rg.life;
@@ -519,6 +526,30 @@ export class Renderer {
       f.strokeText("Brann the Runesmith", this.cx(v.x, v.y), yy);
       f.fillText("Brann the Runesmith", this.cx(v.x, v.y), yy);
     }
+    if (game.inTown && game.player.towerOpen) {
+      const near = game.nearTowerPortal();
+      f.font = "bold 12px Georgia, 'Times New Roman', serif";
+      f.textAlign = "center";
+      f.lineWidth = 3;
+      f.strokeStyle = "rgba(0,0,0,.85)";
+      f.fillStyle = near ? "#ffe9a8" : "#d0b0ff";
+      const label = `Endless Tower${game.player.towerBest ? ` · best ${game.player.towerBest}` : ""}`;
+      const yy = this.cy(TOWER_PORTAL_AT.x, TOWER_PORTAL_AT.y) - 52 * this.ascale;
+      f.strokeText(label, this.cx(TOWER_PORTAL_AT.x, TOWER_PORTAL_AT.y), yy);
+      f.fillText(label, this.cx(TOWER_PORTAL_AT.x, TOWER_PORTAL_AT.y), yy);
+    }
+    const left = game.portalLeft();
+    if (game.inTown && game.portal && left !== null) {
+      f.font = "bold 12px Georgia, 'Times New Roman', serif";
+      f.textAlign = "center";
+      f.lineWidth = 3;
+      f.strokeStyle = "rgba(0,0,0,.85)";
+      f.fillStyle = left < 60 ? "#ff8a6a" : "#bfe0ff";
+      const label = `Tower ${game.portal.floor - SANCTUM_FLOOR_R} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
+      const yy = this.cy(game.portal.x, game.portal.y) - 42 * this.ascale;
+      f.strokeText(label, this.cx(game.portal.x, game.portal.y), yy);
+      f.fillText(label, this.cx(game.portal.x, game.portal.y), yy);
+    }
     for (const fl of game.floaters) {
       const kk = fl.t / fl.life;
       const sx = this.cx(fl.x, fl.y);
@@ -714,13 +745,46 @@ export class Renderer {
   }
 
   /** Blue oval portal (camp → where you recalled from), or the forming one while channeling. */
-  private drawPortal(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, k: number) {
+  /** v1.8.1: a stone altar with four sockets; the artifacts glow in them while Kharos rises */
+  private drawAltar(ctx: CanvasRenderingContext2D, game: Game) {
+    const a = game.altar!;
+    const cx = Math.round(this.ax(a.x, a.y));
+    const cy = Math.round(this.ay(a.x, a.y));
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.fillRect(cx - 15, cy - 2, 30, 5);
+    ctx.fillStyle = "#4a4036";
+    ctx.fillRect(cx - 13, cy - 12, 26, 11);
+    ctx.fillStyle = "#6a5c4a";
+    ctx.fillRect(cx - 14, cy - 15, 28, 4);
+    ctx.fillStyle = "#2a241e";
+    ctx.fillRect(cx - 13, cy - 2, 26, 1);
+    const have = new Set(game.player.artifacts.map((f) => f.id));
+    const rising = a.riseT > 0;
+    ARTIFACTS.forEach((art, i) => {
+      const sx = cx - 10 + i * 6;
+      const lit = rising || (have.has(art.id) && !a.used);
+      ctx.fillStyle = lit ? ARTIFACT_COLOR : "#1a1612";
+      ctx.fillRect(sx, cy - 14, 3, 2);
+      if (lit) {
+        ctx.fillStyle = `rgba(255,190,90,${0.35 + 0.25 * Math.sin(game.time * 5 + i)})`;
+        ctx.fillRect(sx - 1, cy - 18, 5, 4);
+      }
+    });
+    if (rising) {
+      const k = 1 - a.riseT / ALTAR_RISE;
+      ctx.fillStyle = `rgba(255,210,120,${0.25 + 0.5 * k})`;
+      const h = Math.round(20 + 40 * k);
+      ctx.fillRect(cx - 3, cy - 15 - h, 6, h);
+    }
+  }
+
+  private drawPortal(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, k: number, col = PORTAL_COLORS) {
     const cx = Math.round(this.ax(x, y));
     const cy = Math.round(this.ay(x, y));
     const H = Math.round(34 * k);
     const W = Math.round(12 * k);
     // ground glow
-    ctx.fillStyle = `rgba(80,150,255,${0.25 * k})`;
+    ctx.fillStyle = `rgba(${col.glow},${0.25 * Math.min(1, k)})`;
     ctx.fillRect(cx - W - 3, cy - 1, W * 2 + 7, 3);
     for (let yy = 0; yy < H; yy++) {
       const v = (yy - H / 2) / (H / 2);
@@ -728,7 +792,8 @@ export class Renderer {
       for (let xx = -half; xx <= half; xx++) {
         const edge = Math.abs(xx) >= half - 1;
         const swirl = Math.sin(xx * 0.9 + yy * 0.5 - t * 6) > 0.4;
-        ctx.fillStyle = edge ? `rgba(170,215,255,${0.95 * k})` : swirl ? `rgba(90,160,255,${0.8 * k})` : `rgba(30,70,170,${0.75 * k})`;
+        const a = Math.min(1, k);
+        ctx.fillStyle = edge ? `rgba(${col.edge},${0.95 * a})` : swirl ? `rgba(${col.swirl},${0.8 * a})` : `rgba(${col.core},${0.75 * a})`;
         ctx.fillRect(cx + xx, cy - H + yy, 1, 1);
       }
     }

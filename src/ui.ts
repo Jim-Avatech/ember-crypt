@@ -14,7 +14,7 @@ import type { Settings } from "./save";
 import { type GuideSec, guideHtml } from "./guide";
 import { itemIconUrl } from "./sprites/items";
 import { artifactIcon } from "./sprites/artifacts";
-import { ACTS, ARTIFACTS, LEVELS_PER_ACT, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, levelInAct, whereLabel } from "./data/acts";
+import { ACTS, ARTIFACTS, LEVELS_PER_ACT, SANCTUM_FLOOR, actDef, actOf, firstFloorOf, hasWaypoint, isFinalLevel, isSanctum, isTower, levelInAct, towerLevel, whereLabel } from "./data/acts";
 import { MONSTERS } from "./data/monsters";
 import { SPELL_ELEM, SORC_IDS, casterSpellDmg } from "./data/sorc";
 import { SPELL_K, type SorcHost, masteryPct, spellDamageText } from "./spells";
@@ -31,7 +31,10 @@ const artifactUrl = (id: string, sil = false) => {
   return u;
 };
 /** "Ember Crypt · Level 3" */
-const floorLabel = (f: number) => (f <= 0 ? "Ember Camp" : `${actDef(f).area} · Level ${levelInAct(f)}/${LEVELS_PER_ACT}`);
+const floorLabel = (f: number) =>
+  f <= 0 ? "Ember Camp" : isSanctum(f) ? "Sanctum of the Four" : isTower(f) ? `Endless Tower · Floor ${towerLevel(f)}` : `${actDef(f).area} · Level ${levelInAct(f)}/${LEVELS_PER_ACT}`;
+/** v1.8.1: m:ss */
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 export type PanelTab = "char" | "inv" | "skills" | "arts" | "guide" | "settings" | "shop" | "wp" | "stash" | "craft";
 
@@ -303,6 +306,8 @@ export class Ui {
     else if (a === "stash") this.open("stash");
     else if (a === "waypoint") this.open("wp");
     else if (a === "portal") g.usePortal();
+    else if (a === "tower") g.enterTower();
+    else if (a === "altar") g.useAltar();
   }
 
   // ------------------------------------------------------------ HUD
@@ -324,7 +329,7 @@ export class Ui {
       Math.round(hpPct * 200), Math.round(mpPct * 200), Math.round(xpPct * 300), Math.ceil(p.hp), Math.ceil(p.mana),
       p.hpPots, p.mpPots, slots, p.statPoints, p.skillPoints, g.floor, g.inTown, p.level, ctx,
       tbuffs.map((b) => `${b.id}${Math.ceil(b.left)}/${b.full ? Math.round((b.left / b.full) * 24) : 0}x${b.stacks ?? 0}`).join(), g.maxFloor,
-      g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
+      g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, Math.ceil(g.portalLeft() ?? -1), p.towerBest ?? 0, !!g.altar?.used, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
       p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, p.equip.off?.baseId, p.mainAtk, p.cls, cool(g.mainSkill()),
       g.mainSkill() ? (SKILL_BY_ID[g.mainSkill()!].mana?.(g.skillLevel(g.mainSkill()!)) ?? 0) <= p.mana : -1, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
     ].join("|");
@@ -358,7 +363,7 @@ export class Ui {
     $(r, "#btn-mp").classList.toggle("cool", g.potionWait("mp") > 0);
     // v0.9.2: no top-left text (floor and portal info come as toasts; ⌂ Town is top right). The same line is kept
     // off-screen as the HUD's accessible name (screen readers, tests).
-    $(r, "#hud").setAttribute("aria-label", `${g.inTown ? "Ember Camp" : `Act ${actDef(g.floor).roman} · ${floorLabel(g.floor)}`}   ·   Lv ${p.level} ${CLASS_NAME[p.cls]}`);
+    $(r, "#hud").setAttribute("aria-label", `${g.inTown ? "Ember Camp" : g.floor > SANCTUM_FLOOR - 1 ? floorLabel(g.floor) : `Act ${actDef(g.floor).roman} · ${floorLabel(g.floor)}`}   ·   Lv ${p.level} ${CLASS_NAME[p.cls]}`);
     $(r, "#dot-char").textContent = p.statPoints ? `${p.statPoints}` : "";
     $(r, "#dot-skills").textContent = p.skillPoints ? `${p.skillPoints}` : "";
     for (let i = 0; i < SKILL_SLOTS; i++) {
@@ -384,7 +389,11 @@ export class Ui {
     btn.hidden = !ctx;
     btn.dataset.kind = ctx ?? "";
     const nx = g.floor + 1;
-    btn.textContent = ctx === "descend" ? (levelInAct(nx) === 1 ? `▼ Enter Act ${actDef(nx).roman}: ${actDef(nx).area}` : `▼ Descend to Level ${levelInAct(nx)}`) : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "craft" ? "⚒ Craft with Brann" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)}` : "";
+    const left = g.portalLeft();
+    btn.textContent = ctx === "tower" ? `⟁ Enter the Endless Tower · floor 1${p.towerBest ? ` (best ${p.towerBest})` : ""}`
+      : ctx === "altar" ? (g.missingArtifacts().length ? `✧ Altar of the Four · ${4 - g.missingArtifacts().length}/4 artifacts` : "✧ Place the four artifacts")
+      : ctx === "portal" && left !== null ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)} · ${mmss(left)}`
+      : ctx === "descend" ? (isSanctum(nx) ? "▼ Enter the Sanctum of the Four" : isTower(nx) ? `▲ Climb to tower floor ${towerLevel(nx)}` : levelInAct(nx) === 1 ? `▼ Enter Act ${actDef(nx).roman}: ${actDef(nx).area}` : `▼ Descend to Level ${levelInAct(nx)}`) : ctx === "trade" ? "⚖ Trade with Hilde" : ctx === "craft" ? "⚒ Craft with Brann" : ctx === "stash" ? "▣ Open stash" : ctx === "waypoint" ? "✦ Waypoint" : ctx === "portal" ? `◎ Portal back to ${floorLabel(g.portal?.floor ?? 1)}` : "";
     // v1.5: where you are, right above the minimap; v1.5.1: the level within the act ("Act 4 · Level 7")
     const where = whereLabel(g.inTown ? 0 : g.floor);
     const wEl = $(r, "#where");
@@ -1552,9 +1561,11 @@ export class Ui {
       if (actOf(deepest) === a.n && !hasWaypoint(deepest)) rows.push(`<div class="wpnext">Deepest: Level ${levelInAct(deepest)} · next waypoint at ${Math.ceil(levelInAct(deepest) / 5) * 5}</div>`);
       return `<div class="wpact"><div class="wph">Act ${a.roman} · ${a.area}</div>${rows.join("")}</div>`;
     }).join("");
+    // v1.8.1: the Sanctum of the Four, once reached, sits under the camp button
+    const sanctum = g.maxFloor >= SANCTUM_FLOOR ? row(SANCTUM_FLOOR, "✧ Sanctum of the Four") : "";
     return `
       <div class="wpwrap">
-        <div class="wpcamp">${row(0, "Ember Camp")}<small class="hint">Waypoints on level 1 and every 5th level of each act. Use ⌂ Town and the blue portal to come back to any other level. ☠ = the act's final boss (level ${LEVELS_PER_ACT}).</small></div>
+        <div class="wpcamp">${row(0, "Ember Camp")}${sanctum}<small class="hint">Waypoints on level 1 and every 5th level of each act. Use ⌂ Town and the blue portal to come back to any other level. ☠ = the act's final boss (level ${LEVELS_PER_ACT}).</small></div>
         <div class="wpacts">${cols}</div>
       </div>`;
   }
@@ -1574,6 +1585,7 @@ export class Ui {
       <div class="artwrap">
         <div class="arthead"><b>Artifacts</b> · ${p.artifacts.length} of ${ARTIFACTS.length} found<small> · The final bosses of Acts I–IV carry one each. They're kept here, not in your bag, and saved with your hero.</small></div>
         <div class="artgrid">${cards}</div>
+        <div class="artnote">${p.towerOpen ? `⟁ <b>Endless Tower</b> open · best floor ${p.towerBest ?? 0}. Its portal stands in camp, west of the campfire. A camp portal opened in the tower stays open 5 minutes; if it closes while you're away (or you fall), the run ends and the next one starts on floor 1.` : `Bring all four to the altar in the Sanctum of the Four, past Vorthak at the end of Act V, to summon Kharos, the First Flame.`}</div>
       </div>`;
   }
 

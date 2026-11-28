@@ -11,7 +11,7 @@ export type MonsterKind =
   | "mummy" | "raider" | "priest" | "boss2" | "sekhet"
   | "lurker" | "flayer" | "spitter" | "bloater" | "boss3" | "mire"
   | "imp" | "knight" | "conjurer" | "soul" | "boss4" | "malakar"
-  | "husk" | "revenant" | "rimecaller" | "wraith" | "boss5" | "frostking";
+  | "husk" | "revenant" | "rimecaller" | "wraith" | "boss5" | "frostking" | "kharos";
 
 /** Sprite species (see sprites/puppet.ts). */
 export type Species =
@@ -107,6 +107,8 @@ export const MONSTERS: Record<MonsterKind, MonsterDef> = {
   wraith: M("wraith", { name: "Frost Wraith", species: "soul", behavior: "exploder", elem: "cold", hp: 12, dmgMin: 9, dmgMax: 15, speed: 2.8, atkInterval: 1, windup: 0.5, reach: 0.9, radius: 0.28, xp: 16, ar: 999, def: 3, aggro: 9, pack: [1, 2], blood: "#bfe8ff", barY: 36, tint: "#9ae0ff", blurb: "Rushes in and bursts in freezing cold." }),
   boss5: M("boss5", { name: "Frost Lord", rank: "boss", species: "boss4", elem: "cold", hp: 160, dmgMin: 6, dmgMax: 12, speed: 1.55, atkInterval: 1.2, windup: 0.5, reach: 1.0, radius: 0.5, xp: 210, ar: 50, def: 12, aggro: 7, pack: [1, 1], blood: "#3a6a9a", barY: 70, tint: "#7ac0ff", blurb: "Guards the stairs on each level of the citadel." }),
   frostking: M("frostking", { name: "Vorthak, the Frozen King", rank: "final", species: "lich", behavior: "ranged", elem: "cold", hp: 430, dmgMin: 8, dmgMax: 14, speed: 1.45, atkInterval: 1.4, windup: 0.6, reach: 5, radius: 0.5, xp: 1200, ar: 76, def: 20, aggro: 10, pack: [1, 1], blood: "#8ad8ff", barY: 78, tint: "#8ac8ff", blurb: "Act V final boss. Ice bolt fan, frost nova, an icy charge, and summoned husks.", shot: { speed: 8.5, range: 10, look: "bolt", color: "#9ae0ff" }, specials: ["bolts", "nova", "charge", "summon"] }),
+  // ---------------------------------------------------------------- v1.8.1 the big boss of the Sanctum of the Four
+  kharos: M("kharos", { name: "Kharos, the First Flame", rank: "final", species: "malakar", elem: "fire", hp: 560, dmgMin: 9, dmgMax: 16, speed: 1.45, atkInterval: 1.4, windup: 0.7, reach: 1.3, radius: 0.65, xp: 3000, ar: 80, def: 24, aggro: 14, pack: [1, 1], blood: "#ffd27a", barY: 88, tint: "#ffe9a8", blurb: "Summoned at the Sanctum's altar with all four artifacts. Every attack is telegraphed: fire nova, a bolt fan, a charge, ground slams and burning souls.", shot: { speed: 8, range: 10, look: "bolt", color: "#ffd27a" }, specials: ["nova", "bolts", "charge", "summon"] }),
 };
 
 /** Scale a stat by monster level. */

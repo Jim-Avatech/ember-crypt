@@ -27,7 +27,7 @@ const realDps = (cls: "amazon" | "barbarian", str: number, dex: number, level: n
 
 describe("v1.5 version", () => {
   it("label and patch note", () => {
-    expect(GAME_VERSION).toBe("1.8");
+    expect(GAME_VERSION).toBe("1.8.1");
     expect(PATCH_NOTES.find((n) => n.version === "1.5")!.notes.length).toBe(4);
   });
 });

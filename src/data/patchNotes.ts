@@ -10,6 +10,15 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.8.1",
+    title: "The Sanctum of the Four and the Endless Tower",
+    notes: [
+      "Beat Vorthak and the stairs lead to the Sanctum of the Four. Place all four artifacts on its altar (you keep them) and Kharos, the First Flame, rises: a tough fire lord with a nova, a bolt fan, a charge, ground slams and burning souls, every one telegraphed.",
+      "Slay Kharos and a violet portal opens in Ember Camp: the Endless Tower. Each floor has a boss and stairs up, and monsters keep getting tougher (life, damage and monster level) with better loot, forever. Your best floor is saved.",
+      "No timer on the floors. ⌂ Town from the tower opens a camp portal that stays open 5 minutes (it counts down); go back up while it's open. If it closes while you're away, or you fall, the run is over and the next one starts on floor 1. Portals from other levels never close.",
+    ],
+  },
+  {
     version: "1.8",
     title: "Act V: Rimefrost Citadel",
     notes: [

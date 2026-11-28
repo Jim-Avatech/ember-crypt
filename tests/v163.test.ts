@@ -69,7 +69,7 @@ function giveAndEquip(g: Game, it: Item, slot?: "main" | "head") {
 
 describe("v1.6.3 release", () => {
   it("version, patch note, cache v36", () => {
-    expect(GAME_VERSION).toBe("1.8");
+    expect(GAME_VERSION).toBe("1.8.1");
     expect(PATCH_NOTES.some((q) => q.version === "1.6.3")).toBe(true);
     const t = PATCH_NOTES.find((q) => q.version === "1.6.3")!.notes.join(" ");
     expect(t).toMatch(/Charged Bolt/);

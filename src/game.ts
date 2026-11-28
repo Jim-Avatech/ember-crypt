@@ -8,7 +8,7 @@ import {
   ELEM_COLOR, ELITE_MODS, type Elem, type EliteMod, MONSTERS, type MonsterDef, type MonsterKind, type Shot, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp, uniqueName,
 } from "./data/monsters";
 import {
-  ACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, hasWaypoint, MAX_FLOOR, actDef, actOf, firstFloorOf, floorName, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
+  ACTS, ARTIFACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, hasWaypoint, MAX_FLOOR, actDef, actOf, firstFloorOf, floorName, SANCTUM_FLOOR, isSanctum, isTower, towerLevel, towerFloor, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
   type ActDef,
 } from "./data/acts";
 import {
@@ -72,8 +72,14 @@ export const PARITY_ACTS_END = LEVELS_PER_ACT * 4;
 export const ACT5_HP: [number, number] = [1.15, 1.35];
 export const ACT5_DMG: [number, number] = [1.1, 1.25];
 const postAt = (f: number, [a, b]: [number, number]) => (f <= PARITY_ACTS_END ? 1 : a + (b - a) * Math.min(1, (f - PARITY_ACTS_END - 1) / (LEVELS_PER_ACT - 1)));
-export const postHp = (floor: number) => postAt(floor, ACT5_HP);
-export const postDmg = (floor: number) => postAt(floor, ACT5_DMG);
+/**
+ * v1.8.1: the Endless Tower keeps climbing: on top of +1 monster level a floor, life x TOWER_HP_GROWTH and damage
+ * x TOWER_DMG_GROWTH per tower floor (compounding, no cap), boss hits included.
+ */
+export const TOWER_HP_GROWTH = 1.04;
+export const TOWER_DMG_GROWTH = 1.025;
+export const postHp = (floor: number) => postAt(floor, ACT5_HP) * TOWER_HP_GROWTH ** towerLevel(floor);
+export const postDmg = (floor: number) => postAt(floor, ACT5_DMG) * TOWER_DMG_GROWTH ** towerLevel(floor);
 export const curveHp = (floor: number) => curveAt(floor, CURVE_HP0) * postHp(floor);
 export const curveDmg = (floor: number) => curveAt(floor, CURVE_DMG0, CURVE_DMG_POW) * postDmg(floor);
 /** v1.7.3: 0 at floor `from`, 1 at floor `to`, straight line between (used to ease the early game off toward parity) */
@@ -103,7 +109,23 @@ export const heroLifeRef = (floor: number) => {
 export const BOSS_EASE0 = 0.45;
 export const bossEase = (floor: number) => BOSS_EASE0 + (1 - BOSS_EASE0) * floorTaper(floor, BOSS_REAL_ACTS, CURVE_END);
 export const bossHitShare = (floor: number) =>
-  (isFinalLevel(floor) ? 0.38 : 0.3 + (0.05 * (levelInAct(floor) - 1)) / Math.max(1, LEVELS_PER_ACT - 2)) * bossEase(floor) * postDmg(floor);
+  (isFinalLevel(floor) ? 0.38 : 0.3 + (0.05 * (levelInAct(floor) - 1)) / Math.max(1, LEVELS_PER_ACT - 2)) * bossEase(floor) * postDmg(floor) * (isSanctum(floor) ? BIG_BOSS_HIT : 1);
+/** v1.8.1: Kharos (the Sanctum's big boss) hits 15% harder than an act boss would there, with 2.5x an act boss's life */
+export const BIG_BOSS_HIT = 1.15;
+export const BIG_BOSS_HP = 2.5;
+/** v1.8.1: seconds the altar burns before Kharos rises (stand back) */
+export const ALTAR_RISE = 2.5;
+/** v1.8.1: magic find per tower floor, on top of Act V's */
+export const TOWER_MF_PER_FLOOR = 3;
+/**
+ * v1.8.1: a camp portal opened from the tower stays open this long (the same 5 minutes a level you leave is kept,
+ * FLOOR_KEEP_MS). Portals from other levels never close. If a tower portal closes while you're away, the run is over.
+ */
+export const TOWER_PORTAL_MS = 5 * 60 * 1000;
+/** v1.8.1: where the Endless Tower's portal stands in camp (open grass west of the campfire) */
+export const TOWER_PORTAL_AT = { x: 9.5, y: 16.5 };
+/** highest floor number the game handles (tower floor 100000) */
+export const TOP_FLOOR = SANCTUM_FLOOR + 100000;
 /** v1.7.3: a ground slam's warning ring (s): 1.5 on floor 1 shortening to 0.8 by floor CURVE_END, for every boss. */
 export const slamWarn = (floor: number) => 1.5 - 0.7 * floorTaper(floor, 1, CURVE_END);
 /** v1.7.3: boss melee wind-up is longer early (+40% on floor 1, back to normal at CURVE_END) so a swing can be seen and stepped out of. */
@@ -277,6 +299,10 @@ export interface Player {
   kills: number;
   /** artifacts collected from act bosses (not in the bag) */
   artifacts: FoundArtifact[];
+  /** v1.8.1: Kharos beaten, so the Endless Tower's portal stands in camp */
+  towerOpen?: boolean;
+  /** v1.8.1: highest tower floor reached */
+  towerBest?: number;
   /** cold: seconds of chill left (slower movement) */
   chillT: number;
   /** poison damage over time */
@@ -662,7 +688,7 @@ export interface SaveData {
   floor: number;
   maxFloor: number;
   player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & {
-    stashGold?: number; stash?: BagEntry[]; unclaimed?: Item[]; artifacts?: FoundArtifact[]; cls?: HeroClass; name?: string; mainAtk?: string | null;
+    stashGold?: number; stash?: BagEntry[]; unclaimed?: Item[]; artifacts?: FoundArtifact[]; towerOpen?: boolean; towerBest?: number; cls?: HeroClass; name?: string; mainAtk?: string | null;
   };
   /** v1.0: when the (shared) stash last changed; the newest copy of the stash wins across heroes */
   stashAt?: number;
@@ -884,8 +910,11 @@ function sanitizeV6(d: SaveData): SaveData {
   const seen = new Set<string>();
   const list = Array.isArray(d.player.artifacts) ? d.player.artifacts : [];
   d.player.artifacts = list.filter((a) => a && ARTIFACT_BY_ID[a.id] && !seen.has(a.id) && seen.add(a.id));
-  d.floor = Math.max(1, Math.min(MAX_FLOOR, Number(d.floor) || 1));
-  d.maxFloor = Math.max(d.floor, Math.min(MAX_FLOOR, Number(d.maxFloor) || 1));
+  // v1.8.1: the Sanctum of the Four (floor 101) can be the deepest level; tower floors are never saved
+  d.floor = Math.max(1, Math.min(SANCTUM_FLOOR, Number(d.floor) || 1));
+  d.maxFloor = Math.max(d.floor, Math.min(SANCTUM_FLOOR, Number(d.maxFloor) || 1));
+  if (d.player.towerOpen !== undefined) d.player.towerOpen = d.player.towerOpen === true;
+  if (d.player.towerBest !== undefined) d.player.towerBest = Math.max(0, Math.floor(Number(d.player.towerBest) || 0));
   // v1.8: Act IV used to be the end. A hero holding the Cinder Crown (Malakar beaten) gets Act V's first waypoint.
   const fifth = firstFloorOf(5);
   if (d.player.artifacts.some((a) => a.id === "cinder_crown") && d.maxFloor < fifth) d.maxFloor = fifth;
@@ -1089,7 +1118,11 @@ export class Game {
   /** wall clock for the level-keep timer (tests replace it) */
   now = () => Date.now();
   /** Blue portal in camp that leads back to the exact spot you recalled from (kept in memory only). */
-  portal: { x: number; y: number; floor: number; snap: DungeonSnap } | null = null;
+  portal: { x: number; y: number; floor: number; snap: DungeonSnap; expires?: number } | null = null;
+  /** v1.8.1: the tower run in progress (lost when its camp portal closes, you die, or you start a new run); never saved */
+  towerRun: { started: number } | null = null;
+  /** v1.8.1: the Sanctum's altar (on floor SANCTUM_FLOOR): where it stands, whether Kharos was called, and the rise timer */
+  altar: { x: number; y: number; used: boolean; riseT: number } | null = null;
   /** world-space joystick direction from last frame (used by Leap) */
   moveDir = { x: 0, y: 0, active: false };
 
@@ -1157,12 +1190,13 @@ export class Game {
   toSave(): SaveData {
     const p = this.player;
     return {
-      v: SAVE_VERSION, seed: this.seed, floor: this.floor, maxFloor: this.maxFloor, stashAt: this.stashAt,
+      v: SAVE_VERSION, seed: this.seed, floor: isTower(this.floor) ? Math.min(this.maxFloor, SANCTUM_FLOOR) : this.floor, maxFloor: this.maxFloor, stashAt: this.stashAt,
       player: {
         cls: p.cls, name: p.name, mainAtk: p.mainAtk,
         level: p.level, xp: p.xp, base: p.base, statPoints: p.statPoints, skillPoints: p.skillPoints,
         skills: p.skills, slots: p.slots.slice(0, SKILL_SLOTS), bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold, stashGold: p.stashGold,
         hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills, artifacts: p.artifacts,
+        ...(p.towerOpen ? { towerOpen: true } : {}), ...(p.towerBest ? { towerBest: p.towerBest } : {}),
         ...(p.unclaimed?.length ? { unclaimed: p.unclaimed } : {}),
       },
     };
@@ -1253,7 +1287,11 @@ export class Game {
     this.events.sound("stairs");
     const a = actDef(this.floor);
     const l = levelInAct(this.floor);
-    this.events.toast(l === 1 ? `Act ${a.roman}: ${a.area} — ${a.tagline}` : isFinalLevel(this.floor) ? `${floorName(this.floor)} — the lair of ${MONSTERS[a.finalBoss].name}` : `${floorName(this.floor)}/${LEVELS_PER_ACT}`);
+    this.events.toast(
+      isSanctum(this.floor) ? "The Sanctum of the Four — an altar waits for the four artifacts"
+      : isTower(this.floor) ? `The Endless Tower — Floor ${towerLevel(this.floor)}${towerLevel(this.floor) >= (this.player.towerBest ?? 0) ? " (your best)" : ""}`
+      : l === 1 ? `Act ${a.roman}: ${a.area} — ${a.tagline}` : isFinalLevel(this.floor) ? `${floorName(this.floor)} — the lair of ${MONSTERS[a.finalBoss].name}` : `${floorName(this.floor)}/${LEVELS_PER_ACT}`,
+    );
     // v0.9.2: the top-left text is gone, so the first trip down says where the way home is
     if (this.floor === 1 && this.player.kills === 0) setTimeout(() => this.events.toast("Tip: ⌂ Town (top right) takes you back to camp at any time"), 3200);
     this.events.changed();
@@ -1286,12 +1324,15 @@ export class Game {
   }
 
   startFloor(floor: number) {
-    floor = Math.max(1, Math.min(MAX_FLOOR, floor));
+    floor = Math.max(1, Math.min(TOP_FLOOR, Math.floor(floor)));
     this.keepFloor();
     const kept = this.takeKeptFloor(floor);
     this.inTown = false;
     this.floor = floor;
-    this.maxFloor = Math.max(this.maxFloor, floor);
+    // v1.8.1: tower floors never count as the deepest level (the waypoint stops at the Sanctum); they set the tower best
+    if (floor <= SANCTUM_FLOOR) this.maxFloor = Math.max(this.maxFloor, floor);
+    else this.player.towerBest = Math.max(this.player.towerBest ?? 0, towerLevel(floor));
+    if (!kept || !isSanctum(floor)) this.altar = null;
     this.level = kept ? kept.level : generateLevel(this.seed + floor * 7919);
     this.monsters = [];
     this.ground = [];
@@ -1317,6 +1358,7 @@ export class Game {
     this.boss = null;
     if (kept) {
       // v1.0.1: the level as you left it. Living monsters forget you and are back to full life.
+      if (isSanctum(floor) && !this.altar) this.altar = { x: this.level.bossRoom.cx + 0.5, y: this.level.bossRoom.cy + 0.5, used: !!kept.boss, riseT: 0 };
       this.monsters = kept.monsters;
       this.ground = kept.ground;
       this.stairs = kept.stairs;
@@ -1339,6 +1381,12 @@ export class Game {
     const lvl = levelInAct(floor);
     // unique monsters: from Act I level 3 on, one per level (two from level 10 on)
     let uniques = act.n === 1 && lvl < 3 ? 0 : lvl >= 10 ? 2 : 1;
+    // v1.8.1: the Sanctum holds only the altar of the four; Kharos rises when the artifacts are placed (useAltar)
+    if (isSanctum(floor)) {
+      this.altar = { x: this.level.bossRoom.cx + 0.5, y: this.level.bossRoom.cy + 0.5, used: false, riseT: 0 };
+      this.exploreAround(true);
+      return;
+    }
     for (const room of this.level.rooms) {
       if (room === this.level.start) continue;
       const isBoss = room === this.level.bossRoom;
@@ -1424,9 +1472,10 @@ export class Game {
     if (isFinalLevel(floor)) {
       const m = this.spawn(act.finalBoss, ml + 2, x, y, pack);
       m.cd = 3;
-      m.maxHp = m.hp = Math.round(m.hp * 1.2 * BOSS_HP_EXTRA); // v0.8: tougher final bosses; v0.9.3: 1.9x v0.9.2
+      // v0.8: tougher final bosses; v0.9.3: 1.9x v0.9.2; v1.8.1: Kharos BIG_BOSS_HP x that
+      m.maxHp = m.hp = Math.round(m.hp * 1.2 * BOSS_HP_EXTRA * (isSanctum(floor) ? BIG_BOSS_HP : 1));
       this.bossUp(m, floor);
-      m.def = { ...m.def, specials: [...(m.def.specials ?? []), "slam"] };
+      if (!m.def.specials?.includes("slam")) m.def = { ...m.def, specials: [...(m.def.specials ?? []), "slam"] };
       return m;
     }
     const m = this.spawn(act.levelBoss, ml + 1, x, y, pack, { ...MONSTERS[act.levelBoss], name: bossName(act, lvl) });
@@ -1915,6 +1964,8 @@ export class Game {
     this.time += dt;
     const p = this.player;
     const d = this.derived();
+    this.updateTower();
+    this.updateAltar(dt);
 
     // world-space move direction from screen-space joystick
     if (input.mag > 0) {
@@ -3749,7 +3800,7 @@ export class Game {
     this.gainXp(Math.max(1, Math.round(m.xp * xpPenalty(p.level, m.mlvl))));
     // loot: deeper acts add magic find, so blue/yellow drops get more common as you go
     const act = actDef(this.floor);
-    const mf = this.derived().mf + (act.n - 1) * 20 + (levelInAct(this.floor) - 1);
+    const mf = this.derived().mf + (act.n - 1) * 20 + (levelInAct(this.floor) - 1) + TOWER_MF_PER_FLOOR * towerLevel(this.floor);
     if (m.def.rank !== "normal") {
       const final = m.def.rank === "final";
       this.events.shake(final ? 14 : 10);
@@ -3766,14 +3817,21 @@ export class Game {
       }
       // other monsters flee their dead boss's room
       for (const o of this.monsters) if (o.minion && o.state !== "dead") this.kill(o);
-      if (this.floor < MAX_FLOOR) {
+      if (isSanctum(this.floor)) {
+        // v1.8.1: Kharos beaten: the Endless Tower's portal opens in camp
+        this.victory = true;
+        const first = !this.player.towerOpen;
+        this.player.towerOpen = true;
+        this.events.toast(`${m.def.name} is slain!${first ? " A tower portal has opened in Ember Camp." : ""}`);
+      } else {
         this.stairs = { x: this.level.bossRoom.cx + 0.5, y: this.level.bossRoom.cy + 2.5 };
         if (!isFloor(this.level, Math.floor(this.stairs.x), Math.floor(this.stairs.y))) this.stairs = { x: m.x, y: m.y };
         const next = ACTS[act.n];
-        this.events.toast(final ? `${m.def.name} is slain! The way to Act ${next.roman}, ${next.area}, is open.` : `${m.def.name} is slain! Stairs down have opened.`);
-      } else {
-        this.victory = true;
-        this.events.toast(`${m.def.name} is slain! You have conquered the ${act.area}.`);
+        this.events.toast(
+          isTower(this.floor) ? `${m.def.name} is slain! The stairs lead up to tower floor ${towerLevel(this.floor) + 1}.`
+          : this.floor === MAX_FLOOR ? `${m.def.name} is slain! The way to the Sanctum of the Four is open.`
+          : final && next ? `${m.def.name} is slain! The way to Act ${next.roman}, ${next.area}, is open.` : `${m.def.name} is slain! Stairs down have opened.`,
+        );
       }
     } else if (m.elite) {
       // champions and uniques: better loot (uniques always drop magic or better)
@@ -4375,6 +4433,8 @@ export class Game {
   /** After death you wake up in town, like Diablo II, minus 10% of the gold you carry (stash gold is safe). */
   respawn() {
     const p = this.player;
+    // v1.8.1: dying in the tower ends the run (the next entry starts on floor 1)
+    if (isTower(this.floor) && !this.inTown) this.endTowerRun("You fell in the tower");
     const lost = Math.floor(p.gold * 0.1);
     p.gold -= lost;
     p.healLeft = 0;
@@ -4673,9 +4733,13 @@ export class Game {
       px = wp.x - 2;
       py = wp.y + 0.8;
     }
-    this.portal = { x: px, y: py, floor, snap };
+    if (this.portal && isTower(this.portal.floor) && !isTower(floor)) this.endTowerRun("You opened a new portal, so the tower portal closed");
+    this.portal = { x: px, y: py, floor, snap, ...(isTower(floor) ? { expires: this.now() + TOWER_PORTAL_MS } : {}) };
     this.events.sound("stairs");
-    this.events.toast(`Back in Ember Camp. The blue portal returns you to ${floorName(floor)}.`);
+    this.events.toast(
+      isTower(floor) ? `Back in Ember Camp. The portal back to tower floor ${towerLevel(floor)} stays open for ${Math.round(TOWER_PORTAL_MS / 60000)} minutes.`
+      : `Back in Ember Camp. The blue portal returns you to ${floorName(floor)}.`,
+    );
     this.events.changed();
   }
 
@@ -4691,6 +4755,7 @@ export class Game {
     const s = q.snap;
     this.portal = null;
     this.floorCache.delete(q.floor);
+    if (isSanctum(q.floor) && (!this.altar || this.floor !== q.floor)) this.altar = { x: s.level.bossRoom.cx + 0.5, y: s.level.bossRoom.cy + 0.5, used: !!s.boss, riseT: 0 };
     this.inTown = false;
     this.floor = q.floor;
     this.level = s.level;
@@ -4715,10 +4780,92 @@ export class Game {
     return true;
   }
 
+  // ------------------------------------------------------------------ v1.8.1 Sanctum altar and Endless Tower
+  /** artifacts still missing for the altar (all four are needed) */
+  missingArtifacts(): string[] {
+    const have = new Set(this.player.artifacts.map((a) => a.id));
+    return ARTIFACTS.filter((a) => !have.has(a.id)).map((a) => a.name);
+  }
+
+  nearAltar(): boolean {
+    const a = this.altar;
+    return !!a && !a.used && isSanctum(this.floor) && !this.inTown && !this.player.dead && Math.hypot(a.x - this.player.x, a.y - this.player.y) < 2.2;
+  }
+
+  /**
+   * Place the four artifacts on the altar: it burns for ALTAR_RISE seconds (a warning ring), then Kharos rises on it.
+   * The artifacts are kept (they stay in the Artifacts tab), so he can be called again on a later visit.
+   */
+  useAltar(): string | null {
+    const a = this.altar;
+    if (!a || !isSanctum(this.floor) || a.used) return "Nothing happens";
+    const miss = this.missingArtifacts();
+    if (miss.length) {
+      const msg = `The altar needs all four artifacts. Missing: ${miss.join(", ")}.`;
+      this.events.toast(msg);
+      return msg;
+    }
+    a.used = true;
+    a.riseT = ALTAR_RISE;
+    this.rings.push({ x: a.x, y: a.y, t: 0, life: ALTAR_RISE, radius: 4, color: "rgba(255,210,120," });
+    this.events.sound("artifact");
+    this.events.toast("The four artifacts blaze on the altar. Stand back: Kharos rises!");
+    this.events.changed();
+    return null;
+  }
+
+  private updateAltar(dt: number) {
+    const a = this.altar;
+    if (!a || a.riseT <= 0 || !isSanctum(this.floor) || this.inTown) return;
+    a.riseT -= dt;
+    if (a.riseT > 0) return;
+    a.riseT = 0;
+    const b = this.spawnBoss(this.floor, a.x, a.y, 9999);
+    b.state = "chase";
+    this.boss = b;
+    this.events.shake(14);
+    this.events.sound("boss");
+    this.events.changed();
+  }
+
+  nearTowerPortal(): boolean {
+    return !!this.player.towerOpen && this.inTown && !this.player.dead && Math.hypot(TOWER_PORTAL_AT.x - this.player.x, TOWER_PORTAL_AT.y - this.player.y) < 1.8;
+  }
+
+  /** Step into the Endless Tower: always a new run from tower floor 1 (an open portal into an old run closes). */
+  enterTower(): boolean {
+    if (!this.player.towerOpen || !this.inTown) return false;
+    if (this.towerRun || (this.portal && isTower(this.portal.floor))) this.endTowerRun(null);
+    this.towerRun = { started: this.now() };
+    this.goDungeon(towerFloor(1));
+    return true;
+  }
+
+  /** The run is over: its camp portal closes and tower levels are forgotten, so the next entry starts on floor 1. */
+  endTowerRun(why: string | null) {
+    const had = !!this.towerRun || !!(this.portal && isTower(this.portal.floor));
+    if (this.portal && isTower(this.portal.floor)) this.portal = null;
+    this.towerRun = null;
+    for (const f of [...this.floorCache.keys()]) if (isTower(f)) this.floorCache.delete(f);
+    if (why && had) this.events.toast(`${why}. Your tower run is over (best: floor ${this.player.towerBest ?? 0}).`);
+    this.events.changed();
+  }
+
+  /** seconds left on an open tower portal, or null */
+  portalLeft(): number | null {
+    const e = this.portal?.expires;
+    return e ? Math.max(0, (e - this.now()) / 1000) : null;
+  }
+
+  private updateTower() {
+    const e = this.portal?.expires;
+    if (e && this.now() >= e) this.endTowerRun("The tower portal has closed");
+  }
+
   /** Waypoint travel: 0 = camp, n = crypt level n (if reached before). */
   travel(floor: number) {
     if (floor <= 0) this.goTown();
-    else if (floor <= this.maxFloor && floor <= MAX_FLOOR) this.goDungeon(floor);
+    else if (floor <= this.maxFloor && floor <= SANCTUM_FLOOR) this.goDungeon(floor);
   }
 
   /** Take off an item, optionally to a chosen bag cell. */
@@ -4992,7 +5139,8 @@ export class Game {
   }
 
   descend() {
-    if (this.floor >= MAX_FLOOR) return;
+    // v1.8.1: Act V's last level leads to the Sanctum; the Sanctum has no stairs; the tower climbs without end
+    if (isSanctum(this.floor) || this.floor >= TOP_FLOOR) return;
     this.goDungeon(this.floor + 1);
   }
 
@@ -5062,8 +5210,10 @@ export class Game {
   }
 
   /** The one context action shown above the controls. */
-  contextAction(): "descend" | "waypoint" | "trade" | "craft" | "stash" | "portal" | null {
+  contextAction(): "descend" | "waypoint" | "trade" | "craft" | "stash" | "portal" | "tower" | "altar" | null {
     if (this.nearStairs()) return "descend";
+    if (this.nearAltar()) return "altar";
+    if (this.nearTowerPortal()) return "tower";
     if (this.nearVendor()) return "trade";
     if (this.nearCrafter()) return "craft";
     if (this.nearStash()) return "stash";

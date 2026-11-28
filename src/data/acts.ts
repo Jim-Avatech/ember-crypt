@@ -112,26 +112,65 @@ export const ARTIFACTS: ArtifactDef[] = ACTS.flatMap((a) => (a.artifact ? [a.art
 export const ARTIFACT_BY_ID: Record<string, ArtifactDef> = Object.fromEntries(ARTIFACTS.map((a) => [a.id, a]));
 export const ARTIFACT_COLOR = "#ff9a2a";
 
-/** Act number (1..5) of a global floor (1..100); 0 in town. */
+/**
+ * v1.8.1: past Act V. Floor 101 is the Sanctum of the Four (the altar for the four artifacts and the big boss), and
+ * tower floor n of the Endless Tower is floor SANCTUM_FLOOR + n, without end. Both count as Act V for act-indexed
+ * rules (leech drain, elite odds, magic find), but have their own look, monsters, labels and monster levels.
+ */
+export const SANCTUM_FLOOR = MAX_FLOOR + 1;
+export const isSanctum = (floor: number) => floor === SANCTUM_FLOOR;
+export const isTower = (floor: number) => floor > SANCTUM_FLOOR;
+/** tower floor number (1, 2, 3 ...) of a global floor; 0 outside the tower */
+export const towerLevel = (floor: number) => (isTower(floor) ? floor - SANCTUM_FLOOR : 0);
+export const towerFloor = (n: number) => SANCTUM_FLOOR + Math.max(1, Math.floor(n));
+/** tower monster level: one past the Sanctum on tower floor 1, +1 every floor after */
+export const TOWER_MLVL0 = 67;
+
+export const SANCTUM_ACT: ActDef = {
+  n: 5, roman: "V", area: "Sanctum of the Four", tagline: "An altar with four empty sockets",
+  theme: {
+    floor: ["#2e2620", "#2a221c", "#322a22", "#26201a"], feature: "slabs", wallTop: "#6a5a40", wallLeft: "#241c14", wallRight: "#3e3224",
+    flame: "#ffd27a", core: "#fff6d8", glow: "255,210,120", void: "#050302", decals: { bones: "bones", skull: "skull", blood: "crack", crack: "crack" }, mini: "#8a7450",
+  },
+  monsters: [], levelBoss: "boss5", bossNames: ["Kharos"], finalBoss: "kharos", summon: "soul",
+  mlvl0: 66, mlvlStep: 0, reward: 1.25,
+};
+/** the tower's look; its monsters cycle through the five acts' (tower floor 1 Act I's, floor 2 Act II's ...) */
+const TOWER_THEME: Theme = {
+  floor: ["#2a2236", "#261f31", "#2e263a", "#231c2d"], feature: "ice", wallTop: "#5c4a7a", wallLeft: "#1c1528", wallRight: "#3a2c52",
+  flame: "#c890ff", core: "#f4e6ff", glow: "190,130,255", void: "#05030a", decals: { bones: "bones", skull: "skull", blood: "crack", crack: "crack" }, mini: "#6a5a8a",
+};
+export const TOWER_ACTS: ActDef[] = ACTS.map((a) => ({
+  ...a, n: 5, area: "Endless Tower", tagline: "It keeps going up, and so do they", theme: TOWER_THEME, artifact: undefined,
+  mlvl0: TOWER_MLVL0, mlvlStep: 1, reward: 1.25,
+}));
+
+/** Act number (1..5) of a global floor (1..100, the Sanctum and tower count as 5); 0 in town. */
 export const actOf = (floor: number) => (floor <= 0 ? 0 : Math.min(ACT_COUNT, Math.ceil(floor / LEVELS_PER_ACT)));
-/** Level within the act (1..5). */
-export const levelInAct = (floor: number) => ((Math.max(1, floor) - 1) % LEVELS_PER_ACT) + 1;
-export const actDef = (floor: number) => ACTS[Math.max(1, actOf(floor)) - 1];
-export const isFinalLevel = (floor: number) => levelInAct(floor) === LEVELS_PER_ACT;
+/** Level within the act (1..20). The Sanctum is a final level (20); the tower cycles 1..19 (never a final level). */
+export const levelInAct = (floor: number) =>
+  isSanctum(floor) ? LEVELS_PER_ACT : isTower(floor) ? ((towerLevel(floor) - 1) % (LEVELS_PER_ACT - 1)) + 1 : ((Math.max(1, floor) - 1) % LEVELS_PER_ACT) + 1;
+export const actDef = (floor: number): ActDef =>
+  isSanctum(floor) ? SANCTUM_ACT : isTower(floor) ? TOWER_ACTS[(towerLevel(floor) - 1) % TOWER_ACTS.length] : ACTS[Math.max(1, actOf(floor)) - 1];
+export const isFinalLevel = (floor: number) => !isTower(floor) && levelInAct(floor) === LEVELS_PER_ACT;
 export const firstFloorOf = (act: number) => (act - 1) * LEVELS_PER_ACT + 1;
 /** Monster level for normal monsters on a floor. */
 export const mlvlOf = (floor: number) => {
+  if (isTower(floor)) return TOWER_MLVL0 + towerLevel(floor) - 1;
   const a = actDef(floor);
   return Math.round(a.mlvl0 + (levelInAct(floor) - 1) * a.mlvlStep);
 };
 /** "Sunken Tombs — Level 2" */
-export const floorName = (floor: number) => (floor <= 0 ? "Ember Camp" : `${actDef(floor).area} — Level ${levelInAct(floor)}`);
+export const floorName = (floor: number) =>
+  floor <= 0 ? "Ember Camp" : isSanctum(floor) ? "the Sanctum of the Four" : isTower(floor) ? `the Endless Tower — Floor ${towerLevel(floor)}` : `${actDef(floor).area} — Level ${levelInAct(floor)}`;
 /**
  * v1.5: the act and level above the minimap. v1.5.1: the level within the act, 1-20 ("Act 4 · Level 7"), like every
  * level number the player sees; floors stay 1-80 inside the game.
  */
-export const whereLabel = (floor: number) => (floor <= 0 ? "Ember Camp" : `Act ${actOf(floor)} · Level ${levelInAct(floor)}`);
-export const shortFloorName = (floor: number) => (floor <= 0 ? "Camp" : `Act ${actDef(floor).roman} · ${levelInAct(floor)}/${LEVELS_PER_ACT}`);
+export const whereLabel = (floor: number) =>
+  floor <= 0 ? "Ember Camp" : isSanctum(floor) ? "Sanctum of the Four" : isTower(floor) ? `Tower · Floor ${towerLevel(floor)}` : `Act ${actOf(floor)} · Level ${levelInAct(floor)}`;
+export const shortFloorName = (floor: number) =>
+  floor <= 0 ? "Camp" : isSanctum(floor) ? "Sanctum" : isTower(floor) ? `Tower ${towerLevel(floor)}` : `Act ${actDef(floor).roman} · ${levelInAct(floor)}/${LEVELS_PER_ACT}`;
 
 /**
  * XP multiplier when the hero is above the monster (like Diablo II): full XP up to 3 levels
@@ -153,8 +192,9 @@ export const bossName = (a: ActDef, l: number) => {
   return i < n ? a.bossNames[i] : `${EPITHETS[Math.floor(i / n) - 1] ?? "Last"} ${a.bossNames[i % n].replace(/^The /, "")}`;
 };
 
-/** Waypoints sit on level 1, every 5th level and the final level of each act. */
+/** Waypoints sit on level 1, every 5th level and the final level of each act (none in the Sanctum or the tower). */
 export const hasWaypoint = (floor: number) => {
+  if (floor > MAX_FLOOR) return false;
   const l = levelInAct(floor);
   return l === 1 || l % 5 === 0;
 };
