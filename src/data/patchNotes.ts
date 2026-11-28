@@ -10,6 +10,15 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.7.3",
+    title: "A gentler start",
+    notes: [
+      "Early bosses and elites hit much softer. In Act I no boss or elite hit — slams and charges included — takes more than about 35–40% of a fresh Barbarian's life (about 45–50% for the frailer Amazon and Sorceress), down from over 100% for a boss slam.",
+      "Boss slams show their warning ring for 1.5 s on floor 1 (was about 1 s), boss swings wind up 40% slower early on, and an act boss's bolt fan hits half as hard early, so big hits can be dodged.",
+      "Elite packs start weaker (a strong unique no longer hits 2.25x a normal monster) and monster damage starts at 65% on floor 1 instead of 90%. Everything climbs back to the same strength as before by floor 60, so later acts are as hard as ever.",
+    ],
+  },
+  {
     version: "1.7.2",
     title: "Leech like Diablo II",
     notes: [

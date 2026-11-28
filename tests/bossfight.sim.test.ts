@@ -80,15 +80,16 @@ export function bossTable(f: number, n = 25) {
   return { floor: f, boss: rs[0].boss, heroLvl: rs[0].heroLvl, life: med("life"), def: med("def"), bossAR: rs[0].bossAR, hitRate, avgHitPct: med("avgHitPct"), slamPct: med("slamPct"), dpsPct: med("dpsPct"), mods: rs[0].mods };
 }
 
-it("v0.9.4 bosses: hit a stationary on-level hero ~75-85% of the time for ~25-35% of life; act bosses carry both mods", () => {
+it("v0.9.4 bosses: hit a stationary on-level hero ~75-85% of the time for 5-25% of life in Act I, 25-35% from floor 60; act bosses carry both mods", () => {
   const floors = ((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.FLOORS ?? "1,19,20,39,40,79,80").split(",").map(Number);
   for (const f of floors) {
     const r = bossTable(f);
     console.log(`bossfight ${JSON.stringify(r)}`);
     expect(r.hitRate).toBeGreaterThanOrEqual(70);
     expect(r.hitRate).toBeLessThanOrEqual(90);
-    expect(r.avgHitPct).toBeGreaterThanOrEqual(22);
-    expect(r.avgHitPct).toBeLessThanOrEqual(40);
+    // v1.7.3: Act I bosses average 5-25% of a typical geared hero's life, easing back up to the old 22-40% by floor 60
+    expect(r.avgHitPct).toBeGreaterThanOrEqual(f >= 60 ? 22 : f <= 20 ? 5 : 10);
+    expect(r.avgHitPct).toBeLessThanOrEqual(f >= 60 ? 40 : f <= 20 ? 25 : 40);
     expect(r.slamPct).toBeGreaterThan(r.avgHitPct); // the telegraphed slam is the big hit
     if (f % 20 === 0) expect(r.mods).toBe("fast+stone");
   }

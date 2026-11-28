@@ -3,6 +3,15 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.7.3: A gentler start (early boss and elite damage)
+
+- Why: a Barbarian could be one-shot by a floor-1 boss slam. Boss damage was sized to an optimistic hero life (`heroLifeOld`, 83 at floor 1 vs 55-67 real), then the slam added 1.4-1.6x on top; elite uniques stacked 1.5x x Extra Strong 1.5x on monster damage that grows 32% a monster level.
+- Boss hits: `heroLifeRef` is the real typical life through Act I (`heroLifeTyp`) easing to the old reference at floor 60; `bossEase` = `BOSS_EASE0` 0.45 flat through Act I, rising to 1 at floor 60. Boss damage is still fixed per floor (independent of the hero).
+- Telegraphs: `slamWarn` 1.5 s on floor 1 down to 0.8 s at floor 60 (was ~0.8-1.1 s); `bossWindupMul` +40% melee wind-up on floor 1 down to +0% at 60; `finalBoltMul` act-boss bolt fan 0.5x on floor 1 up to 0.9x at 60.
+- Elites: `eliteDmgMul` unique 1.2 / champion 1.1 / Extra Strong 1.15 on floor 1, rising to the old 1.5 / 1.3 / 1.5 at floor 60.
+- Curve: `curveDmg` starts at 0.65 (was 0.9) and rises with exponent 1.6 to 1 at floor 60; `curveHp` unchanged (0.8 -> 1). Floors 60+ are exactly as before.
+- Saves: nothing stored changes. Tests: `tests/v173.test.ts` (max-hit-% targets per class), `scripts/v173-shots.mjs` (screenshots/v173). SW cache v41. `RESPEC_FREE` stays true.
+
 ## v1.7.2: Leech like Diablo II
 
 - Dropped the `SPELL_LEECH_CAP` (4%/s reserve). Skill-effect leech (`elemHit` / `directHit`) is uncapped at `SPELL_LEECH_PCT` 20% of gear leech (was 35% and capped). Weapon hits still leech in full. One rule for every class, still keyed on the damage source, never the class.

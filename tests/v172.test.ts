@@ -2,7 +2,7 @@
 // (monster tier × act) on all leech for every class. Respec is temporarily free (RESPEC_FREE).
 import { describe, expect, it } from "vitest";
 import { makeItem, type Item } from "../src/data/items";
-import { GAME_VERSION, PATCH_NOTES } from "../src/data/patchNotes";
+import { PATCH_NOTES } from "../src/data/patchNotes";
 import { CLASS_DEF, Game, type GameEvents, type Monster, LEECH_ACT_DRAIN, LEECH_TIER_DRAIN, RESPEC_FREE, RESPEC_GOLD_PER_LEVEL, SPELL_LEECH_PCT, leechDrainFor, respecCharge, respecCost } from "../src/game";
 import gameSrc from "../src/game.ts?raw";
 import uiSrc from "../src/ui.ts?raw";
@@ -13,11 +13,12 @@ const ring = (ll: number, ml = 0): Item => ({ ...makeItem("ring", 20), q: "magic
 
 describe("v1.7.2 release", () => {
   it("version, patch note, cache v40", () => {
-    expect(GAME_VERSION).toBe("1.7.2");
-    expect(PATCH_NOTES[0].version).toBe("1.7.2");
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/20%/);
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/free/i);
-    expect(swSrc).toContain("ember-crypt-shell-v40");
+    expect(PATCH_NOTES.some((n) => n.version === "1.7.2")).toBe(true);
+    expect(PATCH_NOTES.find((n) => n.version === "1.7.2")?.notes.length).toBeGreaterThan(0);
+    const n172 = PATCH_NOTES.find((n) => n.version === "1.7.2")!.notes.join(" ");
+    expect(n172).toMatch(/20%/);
+    expect(n172).toMatch(/free/i);
+    expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
     expect(SPELL_LEECH_PCT).toBe(20);
     expect(gameSrc).not.toMatch(/SPELL_LEECH_CAP|spellLeechCap|slLeft/);
   });

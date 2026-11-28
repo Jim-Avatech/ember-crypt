@@ -32,7 +32,7 @@ function barb(lvl = 30) {
 
 describe("v1.7.1 release", () => {
   it("version, patch note, cache", () => {
-    expect(GAME_VERSION).toBe("1.7.2");
+    expect(GAME_VERSION).toBe("1.7.3");
     expect(PATCH_NOTES.find((n) => n.version === "1.7.1")!.notes.join(" ")).toMatch(/every hero/i);
     expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
   });

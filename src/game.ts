@@ -59,10 +59,15 @@ export const ACT_MONSTER_MULT = [1, 1.427, 1.719, 2.211];
 export const ROOM_CROWD = 0.6;
 export const CURVE_END = 60;
 export const CURVE_HP0 = 0.8;
-export const CURVE_DMG0 = 0.9;
-const curveAt = (f: number, start: number) => (f >= CURVE_END ? 1 : start + ((1 - start) * (Math.max(1, f) - 1)) / (CURVE_END - 1));
+/** v1.7.3: damage starts lower (was 0.9) and climbs along a convex curve (exponent CURVE_DMG_POW) to parity at CURVE_END. */
+export const CURVE_DMG0 = 0.65;
+export const CURVE_DMG_POW = 1.6;
+const curveAt = (f: number, start: number, pow = 1) =>
+  f >= CURVE_END ? 1 : start + (1 - start) * Math.pow((Math.max(1, f) - 1) / (CURVE_END - 1), pow);
 export const curveHp = (floor: number) => curveAt(floor, CURVE_HP0);
-export const curveDmg = (floor: number) => curveAt(floor, CURVE_DMG0);
+export const curveDmg = (floor: number) => curveAt(floor, CURVE_DMG0, CURVE_DMG_POW);
+/** v1.7.3: 0 at floor `from`, 1 at floor `to`, straight line between (used to ease the early game off toward parity) */
+export const floorTaper = (floor: number, from: number, to: number) => Math.max(0, Math.min(1, (floor - from) / (to - from)));
 /**
  * v0.9.4 bosses. Accuracy: a boss rolls 3x its attack rating and ignores the hero being above its level, so an
  * on-level hero standing still is hit about 80% of the time (defense still helps). Damage: an average hit is a set
@@ -70,9 +75,31 @@ export const curveDmg = (floor: number) => curveAt(floor, CURVE_DMG0);
  * level bosses 30% on an act's first level up to 35% on its last, act bosses 38% (their bolts do 0.9x). Big telegraphed slams hit ~1.5x.
  */
 export const BOSS_AR = 3;
-export const heroLifeRef = (floor: number) => 55 + 10.6 * (1.1 * mlvlOf(floor) + 1.5);
+/** the old (v0.9.4) reference: an on-level hero's life, 55 + 10.6 per level of a full clear. Real heroes fall short of it early on. */
+export const heroLifeOld = (floor: number) => 55 + 10.6 * (1.1 * mlvlOf(floor) + 1.5);
+/**
+ * v1.7.3: what a typical hero's life really is at the level a full clear gives (the mean of a Barbarian's and an Amazon's
+ * life with their points spent as classSim does: about 52 + 5 per level past the first, no gear), so early boss hits
+ * are sized to real life, not to the optimistic old reference.
+ */
+export const heroLifeTyp = (floor: number) => 52 + 5 * (Math.max(1, Math.round(1.1 * mlvlOf(floor) + 1.5)) - 1);
+/** v1.7.3: the reference is the real thing through Act I, then eases to the old one by floor CURVE_END. */
+export const BOSS_REAL_ACTS = LEVELS_PER_ACT;
+export const heroLifeRef = (floor: number) => {
+  const t = floorTaper(floor, BOSS_REAL_ACTS, CURVE_END);
+  return heroLifeTyp(floor) + (heroLifeOld(floor) - heroLifeTyp(floor)) * t;
+};
+/** v1.7.3: boss hits are this share of what they were, flat through Act I, then rising to 1 at floor CURVE_END (parity). */
+export const BOSS_EASE0 = 0.45;
+export const bossEase = (floor: number) => BOSS_EASE0 + (1 - BOSS_EASE0) * floorTaper(floor, BOSS_REAL_ACTS, CURVE_END);
 export const bossHitShare = (floor: number) =>
-  isFinalLevel(floor) ? 0.38 : 0.3 + (0.05 * (levelInAct(floor) - 1)) / Math.max(1, LEVELS_PER_ACT - 2);
+  (isFinalLevel(floor) ? 0.38 : 0.3 + (0.05 * (levelInAct(floor) - 1)) / Math.max(1, LEVELS_PER_ACT - 2)) * bossEase(floor);
+/** v1.7.3: a ground slam's warning ring (s): 1.5 on floor 1 shortening to 0.8 by floor CURVE_END, for every boss. */
+export const slamWarn = (floor: number) => 1.5 - 0.7 * floorTaper(floor, 1, CURVE_END);
+/** v1.7.3: boss melee wind-up is longer early (+40% on floor 1, back to normal at CURVE_END) so a swing can be seen and stepped out of. */
+export const bossWindupMul = (floor: number) => 1 + 0.4 * (1 - floorTaper(floor, 1, CURVE_END));
+/** v1.7.3: each bolt of an act boss's fan (point blank, several can land at once) did 0.9x a hit; now 0.5x on floor 1 rising to 0.9x at CURVE_END. */
+export const finalBoltMul = (floor: number) => 0.5 + 0.4 * floorTaper(floor, 1, CURVE_END);
 /** Elite-style boss modifiers: none early in an act, one from level 7, two from level 14; act bosses get both. */
 export const bossMods = (floor: number): EliteMod[] =>
   isFinalLevel(floor) ? ["fast", "stone"] : levelInAct(floor) >= 14 ? ["fast", "stone"] : levelInAct(floor) >= 7 ? [levelInAct(floor) % 2 ? "fast" : "stone"] : [];
@@ -81,6 +108,18 @@ export const slamEvery = (floor: number) => 7 - (2.7 * (levelInAct(floor) - 1)) 
 /** v0.9.3: level and act bosses end up with 1.9x their v0.9.2 life (the general +30% is not stacked on top). */
 export const BOSS_HP_EXTRA = 1.9 / 1.3;
 export const ITEM_DROP = 0.0425; // v0.9.2: halved again (was 0.085, originally 0.17)
+/**
+ * v1.7.3: elite damage multipliers start lower (a strong unique hit 2.25x a normal monster) and climb to the old
+ * 1.5 / 1.3 / 1.5 at floor CURVE_END, like the monster curve.
+ */
+export const ELITE_DMG_EARLY = { unique: 1.2, champion: 1.1, strong: 1.15 };
+export const ELITE_DMG_OLD = { unique: 1.5, champion: 1.3, strong: 1.5 };
+export const eliteDmgMul = (tier: 1 | 2, strong: boolean, floor: number) => {
+  const t = floorTaper(floor, 1, CURVE_END);
+  const mix = (a: number, b: number) => a + (b - a) * t;
+  const base = tier === 2 ? mix(ELITE_DMG_EARLY.unique, ELITE_DMG_OLD.unique) : mix(ELITE_DMG_EARLY.champion, ELITE_DMG_OLD.champion);
+  return strong ? base * mix(ELITE_DMG_EARLY.strong, ELITE_DMG_OLD.strong) : base;
+};
 export const ELITE_ITEM_CHANCE = 0.25; // champions (was 0.5, originally always 1)
 export const UNIQUE_ITEM_CHANCE = 0.5; // uniques: one item half the time (was always 1, originally 2); always magic or better
 
@@ -1397,7 +1436,7 @@ export class Game {
     m.dmgMin = Math.max(1, Math.round(lo * k));
     m.dmgMax = Math.max(m.dmgMin, Math.round(hi * k));
     const mods = bossMods(floor);
-    const d: MonsterDef = { ...m.def, atkInterval: m.def.atkInterval * 0.9 }; // a little quicker than before
+    const d: MonsterDef = { ...m.def, atkInterval: m.def.atkInterval * 0.9, windup: m.def.windup * bossWindupMul(floor) }; // a little quicker than before
     if (mods.includes("fast")) {
       d.speed *= 1.2;
       d.atkInterval *= 0.8;
@@ -1412,8 +1451,8 @@ export class Game {
   makeElite(m: Monster, tier: 1 | 2, mods: EliteMod[], name: string) {
     const d: MonsterDef = { ...m.def, name: tier === 2 ? name : `Champion ${m.def.name}` };
     let hp = tier === 2 ? 4 : 2.5;
-    let dmg = tier === 2 ? 1.5 : 1.3;
-    if (mods.includes("strong")) dmg *= 1.5;
+    // v1.7.3: eliteDmgMul (was a flat unique 1.5x / champion 1.3x / Extra Strong 1.5x)
+    const dmg = eliteDmgMul(tier, mods.includes("strong"), this.floor);
     if (mods.includes("fast")) {
       d.speed *= 1.35;
       d.atkInterval *= 0.75;
@@ -4195,7 +4234,7 @@ export class Game {
     const final = m.def.rank === "final";
     this.shots.push({
       x: m.x + Math.cos(a) * m.def.radius, y: m.y + Math.sin(a) * m.def.radius, vx: Math.cos(a) * s.speed, vy: Math.sin(a) * s.speed,
-      dist: 0, range: s.range, dmgMin: m.dmgMin * (final ? 0.9 : 1) * this.weaken(m), dmgMax: m.dmgMax * (final ? 0.9 : 1) * this.weaken(m), ar: m.ar, mlvl: m.mlvl,
+      dist: 0, range: s.range, dmgMin: m.dmgMin * (final ? finalBoltMul(this.floor) : 1) * this.weaken(m), dmgMax: m.dmgMax * (final ? finalBoltMul(this.floor) : 1) * this.weaken(m), ar: m.ar, mlvl: m.mlvl,
       elem: m.def.elem, look: s.look, color: s.color, t: 0, big: final,
     });
     this.events.sound(s.look === "arrow" ? "shoot" : "bolt");
@@ -4263,12 +4302,12 @@ export class Game {
 
   /**
    * v0.9.4: a telegraphed ground slam. The boss stops and raises its weapon while a red ring grows on the floor
-   * (about a second; a little shorter deeper into an act, 0.8 s for act bosses), then the ring bursts for a big hit
+   * (slamWarn: 1.5 s on floor 1 down to 0.8 s at floor 60, v1.7.3), then the ring bursts for a big hit
    * (~1.5x a normal hit). Step out of the ring to take nothing.
    */
   bossSlam(m: Monster) {
     const final = m.def.rank === "final";
-    const warn = final ? 0.8 : Math.max(0.8, 1.1 - 0.3 * ((levelInAct(this.floor) - 1) / Math.max(1, LEVELS_PER_ACT - 2)));
+    const warn = slamWarn(this.floor);
     this.novas.push({ x: m.x, y: m.y, t: 0, warn, radius: final ? 2.4 : 2.0, elem: "phys", dmgMin: m.dmgMin * 1.4 * this.weaken(m), dmgMax: m.dmgMax * 1.6 * this.weaken(m), done: false });
     m.slamT = warn;
     m.atkT = Math.max(m.atkT, warn + 0.35);

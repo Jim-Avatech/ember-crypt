@@ -21,17 +21,18 @@ type Mon = Game["monsters"][number];
 const priv = (g: Game) => g as unknown as { kill(m: Mon): void; aggroPack(m: Mon): void; startThrow(s: string | null, h: number[], d: ReturnType<Game["derived"]>): void };
 
 describe("v1.1 difficulty curve", () => {
-  it("floor 1 is 80% life / 90% damage, rising in a straight line to 100% at floor 60 and after", () => {
-    expect(GAME_VERSION).toBe("1.7.2");
+  it("floor 1 is 80% life (v1.7.3: 65% damage), rising to 100% at floor 60 and after", () => {
+    expect(GAME_VERSION).toBe("1.7.3");
     expect(CURVE_END).toBe(60);
     expect(curveHp(1)).toBeCloseTo(0.8);
-    expect(curveDmg(1)).toBeCloseTo(0.9);
+    expect(curveDmg(1)).toBeCloseTo(0.65); // v1.7.3 (was 0.9)
     expect(curveHp(60)).toBe(1);
     expect(curveDmg(60)).toBe(1);
     for (const f of [61, 70, 80]) expect([curveHp(f), curveDmg(f)]).toEqual([1, 1]);
-    // linear
+    // life is linear; v1.7.3 damage is convex (exponent 1.6), always below the old straight line
     expect(curveHp(30.5)).toBeCloseTo(0.9);
-    expect(curveDmg(30.5)).toBeCloseTo(0.95);
+    expect(curveDmg(30.5)).toBeLessThan(0.9 + 0.1 * (29.5 / 59));
+    for (let f = 2; f <= 60; f++) expect(curveDmg(f)).toBeGreaterThan(curveDmg(f - 1));
     for (let f = 2; f <= 60; f++) expect(curveHp(f)).toBeGreaterThan(curveHp(f - 1));
   });
 
@@ -45,16 +46,18 @@ describe("v1.1 difficulty curve", () => {
   it("floors 60–80 are exactly as in v1.0.1 (same monsters, life and damage, bosses included)", () => {
     for (let f = 60; f <= 80; f++) expect(now[f], `floor ${f}`).toEqual(old[f]);
   });
-  it("boss damage is unchanged on every floor; boss life follows the curve", () => {
+  it("boss damage is fixed per floor, never above v1.0.1 (equal from floor 60); boss life follows the curve", () => {
     for (let f = 1; f <= 80; f++) {
       const o = old[f].boss!;
       const n = now[f].boss!;
-      expect([n[1], n[2]], `floor ${f}`).toEqual([o[1], o[2]]);
+      if (f >= 60) expect([n[1], n[2]], `floor ${f}`).toEqual([o[1], o[2]]);
+      else expect(n[2], `floor ${f}`).toBeLessThan(o[2]);
       expect(n[0] / o[0]).toBeCloseTo(curveHp(f), 2);
     }
   });
   it("below 60, the same monsters with life ×curveHp and damage ×curveDmg", () => {
     let n = 0;
+    let exact = 0;
     let floors = 0;
     for (let f = 1; f < 60; f++) {
       // 3-wide corridors shift where packs can stand on a few levels (same seed, other monsters): skip those
@@ -64,13 +67,17 @@ describe("v1.1 difficulty curve", () => {
         const [, oh, olo, ohi] = old[f].mons[i];
         const [, nh, nlo, nhi] = now[f].mons[i];
         expect(Math.abs(nh - oh * curveHp(f))).toBeLessThanOrEqual(1.5 + oh * 0.01);
-        expect(Math.abs(nhi - ohi * curveDmg(f))).toBeLessThanOrEqual(2 + ohi * 0.01);
+        // v1.7.3: elites (unique/champion/Extra Strong) hit softer early (eliteDmgMul), so they sit between 55% and 100% of this
+        expect(nhi).toBeLessThanOrEqual(ohi * curveDmg(f) + 2 + ohi * 0.01);
+        expect(nhi).toBeGreaterThanOrEqual(ohi * curveDmg(f) * 0.55 - 2);
+        if (Math.abs(nhi - ohi * curveDmg(f)) <= 2 + ohi * 0.01) exact++;
         expect(nlo).toBeLessThanOrEqual(olo);
         n++;
       }
     }
     expect(floors).toBeGreaterThan(50);
     expect(n).toBeGreaterThan(1000);
+    expect(exact / n).toBeGreaterThan(0.8); // everything but the elites is exactly ×curveDmg
     // floor 1 monsters really are easier
     const life = (s: Snap, f: number) => s[f].mons.reduce((a, m) => a + m[1], 0);
     expect(life(now, 1) / life(old, 1)).toBeCloseTo(0.8, 1);
