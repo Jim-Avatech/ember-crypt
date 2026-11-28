@@ -122,8 +122,8 @@ export const TOWER_MF_PER_FLOOR = 3;
  * FLOOR_KEEP_MS). Portals from other levels never close. If a tower portal closes while you're away, the run is over.
  */
 export const TOWER_PORTAL_MS = 5 * 60 * 1000;
-/** v1.8.1: where the Endless Tower's portal stands in camp (open grass west of the campfire) */
-export const TOWER_PORTAL_AT = { x: 9.5, y: 16.5 };
+/** v1.8.1: where the Endless Tower's portal stands in camp (open ground east of the campfire, clear of the dummy, tents and NPCs) */
+export const TOWER_PORTAL_AT = { x: 27.5, y: 15.5 };
 /** highest floor number the game handles (tower floor 100000) */
 export const TOP_FLOOR = SANCTUM_FLOOR + 100000;
 /** v1.7.3: a ground slam's warning ring (s): 1.5 on floor 1 shortening to 0.8 by floor CURVE_END, for every boss. */

@@ -99,10 +99,11 @@ interface ActArt {
   torch: HTMLCanvasElement[];
   decals: Record<string, HTMLCanvasElement>;
 }
-const ACT_ART = new Map<number, ActArt>();
+/** keyed by theme (v1.8.1: the Sanctum and the tower share act number 5 but have their own look) */
+const ACT_ART = new Map<Theme, ActArt>();
 function actArt(floor: number): ActArt {
   const a = actDef(floor);
-  let r = ACT_ART.get(a.n);
+  let r = ACT_ART.get(a.theme);
   if (!r) {
     const th = a.theme;
     r = {
@@ -113,7 +114,7 @@ function actArt(floor: number): ActArt {
       torch: T.torchFrames(th.flame, th.core),
       decals: Object.fromEntries(Object.entries(th.decals).map(([k, v]) => [k, T.decalSprite(v)])),
     };
-    ACT_ART.set(a.n, r);
+    ACT_ART.set(a.theme, r);
   }
   return r;
 }

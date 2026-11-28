@@ -3,6 +3,13 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.8.1: Sanctum of the Four, Kharos and the Endless Tower
+
+- Floor 101 is the Sanctum of the Four (`SANCTUM_FLOOR`), reached by the stairs after Vorthak and listed on the waypoint. Its altar takes all four artifacts (Acts I-IV final bosses; they are kept, so Kharos can be summoned again) and Kharos, the First Flame rises after `ALTAR_RISE` 2.5 s: life x`BIG_BOSS_HP` 2.5 over a final boss, hits x`BIG_BOSS_HIT` 1.15 through the same per-floor `bossHitShare` rule, every special (nova, bolts, charge, slam, summons) telegraphed.
+- Killing Kharos sets `player.towerOpen`: a violet portal in camp (`TOWER_PORTAL_AT`) starts an Endless Tower run at floor 1. Tower floor n is global floor 101+n: monster level 67+n-1, life x1.04^n, damage x1.025^n (bosses too), +3% magic find per floor; monsters cycle through the five acts; every floor has a boss and stairs up. `player.towerBest` is saved; tower floors never change `maxFloor` and saves store floor <= 101.
+- No floor timer. The real camp-portal lifetime was "until used or replaced" (in memory only; the 5 minutes was `FLOOR_KEEP_MS`, how long a left level keeps its state). A portal opened in the tower now lasts `TOWER_PORTAL_MS` 5 min with a countdown; if it closes while you're away, or you die in the tower, or you open a portal from another level, the run ends and the next entry starts at floor 1. Other portals are unchanged.
+- Tests: `tests/v181.test.ts`, `scripts/v181-shots.mjs` (screenshots/v181). SW cache v43.
+
 ## v1.8: Act V, Rimefrost Citadel
 
 - `ACT_COUNT` 5, `MAX_FLOOR` 100. Act V (floors 81-100): `ice` floor/wall feature and a cold palette; monsters Frozen Husk, Rime Revenant, Rime Caller, Frost Wraith, level boss Frost Lord, final boss Vorthak, the Frozen King (bolts, nova, charge, summon husks, slam). They reuse earlier species art recolored by `MonsterDef.tint` (`tinted()` in render.ts, cached per frame). `ActDef.summon` sets what a final boss summons; `ActDef.artifact` is optional (Act V has none, `ARTIFACTS` stays the four).
