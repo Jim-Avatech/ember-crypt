@@ -3,6 +3,12 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.9: Items that fit, and a weapon swap
+
+- One rule for "+skill" rolls: `TREE_FIT` in `src/data/skills.ts` declares, for every skill tree, the weapon bases and body slots it can roll on (Combat/Masteries/Warcries: Barbarian weapons, helms, amulets; Bow & Crossbow: bows, amulets; Javelin & Spear: javelins, spears, amulets; Passive & Magic: amulets; Fire/Cold/Lightning: battle staves, wands, orbs, amulets). `skillPoolFor` (single "+N to [Skill]"), `itemClassFor` (+Class Skills) and the "+N to [Tree]" roll all read it, for drops, enchants and Brann's crafting. A javelin can no longer roll +Bow & Crossbow. Saved items that already hold an unfitting bonus are grandfathered (kept untouched; `modFitsBase` tells them apart).
+- Weapon swap: `player.equip.main/off` is always the active set, `player.altSet` the other, `player.weaponSet` 0/1 (I/II), saved only when used. `Game.swapWeapons()` (1 s cooldown, cuts off a swing) exchanges them, so stats, DPS, tooltips, +skills and bow/javelin checks read the active hands with no special cases. The ⇄ button sits above the potions (right 16 px, bottom 192 px; ⚔ and the three skill buttons did not move), W on a keyboard. The Bag has I / II tabs; the other set is edited through `Game.withAlt` (hands exchanged for the duration, vitals and hotbar untouched, saves always hold the real hands).
+- Tests: `tests/v19.test.ts`, `scripts/v19-shots.mjs` (screenshots/v19). SW cache v44.
+
 ## v1.8.1: Sanctum of the Four, Kharos and the Endless Tower
 
 - Floor 101 is the Sanctum of the Four (`SANCTUM_FLOOR`), reached by the stairs after Vorthak and listed on the waypoint. Its altar takes all four artifacts (Acts I-IV final bosses; they are kept, so Kharos can be summoned again) and Kharos, the First Flame rises after `ALTAR_RISE` 2.5 s: life x`BIG_BOSS_HP` 2.5 over a final boss, hits x`BIG_BOSS_HIT` 1.15 through the same per-floor `bossHitShare` rule, every special (nova, bolts, charge, slam, summons) telegraphed.
