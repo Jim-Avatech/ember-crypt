@@ -49,7 +49,12 @@ export interface ItemBase {
   range?: number;
   /** v1.0 quiver: arrows in a full quiver (refilled free in camp) */
   ammo?: number;
-  /** v1.0 melee reach bonus (tiles), e.g. spears */
+  /**
+   * v1.9.1: melee reach in tiles (the weapon's "arm length"). A hit lands when the distance between centres is at
+   * most reach + the monster's radius + the hero's radius (0.28). Every weapon type sets this so reach fits its
+   * size: throwing knife < wand / throwing axe < sword / axe / mace < javelin < staffs < great sword < spear.
+   * Bows still shoot; this is only used if they bump in melee.
+   */
   reach?: number;
   /** price of a level-1 normal one */
   price: number;
@@ -71,23 +76,23 @@ const A = (id: string, name: string, kind: Kind, w: number, h: number, defMul: n
  * itself (ITEM_DROP) is separate and unchanged. The pool is the same for every class.
  */
 export const ITEM_BASES: ItemBase[] = [
-  { ...W("sword", "Sword", "sword", 1, 3, 0.46, [0.55, 1.45], 1.0, [10, 1.5], [8, 1.2]), weight: 0.85 },
-  { ...W("axe", "Axe", "axe", 2, 3, 0.52, [0.4, 1.6], 1.15, [12, 2], undefined), weight: 0.85 },
-  { ...W("mace", "Mace", "mace", 1, 3, 0.5, [0.8, 1.2], 1.05, [12, 1.8], undefined), weight: 0.85 },
-  { ...W("great_sword", "Great Sword", "sword", 2, 4, 0.6, [0.5, 1.5], 1.9, [18, 2.3], [10, 1.2], 2), weight: 0.5 },
+  { ...W("sword", "Sword", "sword", 1, 3, 0.46, [0.55, 1.45], 1.0, [10, 1.5], [8, 1.2]), reach: 0.95, weight: 0.85 },
+  { ...W("axe", "Axe", "axe", 2, 3, 0.52, [0.4, 1.6], 1.15, [12, 2], undefined), reach: 0.95, weight: 0.85 },
+  { ...W("mace", "Mace", "mace", 1, 3, 0.5, [0.8, 1.2], 1.05, [12, 1.8], undefined), reach: 0.95, weight: 0.85 },
+  { ...W("great_sword", "Great Sword", "sword", 2, 4, 0.6, [0.5, 1.5], 1.9, [18, 2.3], [10, 1.2], 2), reach: 1.35, weight: 0.5 },
   // v0.6: a fast, steady two-hander (not in D2; uses Pole Arm Mastery)
-  { ...W("quarterstaff", "Quarterstaff", "staff", 1, 4, 0.42, [0.85, 1.15], 1.45, [12, 1.6], [10, 1.4], 2), price: 60, weight: 0.4 },
+  { ...W("quarterstaff", "Quarterstaff", "staff", 1, 4, 0.42, [0.85, 1.15], 1.45, [12, 1.6], [10, 1.4], 2), reach: 1.25, price: 60, weight: 0.4 },
   // v0.6: throwing weapons (stacks; thrown with the attack button, refilled in camp)
-  { ...W("throwing_knife", "Throwing Knife", "knife", 1, 2, 0.4, [0.7, 1.3], 0.75, [0, 0.4], [12, 1.6]), thrown: { max: 320, range: 9 }, price: 35, weight: 0.35 },
-  { ...W("throwing_axe", "Throwing Axe", "axe", 1, 2, 0.48, [0.55, 1.45], 0.9, [10, 1.2], [10, 1.2]), thrown: { max: 240, range: 8 }, price: 35, weight: 0.35 },
-  { ...W("javelin", "Javelin", "spear", 1, 4, 0.54, [0.6, 1.4], 1.05, [8, 1], [14, 1.6]), thrown: { max: 200, range: 10 }, price: 40, weight: 0.35 },
+  { ...W("throwing_knife", "Throwing Knife", "knife", 1, 2, 0.4, [0.7, 1.3], 0.75, [0, 0.4], [12, 1.6]), thrown: { max: 320, range: 9 }, reach: 0.70, price: 35, weight: 0.35 },
+  { ...W("throwing_axe", "Throwing Axe", "axe", 1, 2, 0.48, [0.55, 1.45], 0.9, [10, 1.2], [10, 1.2]), thrown: { max: 240, range: 8 }, reach: 0.85, price: 35, weight: 0.35 },
+  { ...W("javelin", "Javelin", "spear", 1, 4, 0.54, [0.6, 1.4], 1.05, [8, 1], [14, 1.6]), thrown: { max: 200, range: 10 }, reach: 1.15, price: 40, weight: 0.35 },
   // v1.0: Amazon weapons (they drop for every class)
-  { ...W("spear", "Spear", "spear", 2, 4, 0.56, [0.45, 1.55], 1.8, [14, 1.8], [12, 1.6], 2), reach: 0.55, price: 65, weight: 0.45 },
-  { ...W("short_bow", "Short Bow", "bow", 2, 3, 0.42, [0.55, 1.45], 1.05, [0, 0.6], [14, 1.9], 2), range: 11, price: 55, weight: 0.45 },
-  { ...W("long_bow", "Long Bow", "bow", 2, 4, 0.56, [0.5, 1.5], 1.55, [12, 1.2], [16, 2.1], 2), range: 12, price: 70, weight: 0.4 },
+  { ...W("spear", "Spear", "spear", 2, 4, 0.56, [0.45, 1.55], 1.8, [14, 1.8], [12, 1.6], 2), reach: 1.50, price: 65, weight: 0.45 },
+  { ...W("short_bow", "Short Bow", "bow", 2, 3, 0.42, [0.55, 1.45], 1.05, [0, 0.6], [14, 1.9], 2), range: 11, reach: 0.80, price: 55, weight: 0.45 },
+  { ...W("long_bow", "Long Bow", "bow", 2, 4, 0.56, [0.5, 1.5], 1.55, [12, 1.2], [16, 2.1], 2), range: 12, reach: 0.80, price: 70, weight: 0.4 },
   // v1.6 Sorceress weapons: a two-handed battle staff and a one-handed wand (+Sorceress skills only)
-  { ...W("battle_staff", "Battle Staff", "staff", 1, 4, 0.5, [0.75, 1.25], 1.25, [5, 0.55], undefined, 2), price: 60, weight: 0.35 },
-  { ...W("wand", "Wand", "wand", 1, 2, 0.46, [0.6, 1.4], 0.6, [0, 0.4], undefined), price: 40, weight: 0.4 },
+  { ...W("battle_staff", "Battle Staff", "staff", 1, 4, 0.5, [0.75, 1.25], 1.25, [5, 0.55], undefined, 2), reach: 1.25, price: 60, weight: 0.35 },
+  { ...W("wand", "Wand", "wand", 1, 2, 0.46, [0.6, 1.4], 0.6, [0, 0.4], undefined), reach: 0.75, price: 40, weight: 0.4 },
   { id: "arrows", name: "Arrows", slot: "quiver", kind: "quiver", w: 1, h: 3, ammo: 1200, price: 20, weight: 0.25 },
   A("armor", "Armor", "armor", 2, 3, 1, [8, 1.6], 40, 1.1),
   A("helm", "Helm", "helm", 2, 2, 0.45, [0, 1.2], 30, 0.95),
@@ -107,15 +112,15 @@ export const CLASS_USE: Record<string, string> = {
   sword: "Fast and balanced. Good all-rounder; the only one-hander with a Dexterity requirement.",
   axe: "Big swings: the widest damage spread and highest one-hand average. Normal speed.",
   mace: "Steady: tight damage spread, so every hit lands close to the average.",
-  great_sword: "Two-handed. Slow, very high damage; takes both hands (no shield or second weapon).",
-  quarterstaff: "Two-handed, fast and steady: tight damage spread at the quickest swing of any weapon. Uses Pole Arm Mastery (not in Diablo II).",
+  great_sword: "Two-handed. Slow, very high damage; takes both hands (no shield or second weapon). Long reach: it matches the biggest non-boss melee monsters.",
+  quarterstaff: "Two-handed, fast and steady: tight damage spread at the quickest swing of any weapon. Uses Pole Arm Mastery (not in Diablo II). Longer reach than a one-hander.",
   throwing_knife: "Thrown with the attack button (stack of 40). Fastest throw, lowest damage. Throwing Mastery; Dex-heavy. Refilled free in camp.",
   throwing_axe: "Thrown (stack of 30). Swingy damage. Throwing Mastery when thrown, Axe Mastery in melee. Refilled free in camp.",
   javelin: "Thrown (stack of 100) or used to stab in melee: pick Throw or Stab as your basic attack. Throwing Mastery when thrown, Spear Mastery in melee. Amazon javelin skills use it.",
-  spear: "Two-handed reach weapon: stabs from further away than any other melee weapon. Spear Mastery; Amazon spear skills use it.",
+  spear: "Two-handed reach weapon: the longest melee reach in the game. Spear Mastery; Amazon spear skills use it.",
   short_bow: "Two-handed bow, the faster of the two. Shoots arrows from a quiver in the off-hand (Shoot basic attack). Damage grows with Dexterity.",
   long_bow: "Two-handed bow: slower, more damage and range than the Short Bow. Needs a quiver of arrows. Damage grows with Dexterity.",
-  battle_staff: "Two-handed Sorceress staff: steady damage, low Strength. Rolls +Sorceress skills (fire, cold, lightning).",
+  battle_staff: "Two-handed Sorceress staff: steady damage, low Strength. Rolls +Sorceress skills (fire, cold, lightning). Staff reach.",
   wand: "One-handed Sorceress wand: light, fast, little damage. Rolls +Sorceress skills; pair it with a shield or an orb.",
   orb: "Sorceress off-hand: little defense, but rolls +Sorceress skills, mana and Energy. Goes where a shield goes.",
   arrows: "A quiver of 600 arrows for the off-hand. Bows need it to shoot. Refilled free in camp.",
@@ -181,6 +186,19 @@ export const isBow = (it: Item | undefined | null) => !!it && BASE_BY_ID[it.base
 export const isQuiver = (it: Item | undefined | null) => !!it && BASE_BY_ID[it.baseId]?.slot === "quiver";
 /** Javelins and spears (Amazon spear skills). */
 export const isSpearLike = (it: Item | undefined | null) => !!it && BASE_BY_ID[it.baseId]?.kind === "spear";
+/** v1.9.1: unarmed / fist melee reach (tiles), used when no weapon is in that hand */
+export const UNARMED_REACH = 0.8;
+/** v1.9.1: a weapon type's melee reach (its "arm length" in tiles). Bows have a short bump reach. */
+export function weaponReachOf(baseId?: string | null): number {
+  if (!baseId) return UNARMED_REACH;
+  const b = BASE_BY_ID[baseId];
+  return b?.reach ?? UNARMED_REACH;
+}
+/**
+ * v1.9.1: a melee hit lands when centre-to-centre distance is at most this. Same shape as a monster's
+ * start-attack range (`def.reach + def.radius + hero.r`). Hero radius is 0.28.
+ */
+export const meleeHitDist = (reach: number, otherRadius: number, selfRadius = 0.28) => reach + otherRadius + selfRadius;
 export const qualityOf = (it: Item): Quality => it.q ?? "normal";
 export const modTotal = (it: Item | undefined | null, s: StatKey) => (it?.mods ?? []).reduce((a, m) => (m.s === s ? a + m.v : a), 0);
 

@@ -1,7 +1,7 @@
 import { MAX_AFFIXES, affixCount, craftAffix, craftBlock, craftCost, enchant, mergeDuplicateMods, rollDrop } from "./data/affixes";
 import {
   BASE_BY_ID, type EquipSlot, ITEM_BASES, type Item, type Kind, type StatKey, beltSlotsOf, isTwoHanded, itemDamage, isBow, isQuiver, isSpearLike, offBlocked,
-  isThrowing, itemDefense, itemName, itemPrice, itemReqs, makeItem, migrateItem, modTotal, QUALITY_COLOR, qtyMax, qualityOf, sellPrice,
+  isThrowing, itemDefense, itemName, itemPrice, itemReqs, makeItem, migrateItem, meleeHitDist, modTotal, QUALITY_COLOR, qtyMax, qualityOf, sellPrice, weaponReachOf,
   type Mod, type Quality, ilvlOf,
 } from "./data/items";
 import {
@@ -2816,7 +2816,7 @@ export class Game {
     const p = this.player;
     const th = melee || (skill && SPEAR_MELEE.has(skill)) ? null : this.throwHands(skill, d);
     if (th) return this.startThrow(skill, th, d);
-    const target = this.nearestMonster(2.4 + this.reachBonus());
+    const target = this.nearestMonster(this.weaponReach() + 1.45);
     if (target) {
       const dx = target.x - p.x;
       const dy = target.y - p.y;
@@ -2856,12 +2856,24 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ v1.0 bows and Amazon effects
-  /** Extra melee reach: spears reach further, javelins a little. */
-  reachBonus(): number {
-    const it = this.player.equip.main;
-    const b = it ? BASE_BY_ID[it.baseId] : null;
-    return b?.reach ?? (b?.kind === "spear" ? 0.2 : 0);
+  /**
+   * v1.9.1: melee reach of a hand's weapon (the weapon type's `reach`, or unarmed). Skills that swing (Bash,
+   * Frenzy, Double Swing, Jab, Fend, Whirlwind, …) all read this; a two-hander uses the main hand.
+   */
+  weaponReach(slot: EquipSlot | null = "main"): number {
+    const it = slot && this.usable(slot) ? this.player.equip[slot] : undefined;
+    return weaponReachOf(it?.baseId);
   }
+  /** v1.9.1: reach of the weapon swinging in this derived hand (dual wield: each hand its own). */
+  handReach(d: Derived, hand = 0): number {
+    const sl = (d.hands[hand] ?? d.hands[0])?.slot ?? null;
+    return this.weaponReach(sl);
+  }
+  /** v1.9.1: the longest reach of the weapons in use (Fend and Whirlwind hit all around). */
+  longestReach(d: Derived): number {
+    return Math.max(...d.hands.map((_, i) => this.handReach(d, i)));
+  }
+
   private bowRange(): number {
     const it = this.player.equip.main;
     return (it && BASE_BY_ID[it.baseId].range) || 11;
@@ -3627,7 +3639,7 @@ export class Game {
         a.hand++;
         let any = false;
         for (const m of [...this.monsters]) {
-          if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > 1.25 + m.def.radius) continue;
+          if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > meleeHitDist(this.longestReach(d), m.def.radius, p.r)) continue;
           this.playerHit(m, h, { dmgPct: wwDmg(lvl), arPct: wwAR(lvl), knock: 1.2 });
           any = true;
         }
@@ -3657,14 +3669,14 @@ export class Game {
 
   private resolveMelee(skill: string | null, preferred: Monster | null, d: Derived, hand = 0) {
     const p = this.player;
-    const reach = 0.95 + this.reachBonus();
+    const reach = skill === "fend" ? this.longestReach(d) : this.handReach(d, hand);
     let target: Monster | null = null;
     const inReach = (m: Monster) => {
       if (m.state === "dead") return false;
       const dx = m.x - p.x;
       const dy = m.y - p.y;
       const dist = Math.hypot(dx, dy);
-      if (dist > reach + m.def.radius + p.r) return false;
+      if (dist > meleeHitDist(reach, m.def.radius, p.r)) return false;
       // within ~75 degrees of facing
       return (dx * p.fx + dy * p.fy) / (dist || 1) > 0.25 || dist < m.def.radius + p.r + 0.1;
     };
@@ -3688,7 +3700,7 @@ export class Game {
       // every monster in reach, all around
       let any = false;
       for (const m of [...this.monsters]) {
-        if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > reach + m.def.radius + p.r) continue;
+        if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > meleeHitDist(reach, m.def.radius, p.r)) continue;
         this.playerHit(m, h, { dmgPct: fendDmg(lvl), arPct: fendAR(lvl), knock: 2 });
         any = true;
       }

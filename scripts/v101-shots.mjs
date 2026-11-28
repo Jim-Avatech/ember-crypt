@@ -128,7 +128,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
     return { vs, top: body.scrollTop, visible: box.getBoundingClientRect().top < 393 };
   });
   // v1.4: the newest entries are now v1.4, v1.3.2, v1.3.1, v1.3, v1.2.2 (then v1.2.1)
-  C("Settings: patch notes, newest first (v1.9, v1.8.1, v1.8, v1.7.3, v1.6.4, v1.6.3, v1.6.2, v1.6 … v0.8.1), version label v1.9", /v1\.9 /.test(ver) && pn.vs.slice(0, 6).join() === "v1.9,v1.8.1,v1.8,v1.7.3,v1.7.2,v1.7.1" && pn.vs.at(-1) === "v0.8.1" && pn.vs.length >= 10 && pn.top > 0 && pn.visible, JSON.stringify({ ver, ...pn }));
+  C("Settings: patch notes, newest first (v1.9.1, v1.9, v1.8.1, v1.8, v1.6.4, v1.6.3, v1.6.2, v1.6 … v0.8.1), version label v1.9.1", /v1\.9\.1 /.test(ver) && pn.vs.slice(0, 6).join() === "v1.9.1,v1.9,v1.8.1,v1.8,v1.7.3,v1.7.2" && pn.vs.at(-1) === "v0.8.1" && pn.vs.length >= 10 && pn.top > 0 && pn.visible, JSON.stringify({ ver, ...pn }));
   await shot("05-patch-notes");
   const s0 = await page.evaluate(() => document.querySelector(".pbody").scrollTop);
   const how2 = await swipe(page, "#patchnotes", -200);

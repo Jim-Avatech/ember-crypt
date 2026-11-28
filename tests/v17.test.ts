@@ -38,7 +38,7 @@ const SK60 = { ice_bolt: 1, ice_blast: 1, frost_nova: 1, glacial_spike: 1, blizz
 
 describe("v1.7 release", () => {
   it("version, patch note, cache", () => {
-    expect(GAME_VERSION).toBe("1.9");
+    expect(GAME_VERSION).toBe("1.9.1");
     expect(PATCH_NOTES.find((n) => n.version === "1.7")!.notes.join(" ")).toMatch(/spell damage/i);
     expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
   });

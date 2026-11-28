@@ -3,6 +3,12 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.9.1: Weapon reach that fits the weapon
+
+- Melee reach is a data-driven property of every weapon type (`ItemBase.reach`, tiles): throwing knife 0.70, wand 0.75, throwing axe 0.85, sword/axe/mace 0.95 (unchanged), javelin 1.15 (unchanged), quarterstaff and battle staff 1.25, Great Sword 1.35, spear 1.50 (still the longest). Unarmed is 0.80. A hit lands at `reach + other radius + hero radius` (0.28), the same shape as a monster starting its swing. Bash, Frenzy, Double Swing, Jab, Fend, Whirlwind and the rest use the weapon in the swinging hand (AoE uses the longer of the two).
+- A Great Sword now reaches at least as far as the biggest non-boss melee monsters (Doom Knight / Rime Revenant, reach 0.90, landed swing 1.89 tiles including their 0.35-tile grace). Monsters still walk up to their own reach and stop, so a longer weapon hits first. Damage and attack speed are unchanged; a Great Sword user just connects a little earlier.
+- Tests: `tests/v191.test.ts`, `scripts/v191-shots.mjs` (screenshots/v191). SW cache v45.
+
 ## v1.9: Items that fit, and a weapon swap
 
 - One rule for "+skill" rolls: `TREE_FIT` in `src/data/skills.ts` declares, for every skill tree, the weapon bases and body slots it can roll on (Combat/Masteries/Warcries: Barbarian weapons, helms, amulets; Bow & Crossbow: bows, amulets; Javelin & Spear: javelins, spears, amulets; Passive & Magic: amulets; Fire/Cold/Lightning: battle staves, wands, orbs, amulets). `skillPoolFor` (single "+N to [Skill]"), `itemClassFor` (+Class Skills) and the "+N to [Tree]" roll all read it, for drops, enchants and Brann's crafting. A javelin can no longer roll +Bow & Crossbow. Saved items that already hold an unfitting bonus are grandfathered (kept untouched; `modFitsBase` tells them apart).

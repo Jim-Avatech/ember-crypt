@@ -1329,7 +1329,7 @@ export class Ui {
         lines.push(`Throw range: ${b.thrown.range} · Throwing Mastery`);
       }
       if (b.kind === "bow") lines.push(`Shoots arrows from a quiver in the off-hand · range ${b.range ?? 11} · damage grows with Dexterity`);
-      if (b.reach) lines.push(`Long reach · two-handed thrust · Spear Mastery`);
+      if (b.slot === "weapon" && b.kind !== "bow") lines.push(`Reach: ${b.reach?.toFixed(2) ?? "0.80"} tiles${b.kind === "spear" && !b.thrown ? " · two-handed thrust · Spear Mastery" : ""}`);
       // v1.3.2: only the Barbarian dual wields
       lines.push(`Speed: ${b.speedLabel}${b.hands === 1 ? (g.canDualWield() ? " · can dual wield" : "") : ""}`);
       // v1.3: DPS of your ⚔ normal attack with this weapon (your stats and skills, crits in; misses not)

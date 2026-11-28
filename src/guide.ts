@@ -42,7 +42,7 @@ function classesHtml(): string {
       facts.push(`Damage spread ${lo}–${hi}× average`, `Damage ×${b.dmgMul} vs base`);
       if (b.thrown) facts.push(`Throws: stack of ${b.thrown.max}, range ${b.thrown.range}`);
       if (b.kind === "bow") facts.push(`Shoots arrows (quiver in the off-hand), range ${b.range ?? 11}`, "Damage grows with Dexterity");
-      if (b.reach) facts.push("Long reach");
+      if (b.slot === "weapon" && b.kind !== "bow" && b.reach) facts.push(`Reach ${b.reach.toFixed(2)} tiles`);
       const mast = b.thrown ? "Throwing Mastery" : ({ sword: "Sword", axe: "Axe", mace: "Mace", staff: "Pole Arm", spear: "Spear" } as Record<string, string>)[b.kind];
       if (mast) facts.push(b.thrown ? `${mast}${b.kind === "axe" ? " (Axe Mastery in melee)" : b.kind === "spear" ? " (Spear Mastery in melee)" : ""}` : `${mast} Mastery`);
     } else if (b.defMul) facts.push(`Defense ×${b.defMul}`);

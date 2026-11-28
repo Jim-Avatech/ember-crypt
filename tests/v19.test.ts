@@ -17,9 +17,9 @@ const equippable = ITEM_BASES.filter((b) => b.slot !== "potion" && b.slot !== "q
 
 describe("v1.9 release", () => {
   it("version, patch note, cache v44+", () => {
-    expect(GAME_VERSION).toBe("1.9");
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/weapon swap/i);
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/skill/i);
+    expect(GAME_VERSION).toMatch(/^1\.9/);
+    expect(PATCH_NOTES.find((n) => n.version === "1.9")!.notes.join(" ")).toMatch(/weapon swap/i);
+    expect(PATCH_NOTES.find((n) => n.version === "1.9")!.notes.join(" ")).toMatch(/skill/i);
     expect(swSrc).toMatch(/ember-crypt-shell-v4[4-9]/);
   });
 });

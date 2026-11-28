@@ -10,6 +10,14 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.9.1",
+    title: "Weapon reach that fits the weapon",
+    notes: [
+      "Every weapon type now has its own melee reach, sized to the weapon: throwing knives are short, swords, axes and maces mid, staves and javelins longer, a Great Sword longer still (it now reaches at least as far as the biggest non-boss melee monsters, like a Doom Knight), and a spear the longest. The same numbers apply to every class, and to Bash, Frenzy, Double Swing, Jab, Fend, Whirlwind and the rest.",
+      "Monsters still walk up to their own reach and stop, so a longer weapon lets you hit first. A held ⚔ still faces a nearby enemy a little past your reach, then the swing uses the weapon in your hands.",
+    ],
+  },
+  {
     version: "1.9",
     title: "Items that fit, and a weapon swap",
     notes: [
