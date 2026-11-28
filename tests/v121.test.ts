@@ -10,7 +10,7 @@ const idle = { mx: 0, my: 0, mag: 0, attack: false, skills: [false, false, false
 
 describe("v1.2.1 Multiple Shot formula", () => {
   it("levels 1 / 10 / 20: arrows, per-arrow %, volley total", () => {
-    expect(GAME_VERSION).toBe("1.7.1");
+    expect(GAME_VERSION).toBe("1.7.2");
     expect([1, 10, 20].map(multiShotTotal)).toEqual([125, 170, 220]);
     expect([1, 10, 20].map(multiShotArrows)).toEqual([3, 12, 12]);
     expect(multiShotPer(1)).toBeCloseTo(125 / 3, 6);

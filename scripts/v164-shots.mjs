@@ -1,4 +1,4 @@
-// v1.6.4 at 852x393 in Chromium and WebKit: spells leech at 35%, capped at 4% of max life / mana a second. Character
+// v1.6.4 at 852x393 in Chromium and WebKit: spells and skill effects leech at a reduced rate (v1.7.2: 20%, no cap).
 // screen note, item card note, and a Blizzard into a pack healing a hurt Sorceress at no more than the cap.
 // usage: node scripts/v164-shots.mjs [baseUrl] [outDir]
 import { chromium, webkit } from "@playwright/test";
@@ -44,9 +44,8 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   // 1) Character screen
   await page.click('[data-tab="char"]');
   await page.waitForTimeout(400);
-  const row = await ev(() => ({ t: document.querySelector(".leechnote")?.textContent.replace(/\s+/g, " ").trim() ?? "", hp: __ec.game.derived().maxHp, mp: __ec.game.derived().maxMana }));
-  const capH = Math.round(Math.max(1, row.hp * 0.04)), capM = Math.round(Math.max(1, row.mp * 0.04));
-  C("Character screen: 'Spells (?:and|&) skill effects leech at 35%, up to X life · Y mana a second'", new RegExp(`Spells (?:and|&) skill effects leech at 35%.*up to ${capH} life · ${capM} mana a second`).test(row.t), JSON.stringify(row));
+  const row = await ev(() => ({ t: [...document.querySelectorAll(".leechnote")].map((e) => e.textContent.replace(/\s+/g, " ").trim()).join(" | ") }));
+  C("Character screen: spells leech at 20%, no cap; later acts resist", /Spells (?:and|&) skill effects leech at 20%/.test(row.t) && /no cap/i.test(row.t) && /later acts/i.test(row.t), JSON.stringify(row));
   await page.locator(".leechnote").first().scrollIntoViewIfNeeded().catch(() => {});
   await page.screenshot({ path: `${out}/01-character-spell-leech${sfx}.png` });
   await ev(() => __ec.ui.close?.());
@@ -56,7 +55,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await page.locator('[data-src="bag"][data-uid="9902"]').first().click();
   await page.waitForTimeout(400);
   const card = await ev(() => [...document.querySelectorAll(".leechnote")].map((e) => e.textContent).join(" | ").replace(/\s+/g, " "));
-  C("leech item card: 'Spells (?:and|&) skill effects leech at 35%, up to 4% of max life / mana a second'", /Spells (?:and|&) skill effects leech at 35%, up to 4% of max life \/ mana a second/.test(card), card.slice(0, 260));
+  C("leech item card: 20%, no cap, elites/bosses/later acts resist all leech", /Spells and skill effects leech at 20% of this, no cap/.test(card) && /resist all leech/.test(card), card.slice(0, 260));
   await page.screenshot({ path: `${out}/02-item-card-spell-leech${sfx}.png` });
   await page.locator('[data-act="cmp-close"]').click().catch(() => {});
   await ev(() => __ec.ui.close?.());
@@ -104,7 +103,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
     return { lifePerS, cap: d.maxHp * 0.04, maxHp: d.maxHp, casts };
   }, idle);
   await page.waitForTimeout(200);
-  C("Blizzard on 10 monsters heals a hurt Sorceress, but no more than 4% of max life a second", res.lifePerS > 0 && res.lifePerS <= res.cap * 1.12, JSON.stringify(res));
+  C("Blizzard on 10 monsters heals a hurt Sorceress well above the old 4% cap (uncapped)", res.lifePerS > res.cap * 2, JSON.stringify(res));
   await page.screenshot({ path: `${out}/03-blizzard-leech${sfx}.png` });
   await ev(() => { delete __ec.game.update; });
   C("no page errors", errs.length === 0, errs.join(" | "));

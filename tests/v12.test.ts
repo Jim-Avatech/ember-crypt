@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { type Item, itemReqs, makeItem } from "../src/data/items";
 import { GAME_VERSION } from "../src/data/patchNotes";
-import { CLASS_DEF, Game, type GameEvents, ONCE_PER_PRESS, RESPEC_GOLD_PER_LEVEL, respecCost } from "../src/game";
+import { CLASS_DEF, Game, type GameEvents, ONCE_PER_PRESS, RESPEC_FREE, RESPEC_GOLD_PER_LEVEL, respecCost } from "../src/game";
 
 const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, levelUp() {}, shake() {} };
 const input = (attack: boolean) => ({ mx: 0, my: 0, mag: 0, attack, skills: [false, false, false] });
@@ -15,7 +15,7 @@ function hero(cls: "barbarian" | "amazon" = "barbarian", level = 20) {
 
 describe("v1.2 respec costs", () => {
   it("50 gold × level per point", () => {
-    expect(GAME_VERSION).toBe("1.7.1");
+    expect(GAME_VERSION).toBe("1.7.2");
     expect(RESPEC_GOLD_PER_LEVEL).toBe(50);
     expect([1, 10, 20, 40, 60, 80].map(respecCost)).toEqual([50, 500, 1000, 2000, 3000, 4000]);
   });
@@ -28,23 +28,30 @@ describe("v1.2 respec a stat point", () => {
     const min = CLASS_DEF.barbarian.stats;
     p.base.vit = min.vit + 2;
     p.gold = 2500;
+    const charge = RESPEC_FREE ? 0 : respecCost(20);
     expect(g.unstat("vit")).toBe(null);
-    expect([p.base.vit, p.statPoints, p.gold]).toEqual([min.vit + 1, 1, 1500]);
+    expect([p.base.vit, p.statPoints, p.gold]).toEqual([min.vit + 1, 1, 2500 - charge]);
     expect(g.unstat("vit")).toBe(null);
     expect(g.canUnstat("vit").ok).toBe(false);
     expect(g.unstat("vit")).toMatch(/Starts at/);
-    expect([p.base.vit, p.statPoints, p.gold]).toEqual([min.vit, 2, 500]);
+    expect([p.base.vit, p.statPoints, p.gold]).toEqual([min.vit, 2, 2500 - 2 * charge]);
     // life never stays above the new maximum
     expect(p.hp).toBeLessThanOrEqual(g.derived().maxHp);
   });
-  it("not enough gold: refused, nothing changes", () => {
+  it("not enough gold: refused, nothing changes (or free, nothing charged)", () => {
     const g = hero();
     const p = g.player;
     p.base.str += 3;
     p.gold = 999;
-    expect(g.unstat("str")).toMatch(/Needs 1,000 gold/);
-    expect(p.statPoints).toBe(0);
-    expect(p.gold).toBe(999);
+    if (RESPEC_FREE) {
+      expect(g.unstat("str")).toBe(null);
+      expect(p.statPoints).toBe(1);
+      expect(p.gold).toBe(999);
+    } else {
+      expect(g.unstat("str")).toMatch(/Needs 1,000 gold/);
+      expect(p.statPoints).toBe(0);
+      expect(p.gold).toBe(999);
+    }
   });
   it("stash gold tops it up in camp only", () => {
     const g = hero();
@@ -53,10 +60,10 @@ describe("v1.2 respec a stat point", () => {
     p.gold = 400;
     p.stashGold = 5000;
     g.goDungeon(2);
-    expect(g.canUnstat("str").ok).toBe(false);
+    if (!RESPEC_FREE) expect(g.canUnstat("str").ok).toBe(false);
     g.goTown(true);
     expect(g.unstat("str")).toBe(null);
-    expect([p.gold, p.stashGold]).toEqual([0, 4400]);
+    expect([p.gold, p.stashGold]).toEqual(RESPEC_FREE ? [400, 5000] : [0, 4400]);
   });
   it("won't drop Strength or Dexterity below what worn gear needs (no surprise red items)", () => {
     const g = hero("amazon", 30);
@@ -99,7 +106,7 @@ describe("v1.2 respec a skill point", () => {
     expect(p.skills.bash).toBeUndefined();
     expect(p.slots).toEqual([null, null, null]);
     expect(p.skillPoints).toBe(1 + 4); // a new hero starts with 1
-    expect(p.gold).toBe(1e6 - 4 * 1000);
+    expect(p.gold).toBe(1e6 - (RESPEC_FREE ? 0 : 4 * 1000));
     expect(g.canUnlearn("bash").ok).toBe(false);
   });
   it("a fully removed skill comes off ⚔ (back to Auto)", () => {

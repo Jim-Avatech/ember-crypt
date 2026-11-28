@@ -66,7 +66,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await page.waitForTimeout(400);
   const b = await charRows();
   C("Barbarian (+20% FCR amulet, no spells): no Cast time / Spell DPS rows", b.cast === null && b.sdps === null, JSON.stringify(b));
-  C("Barbarian: leech note 'Spells and skill effects leech at 35%'", /Spells (?:and|&) skill effects leech at 35%/.test(b.leech), b.leech);
+  C("Barbarian: leech note at 20%, no cap", /Spells (?:and|&) skill effects leech at 20%/.test(b.leech) && /no cap/i.test(b.leech), b.leech);
   await page.screenshot({ path: `${out}/01-barb-char${sfx}.png` });
   await page.click(".pclose");
   await page.waitForTimeout(300);
@@ -91,7 +91,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
     const dealt = g.monsters.reduce((s, m) => s + (1e6 - m.hp), 0);
     return { ok, dealt, got: g.spellLeechGot.hp - sl0, atk: g.atkLeechGot.hp - al0, cap: d.maxHp * 0.04, hp0, hp: p.hp };
   }, idle);
-  C("War Cry hits the pack and heals through skill-effect leech (≤ 4% of max life), none through weapon leech", wc.ok && wc.dealt > 0 && wc.got > 0 && wc.got <= wc.cap + 0.01 && wc.atk === 0, JSON.stringify(wc));
+  C("War Cry hits the pack and heals through skill-effect leech, none through weapon leech", wc.ok && wc.dealt > 0 && wc.got > 0 && wc.atk === 0, JSON.stringify(wc));
   await page.waitForTimeout(150);
   await page.screenshot({ path: `${out}/02-barb-warcry${sfx}.png` });
   await ev(() => { delete __ec.game.update; });
@@ -102,7 +102,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await page.waitForTimeout(400);
   const s = await charRows();
   C("Sorceress: Cast time row (+20% faster cast rate) and Spell DPS row", /Cast time.*\+20% faster cast rate/.test(s.cast ?? "") && /Spell DPS.*Fire Ball/.test(s.sdps ?? ""), JSON.stringify(s));
-  C("Sorceress: same leech note", /Spells (?:and|&) skill effects leech at 35%/.test(s.leech), s.leech);
+  C("Sorceress: same leech note", /Spells (?:and|&) skill effects leech at 20%/.test(s.leech) && /no cap/i.test(s.leech), s.leech);
   await page.screenshot({ path: `${out}/03-sorc-char${sfx}.png` });
 
   C("no page errors", errs.length === 0, errs.join(" | "));

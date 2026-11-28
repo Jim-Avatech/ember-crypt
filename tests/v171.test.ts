@@ -5,7 +5,7 @@ import gameSrc from "../src/game.ts?raw";
 import uiSrc from "../src/ui.ts?raw";
 import { makeItem, type Item } from "../src/data/items";
 import { GAME_VERSION, PATCH_NOTES } from "../src/data/patchNotes";
-import { Game, type GameEvents, type Monster, SPELL_LEECH_PCT, spellLeechCap } from "../src/game";
+import { Game, type GameEvents, type Monster, SPELL_LEECH_PCT, leechDrainFor } from "../src/game";
 import swSrc from "../public/sw.js?raw";
 
 const events: GameEvents = { sound() {}, toast() {}, changed() {}, died() {}, levelUp() {}, shake() {} };
@@ -23,7 +23,7 @@ function barb(lvl = 30) {
   const proto = g.monsters.find((m) => m.def.rank === "normal")!;
   p.x = R.cx + 0.5; p.y = R.cy + 0.5;
   g.monsters = Array.from({ length: 6 }, (_, i) => {
-    const m = { ...proto, id: 9e6 + i, x: p.x + Math.cos(i) * 1.5, y: p.y + Math.sin(i) * 1.5, state: "chase", kx: 0, ky: 0, stunT: 0, hp: 1e6, maxHp: 1e6, fuse: -1 } as Monster;
+    const m = { ...proto, id: 9e6 + i, x: p.x + Math.cos(i) * 1.5, y: p.y + Math.sin(i) * 1.5, state: "chase", kx: 0, ky: 0, stunT: 0, hp: 1e6, maxHp: 1e6, fuse: -1, elite: 0 } as Monster;
     m.def = { ...proto.def, speed: 0, dmgMin: 0, dmgMax: 0, specials: undefined, shot: undefined } as Monster["def"];
     return m;
   });
@@ -31,20 +31,20 @@ function barb(lvl = 30) {
 }
 
 describe("v1.7.1 release", () => {
-  it("version, patch note, cache v39", () => {
-    expect(GAME_VERSION).toBe("1.7.1");
-    expect(PATCH_NOTES[0].version).toBe("1.7.1");
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/every hero/i);
-    expect(swSrc).toContain("ember-crypt-shell-v39");
+  it("version, patch note, cache", () => {
+    expect(GAME_VERSION).toBe("1.7.2");
+    expect(PATCH_NOTES.find((n) => n.version === "1.7.1")!.notes.join(" ")).toMatch(/every hero/i);
+    expect(swSrc).toMatch(/ember-crypt-shell-v\d+/);
   });
 });
 
 describe("v1.7.1 leech by damage source, not class", () => {
-  it("War Cry (a skill effect) leeches at the skill-effect rate, capped", () => {
+  it("War Cry (a skill effect) leeches at the skill-effect rate", () => {
     const g = barb();
     const p = g.player;
     const idle = { mx: 0, my: 0, mag: 0, attack: false, skills: [false, false, false] };
-    for (let i = 0; i < 70; i++) g.update(1 / 60, idle); // fill the 1 s leech reserve
+    for (let i = 0; i < 70; i++) g.update(1 / 60, idle);
+    g.spellLeechGot = { hp: 0, mp: 0 }; g.atkLeechGot = { hp: 0, mp: 0 };
     p.hp = 1;
     p.mana = 500;
     const d = g.derived();
@@ -55,10 +55,11 @@ describe("v1.7.1 leech by damage source, not class", () => {
     expect(dealt).toBeGreaterThan(0);
     // healed through the skill-effect reserve, nothing through weapon leech
     expect(g.atkLeechGot.hp).toBe(0);
-    const want = Math.min((dealt * 6 * SPELL_LEECH_PCT) / 10000, spellLeechCap(d.maxHp));
+    const drain = leechDrainFor("normal", 0, g.floor);
+    const want = (dealt * 6 * SPELL_LEECH_PCT * drain) / 10000;
     expect(g.spellLeechGot.hp).toBeGreaterThan(0);
-    expect(g.spellLeechGot.hp).toBeLessThanOrEqual(want + 0.01);
-    console.log("WARCRY", JSON.stringify({ dealt, got: +g.spellLeechGot.hp.toFixed(2), cap: +spellLeechCap(d.maxHp).toFixed(2) }));
+    expect(g.spellLeechGot.hp).toBeCloseTo(Math.min(want, d.maxHp - 1), 4);
+    console.log("WARCRY", JSON.stringify({ dealt, got: +g.spellLeechGot.hp.toFixed(2), want: +want.toFixed(2) }));
   });
   it("leech code has no class checks", () => {
     const src = gameSrc;

@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.7.2: Leech like Diablo II
+
+- Dropped the `SPELL_LEECH_CAP` (4%/s reserve). Skill-effect leech (`elemHit` / `directHit`) is uncapped at `SPELL_LEECH_PCT` 20% of gear leech (was 35% and capped). Weapon hits still leech in full. One rule for every class, still keyed on the damage source, never the class.
+- `leechDrainFor(rank, elite, floor)` then cuts all leech (weapon and skill effect): monster tier `LEECH_TIER_DRAIN` (normal 100%, champion 75%, unique 50%, level boss 33%, act boss 20%) × act `LEECH_ACT_DRAIN` (Act I 100%, II 75%, III 50%, IV 33%), like D2 drain effectiveness × Nightmare/Hell. Applied in `playerHit` and `spellLeech`.
+- UI: Character screen "Spells & skill effects leech at 20% of your leech · no cap" and "All leech is weaker on champions, uniques and bosses, and in later acts · Act II 75% · III 50% · IV 33%"; leech item cards drop the cap line and mention drain. Saves: nothing stored changes.
+- `RESPEC_FREE` (true): skill and stat respecs charge `respecCharge` = 0; `respecCost` (50 gold × level) is unchanged. Set `RESPEC_FREE` to false to restore costs. The confirm reads "Remove for free".
+- Numbers (tests/v172.test.ts LEECH lines): see the v1.7.2 report. Tests: `tests/v172.test.ts`, `scripts/v172-shots.mjs` (screenshots/v172). SW cache v40.
+
 ## v1.7.1: One rule for every hero (class audit)
 
 - Leech is set by the damage source, never the class: weapon hits (`playerHit`: melee, throws, arrows, and the skills that swing or throw the weapon, e.g. Whirlwind, Multishot) leech in full, uncapped; skill effects (`elemHit` and `directHit`: spells, bursts, bolts, chains, clouds, and now War Cry) leech at `SPELL_LEECH_PCT` 35%, capped at `SPELL_LEECH_CAP` 4% of max life / mana a second; minions (Valkyrie, `noLeech`) never leech for the hero. War Cry level 20 into 6 monsters (level 30, 6% leech): 0 → 13.3 life (the cap; uncapped 35% would be 33.9).

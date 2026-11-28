@@ -7,7 +7,7 @@ import {
 } from "./data/items";
 import type { SaveData } from "./game";
 import { CLASS_NAME, CLASS_TABS, MAX_SKILL_LVL, SKILLS, SKILL_BY_ID, SKILL_SLOTS, type Tab, TAB_NAMES, isBasic } from "./data/skills";
-import { NO_DUAL_MSG, AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, respecCost, SPELL_LEECH_CAP, SPELL_LEECH_PCT, spellLeechCap, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
+import { NO_DUAL_MSG, AMAZON_SPEED, BUYBACK_MAX, CLASS_DEF, fmtDps, RESPEC_FREE, respecCost, SPELL_LEECH_PCT, type Game, type Stats, VENDOR_H, VENDOR_W, xpForLevel } from "./game";
 import { Input } from "./input";
 import { GRID_H, GRID_W, POT_STACK, STASH_H, STASH_W, overlapping, potQty, sizeOf } from "./inventory";
 import type { Settings } from "./save";
@@ -644,7 +644,7 @@ export class Ui {
         if (a) {
           const err = a.kind === "stat" ? g.unstat(a.k) : g.unlearn(a.id);
           if (err) this.toast(err);
-          else this.toast(`Point removed for ${respecCost(g.player.level).toLocaleString()} gold`);
+          else this.toast(RESPEC_FREE ? "Point removed (free)" : `Point removed for ${respecCost(g.player.level).toLocaleString()} gold`);
         }
         this.respecAsk = null;
         break;
@@ -1153,11 +1153,15 @@ export class Ui {
         : `1 point of ${esc(SKILL_BY_ID[a.id].name)} <span class="muted">(${p.skills[a.id] ?? 0} → ${(p.skills[a.id] ?? 0) - 1})</span>`;
     const funds = g.respecFunds();
     const where = g.inTown && p.stashGold ? `you have ${funds.toLocaleString()} with your stash gold` : `you carry ${p.gold.toLocaleString()}`;
+    const price = RESPEC_FREE
+      ? "Free for now (the gold cost comes back later)."
+      : `Costs <b class="gold">${c.cost.toLocaleString()} gold</b> (${where}).`;
+    const btn = RESPEC_FREE ? "Remove for free" : `Remove for ${c.cost.toLocaleString()} gold`;
     return `<div class="rsp-back"><div class="rsp" role="dialog" aria-label="Remove a point">
       <div class="rsp-t">Remove ${what}?</div>
-      <div class="rsp-c">Costs <b class="gold">${c.cost.toLocaleString()} gold</b> (${where}). You get the ${a.kind === "stat" ? "stat" : "skill"} point back to spend again.</div>
+      <div class="rsp-c">${price} You get the ${a.kind === "stat" ? "stat" : "skill"} point back to spend again.</div>
       ${c.ok ? "" : `<div class="rsp-why bad">${esc(c.why ?? "")}</div>`}
-      <div class="ibtns"><button class="gbtn" data-act="respec-yes" ${c.ok ? "" : "disabled"}>Remove for ${c.cost.toLocaleString()} gold</button><button class="gbtn dim" data-act="respec-no">Cancel</button></div>
+      <div class="ibtns"><button class="gbtn" data-act="respec-yes" ${c.ok ? "" : "disabled"}>${btn}</button><button class="gbtn dim" data-act="respec-no">Cancel</button></div>
     </div></div>`;
   }
 
@@ -1227,7 +1231,8 @@ export class Ui {
         <div class="kv"><span>Critical strike</span><b>${d.crit}%</b></div>
         <div class="kv resrow"><span>Resistances</span><b>${RES_ORDER.map((k) => `<i class="r-${k}" title="${RES_LABEL[k]}" aria-label="${RES_LABEL[k]} ${d.res[k]}%">${d.res[k]}%</i>`).join(" ")}</b></div>
         ${d.ll || d.ml ? `<div class="kv leechrow"><span>Life · mana leech</span><b><i class="lleech" title="Life leech">${d.ll}%</i> · <i class="mleech" title="Mana leech">${d.ml}%</i></b></div>
-        <div class="kv leechnote"><span>Spells &amp; skill effects leech at ${SPELL_LEECH_PCT}%</span><b>up to <i class="lleech">${Math.round(spellLeechCap(d.maxHp))}</i> life · <i class="mleech">${Math.round(spellLeechCap(d.maxMana))}</i> mana a second</b></div>` : ""}
+        <div class="kv leechnote"><span>Spells &amp; skill effects leech at ${SPELL_LEECH_PCT}% of your leech</span><b>no cap</b></div>
+        <div class="kv leechnote drainnote"><span>All leech is weaker on champions (75%), uniques (50%), bosses (33%) and act bosses (20%), and in later acts (II 75% · III 50% · IV 33%)</span></div>` : ""}
         ${d.gearIas || d.frw ? `<div class="kv"><span>Attack speed · run speed</span><b class="mod">+${d.gearIas}% · +${d.frw}%</b></div>` : ""}
         ${d.gf || d.mf ? `<div class="kv"><span>Gold find · magic find</span><b class="mod">+${d.gf}% · +${d.mf}%</b></div>` : ""}
         <div class="kv"><span>Gold</span><b class="gold">${p.gold.toLocaleString()}</b></div>
@@ -1285,8 +1290,8 @@ export class Ui {
       if (r.lvl) lines.push(`<span class="${g.player.level < r.lvl ? "bad" : ""}">Required Level: ${r.lvl}</span>`);
     }
     for (const m of it.mods ?? []) lines.push(modLine(m));
-    // v1.6.4: spells and skill effects leech at a reduced, capped rate
-    if ((it.mods ?? []).some((m) => m.s === "ll" || m.s === "ml")) lines.push(`<span class="leechnote">Spells and skill effects leech at ${SPELL_LEECH_PCT}%, up to ${SPELL_LEECH_CAP}% of max life / mana a second</span>`);
+    // v1.7.2: spells and skill effects leech at a reduced, uncapped rate; all leech is drained on elites / bosses / later acts
+    if ((it.mods ?? []).some((m) => m.s === "ll" || m.s === "ml")) lines.push(`<span class="leechnote">Spells and skill effects leech at ${SPELL_LEECH_PCT}% of this, no cap. Champions, uniques, bosses and later acts resist all leech</span>`);
     return lines.map((l) => `<div>${l}</div>`).join("");
   }
 

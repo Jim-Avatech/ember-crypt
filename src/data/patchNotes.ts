@@ -10,6 +10,15 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.7.2",
+    title: "Leech like Diablo II",
+    notes: [
+      "The 4% a second cap on spell leech is gone. Spells and skill effects still leech at a reduced rate — 20% of your life and mana leech, for every class — so a Blizzard into a pack can heal you properly again.",
+      "Elites, bosses and later acts resist all leech, weapon hits and skill effects alike (champions keep 75%, uniques 50%, level bosses 33%, act bosses 20%; Act II keeps 75%, Act III 50%, Act IV 33%), the same rule for every hero.",
+      "Respeccing a skill or stat point is free for now so it's easy to try builds; the gold cost will come back later.",
+    ],
+  },
+  {
     version: "1.7.1",
     title: "One rule for every hero",
     notes: [

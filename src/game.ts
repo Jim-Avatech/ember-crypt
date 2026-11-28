@@ -575,16 +575,14 @@ export const BASE_RUN = 4.6;
 
 export const BASE_POTS = 4;
 /**
- * Leech by damage source, the same for every class (v1.7.1 audit):
+ * Leech by damage source, the same for every class (v1.7.1 audit, v1.7.2 D2-style):
  * - weapon hits (playerHit: melee, thrown, arrows, incl. the skills that swing or throw the weapon) leech in full;
- * - skill effects (elemHit and directHit: spells, bursts, bolts, chains, clouds, War Cry) leech at SPELL_LEECH_PCT,
- *   capped at SPELL_LEECH_CAP % of max life / mana a second;
- * - minions (Valkyrie) never leech for the hero.
+ * - skill effects (elemHit and directHit: spells, bursts, bolts, chains, clouds, War Cry) leech at SPELL_LEECH_PCT
+ *   of gear leech, with no per-second cap;
+ * - minions (Valkyrie) never leech for the hero;
+ * - then every source is multiplied by leechDrainFor (monster tier × act), like D2 drain effectiveness × difficulty.
  */
-export const SPELL_LEECH_PCT = 35;
-/** v1.6.4: spell leech returns at most this % of max life (and of max mana) per second, with a 1 s reserve */
-export const SPELL_LEECH_CAP = 4;
-export const spellLeechCap = (max: number) => Math.max(1, (max * SPELL_LEECH_CAP) / 100);
+export const SPELL_LEECH_PCT = 20;
 export const VENDOR_W = 10;
 export const VENDOR_H = 10; // v1.0: room for bows, a spear and arrows
 export const BASE_STATS: Stats = { str: 30, dex: 20, vit: 25, ene: 10 };
@@ -739,6 +737,14 @@ export function freezeResFor(rank: string, elite: number, floor: number): number
   if (t === "normal") return 0;
   return Math.min(FREEZE_RES_CAP, FREEZE_RES_BASE[t] + FREEZE_RES_PER_FLOOR * Math.max(0, floor - 1));
 }
+/** v1.7.2: share of leech that actually returns, by monster tier (champions / uniques / level bosses / act bosses). */
+export const LEECH_TIER_DRAIN: Record<FreezeTier, number> = { normal: 1, champion: 0.75, unique: 0.5, boss: 1 / 3, final: 0.2 };
+/** v1.7.2: Act I keeps all leech, Act II 75%, Act III 50% (D2 Nightmare), Act IV 33% (D2 Hell). */
+export const LEECH_ACT_DRAIN = [1, 0.75, 0.5, 1 / 3] as const;
+export function leechDrainFor(rank: string, elite: number, floor: number): number {
+  const act = Math.max(1, Math.min(LEECH_ACT_DRAIN.length, actOf(floor) || 1));
+  return LEECH_TIER_DRAIN[freezeTier(rank, elite)] * LEECH_ACT_DRAIN[act - 1];
+}
 
 /** v1.2.2: Guided Arrow homing: lock-on radius in flight (tiles), turn rate (rad/s), aim cone at release (rad), and how much
  * further than the bow's range it may fly while chasing */
@@ -749,6 +755,9 @@ export const GUIDED_RANGE_MUL = 2.5;
 /** v1.2: removing one skill or stat point costs this much gold per character level (level 20: 1,000 gold) */
 export const RESPEC_GOLD_PER_LEVEL = 50;
 export const respecCost = (level: number) => RESPEC_GOLD_PER_LEVEL * Math.max(1, level);
+/** v1.7.2: temporarily free for testing. Set false to restore gold costs; respecCost is unchanged. */
+export const RESPEC_FREE = true;
+export const respecCharge = (level: number) => (RESPEC_FREE ? 0 : respecCost(level));
 
 /** Drop anything that would crash the game (unknown item classes, broken bag entries). */
 function sanitizeV3(d: SaveData): SaveData {
@@ -1909,12 +1918,8 @@ export class Game {
   }
 
   private updatePlayer(dt: number, input: FrameInput, d: Derived) {
-    // v1.6.4: spell leech reserve refills at its per-second cap (up to 1 s of it)
+    // v1.6.4 / v1.7.2: cache leech stats so a 40-monster tick doesn't rebuild Derived
     this.slD = { ll: d.ll, ml: d.ml, maxHp: d.maxHp, maxMana: d.maxMana };
-    const capH = spellLeechCap(d.maxHp);
-    const capM = spellLeechCap(d.maxMana);
-    this.slLeft.hp = Math.min(capH, this.slLeft.hp + capH * dt);
-    this.slLeft.mp = Math.min(capM, this.slLeft.mp + capM * dt);
     // v1.6.3: a skill gear granted is gone (item off, broken requirement): off the buttons
     if (this.dropLostSkills()) this.events.changed();
     // v1.6.3: potions move from the backpack into the belt whenever it has room
@@ -2114,29 +2119,27 @@ export class Game {
   private grantedSeen = new Set<string>();
   /** v1.6.4: this frame's leech stats (set in updatePlayer, so a 40-monster Blizzard tick doesn't rebuild Derived) */
   private slD = { ll: 0, ml: 0, maxHp: 1, maxMana: 1 };
-  /** v1.6.4: spell leech still allowed now (refills at spellLeechCap(max) a second, holds at most 1 s of it) */
-  slLeft = { hp: 0, mp: 0 };
   /** v1.6.4: life / mana returned by spell leech and by weapon-hit leech so far (for the balance tests) */
   spellLeechGot = { hp: 0, mp: 0 };
   atkLeechGot = { hp: 0, mp: 0 };
-  /** v1.6.4: reduced, capped leech from spell / skill-effect damage actually dealt */
-  private spellLeech(dmg: number) {
+  /** v1.6.4 / v1.7.2: reduced, uncapped leech from skill-effect damage actually dealt, times the target's drain. */
+  private spellLeech(dmg: number, m: Monster) {
     const L = this.slD;
     const p = this.player;
     if (p.dead || dmg <= 0) return;
+    const drain = leechDrainFor(m.def.rank, m.elite, this.floor);
+    if (drain <= 0) return;
     if (L.ll > 0) {
-      const g = Math.min((dmg * L.ll * SPELL_LEECH_PCT) / 10000, this.slLeft.hp, L.maxHp - p.hp);
+      const g = Math.min((dmg * L.ll * SPELL_LEECH_PCT * drain) / 10000, L.maxHp - p.hp);
       if (g > 0) {
         p.hp += g;
-        this.slLeft.hp -= g;
         this.spellLeechGot.hp += g;
       }
     }
     if (L.ml > 0) {
-      const g = Math.min((dmg * L.ml * SPELL_LEECH_PCT) / 10000, this.slLeft.mp, L.maxMana - p.mana);
+      const g = Math.min((dmg * L.ml * SPELL_LEECH_PCT * drain) / 10000, L.maxMana - p.mana);
       if (g > 0) {
         p.mana += g;
-        this.slLeft.mp -= g;
         this.spellLeechGot.mp += g;
       }
     }
@@ -2243,7 +2246,7 @@ export class Game {
     return this.player.gold + (this.inTown ? this.player.stashGold : 0);
   }
   private payRespec(): boolean {
-    return this.payGold(respecCost(this.player.level));
+    return this.payGold(respecCharge(this.player.level));
   }
   /** Pay from carried gold first, then (in camp) the stash's gold. False (nothing paid) if that isn't enough. */
   private payGold(cost: number): boolean {
@@ -2257,7 +2260,7 @@ export class Game {
   /** Can one hard point come out of this skill? (Not if a skill you've learned needs it, like D2's tree.) */
   canUnlearn(id: string): { ok: boolean; why?: string; cost: number } {
     const p = this.player;
-    const cost = respecCost(p.level);
+    const cost = respecCharge(p.level);
     const s = SKILL_BY_ID[id];
     const hard = p.skills[id] ?? 0;
     if (!s || s.cls !== p.cls || hard <= 0) return { ok: false, why: "No points to remove", cost };
@@ -2268,7 +2271,7 @@ export class Game {
     if (this.respecFunds() < cost) return { ok: false, why: `Needs ${cost.toLocaleString()} gold`, cost };
     return { ok: true, cost };
   }
-  /** Take one point out of a skill for gold; the skill point comes back to spend again. */
+  /** Take one point out of a skill for gold (free while RESPEC_FREE); the skill point comes back to spend again. */
   unlearn(id: string): string | null {
     const c = this.canUnlearn(id);
     if (!c.ok) return c.why ?? "Can't";
@@ -2292,7 +2295,7 @@ export class Game {
   /** Can one point come out of this stat? Never below the class's starting value or below what worn gear needs. */
   canUnstat(k: keyof Stats): { ok: boolean; why?: string; cost: number } {
     const p = this.player;
-    const cost = respecCost(p.level);
+    const cost = respecCharge(p.level);
     const min = (CLASS_DEF[p.cls] ?? CLASS_DEF.barbarian).stats[k];
     if (p.base[k] <= min) return { ok: false, why: `Starts at ${min}`, cost };
     if (k === "str" || k === "dex") {
@@ -2307,7 +2310,7 @@ export class Game {
     if (this.respecFunds() < cost) return { ok: false, why: `Needs ${cost.toLocaleString()} gold`, cost };
     return { ok: true, cost };
   }
-  /** Take one point out of a stat for gold; the stat point comes back to spend again. */
+  /** Take one point out of a stat for gold (free while RESPEC_FREE); the stat point comes back to spend again. */
   unstat(k: keyof Stats): string | null {
     const c = this.canUnstat(k);
     if (!c.ok) return c.why ?? "Can't";
@@ -2339,10 +2342,10 @@ export class Game {
 
   /**
    * Non-weapon damage (War Cry): always hits. v1.7.1: it is skill-effect damage, so it leeches like every other skill
-   * effect (SPELL_LEECH_PCT of gear leech, capped), the same rule for every class.
+   * effect (SPELL_LEECH_PCT of gear leech, then the target's drain), the same rule for every class.
    */
   private directHit(m: Monster, dmg: number, color: string) {
-    if (!m.dummy && m.state !== "dead") this.spellLeech(Math.min(dmg, Math.max(0, m.hp)));
+    if (!m.dummy && m.state !== "dead") this.spellLeech(Math.min(dmg, Math.max(0, m.hp)), m);
     m.hp -= dmg;
     m.flash = 1;
     m.lastHurt = this.time;
@@ -2828,8 +2831,8 @@ export class Game {
     if (m.state === "dead") return;
     if (m.state === "idle") this.aggroPack(m);
     const n = Math.max(1, Math.round(dmg));
-    // v1.6.4: spells leech at SPELL_LEECH_PCT of gear leech, on the damage really dealt (no overkill), capped a second
-    if (!m.dummy && !o.noLeech) this.spellLeech(Math.min(n, Math.max(0, m.hp)));
+    // v1.6.4 / v1.7.2: spells leech at SPELL_LEECH_PCT of gear leech, on the damage really dealt (no overkill), then drain
+    if (!m.dummy && !o.noLeech) this.spellLeech(Math.min(n, Math.max(0, m.hp)), m);
     m.hp -= n;
     m.flash = 1;
     m.lastHurt = this.time;
@@ -3630,14 +3633,15 @@ export class Game {
     // life / mana leech from gear (never from the training dummy)
     const dv = this.derived();
     if (m.dummy) o = { ...o, noLeech: true };
-    if (dv.ll > 0 && !o.noLeech) {
+    const drain = o.noLeech ? 0 : leechDrainFor(m.def.rank, m.elite, this.floor);
+    if (dv.ll > 0 && drain > 0) {
       const h0 = p.hp;
-      p.hp = Math.min(dv.maxHp, p.hp + (dmg * dv.ll) / 100);
+      p.hp = Math.min(dv.maxHp, p.hp + (dmg * dv.ll * drain) / 100);
       this.atkLeechGot.hp += p.hp - h0;
     }
-    if (dv.ml > 0 && !o.noLeech) {
+    if (dv.ml > 0 && drain > 0) {
       const m0 = p.mana;
-      p.mana = Math.min(dv.maxMana, p.mana + (dmg * dv.ml) / 100);
+      p.mana = Math.min(dv.maxMana, p.mana + (dmg * dv.ml * drain) / 100);
       this.atkLeechGot.mp += p.mana - m0;
     }
     const dx = m.x - p.x;

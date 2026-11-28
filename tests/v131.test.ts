@@ -72,7 +72,7 @@ function fire(skill: string | null, casts: number, weapon: "bow" | "javelin" = "
 }
 
 describe("v1.3.1 version", () => {
-  it("label", () => expect(GAME_VERSION).toBe("1.7.1"));
+  it("label", () => expect(GAME_VERSION).toBe("1.7.2"));
 });
 
 describe(`v1.3.1 Pierce for every piercing skill (level ${PIERCE_LVL}: ${pierceChance(PIERCE_LVL)}%), real game loop`, () => {

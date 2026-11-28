@@ -1683,6 +1683,9 @@ body.portrait #rotate {
   color: #b8a888;
   font-weight: 400;
 }
+.kv.leechnote.drainnote {
+  display: block;
+}
 .kv.leechnote b i {
   font-style: normal;
   font-weight: 600;

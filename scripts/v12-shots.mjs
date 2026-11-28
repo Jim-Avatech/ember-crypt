@@ -45,7 +45,8 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   const str0 = await page.evaluate(() => __ec.game.player.base.str);
   await tap('[data-act="unstat"][data-stat="str"]');
   const conf = await page.evaluate(() => ({ text: document.querySelector(".rsp")?.textContent ?? "", ok: !document.querySelector('[data-act="respec-yes"]')?.disabled }));
-  C("stat respec asks first and shows the cost (level 20: 1,000 gold)", /Remove 1 point of Strength/.test(conf.text) && conf.text.includes("1,000 gold") && conf.ok, conf.text.replace(/\s+/g, " "));
+  const free = /Remove for free/.test(conf.text);
+  C("stat respec asks first and shows the cost (or that it's free)", /Remove 1 point of Strength/.test(conf.text) && (free ? /Free for now/.test(conf.text) : conf.text.includes("1,000 gold")) && conf.ok, conf.text.replace(/\s+/g, " "));
   await shot("01-respec-stat-confirm");
   await tap('[data-act="respec-no"]');
   const cancelled = await page.evaluate(() => ({ str: __ec.game.player.base.str, gold: __ec.game.player.gold, open: !!document.querySelector(".rsp") }));
@@ -53,7 +54,7 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await tap('[data-act="unstat"][data-stat="str"]');
   await tap('[data-act="respec-yes"]');
   const done = await page.evaluate(() => ({ str: __ec.game.player.base.str, gold: __ec.game.player.gold, pts: __ec.game.player.statPoints, plus: !!document.querySelector('[data-act="stat"][data-stat="str"]') }));
-  C("Remove: Strength −1, a stat point back, 1,000 gold paid", done.str === str0 - 1 && done.gold === 1500 && done.pts === 1 && done.plus, JSON.stringify(done));
+  C("Remove: Strength −1, a stat point back, gold charged unless free", done.str === str0 - 1 && done.gold === (free ? 2500 : 1500) && done.pts === 1 && done.plus, JSON.stringify(done));
   // the point can be spent again
   await tap('[data-act="stat"][data-stat="vit"]');
   C("the refunded point can be spent again", await page.evaluate(() => __ec.game.player.statPoints === 0), "");
@@ -64,11 +65,11 @@ for (const [engine, ename] of [[chromium, "chromium"], [webkit, "webkit"]]) {
   await tap('.snode[data-id="bash"]');
   await tap('[data-act="unskill"][data-id="bash"]');
   const sk = await page.evaluate(() => document.querySelector(".rsp")?.textContent?.replace(/\s+/g, " ") ?? "");
-  C("skill respec asks first with the cost", /Remove 1 point of Bash \(3 → 2\)/.test(sk) && sk.includes("1,000 gold"), sk);
+  C("skill respec asks first with the cost (or that it's free)", /Remove 1 point of Bash \(3 → 2\)/.test(sk) && (free ? /Free for now|Remove for free/.test(sk) : sk.includes("1,000 gold")), sk);
   await shot("02-respec-skill-confirm");
   await tap('[data-act="respec-yes"]');
   const s1 = await page.evaluate(() => ({ bash: __ec.game.player.skills.bash, pts: __ec.game.player.skillPoints, gold: __ec.game.player.gold }));
-  C("Bash 3 → 2, a skill point back, 1,000 gold paid", s1.bash === 2 && s1.gold === 500, JSON.stringify(s1));
+  C("Bash 3 → 2, a skill point back, gold charged unless free", s1.bash === 2 && s1.gold === (free ? 2500 : 500), JSON.stringify(s1));
   await page.evaluate(() => { __ec.game.player.skills.bash = 1; __ec.game.player.gold = 5000; __ec.game.events.changed(); });
   await page.waitForTimeout(150);
   await tap('[data-act="unskill"][data-id="bash"]');
