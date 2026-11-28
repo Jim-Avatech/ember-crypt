@@ -5,7 +5,7 @@
  * names only build magic item names ("Jagged Axe of the Fox") and never decide what rolls.
  */
 import { BASE_BY_ID, SORC_ITEM_BASES, type Item, type Mod, type Quality, type StatKey, makeItem, rollBase } from "./items";
-import { CLASS_NAME, CLASS_TABS, HERO_CLASSES, type HeroClass, SKILLS, SKILL_BY_ID, TAB_NAMES, type Tab } from "./skills";
+import { CLASS_NAME, CLASS_TABS, HERO_CLASSES, type HeroClass, SKILLS, SKILL_BY_ID, TAB_NAMES, type Tab, treeFitsBase } from "./skills";
 
 export type Cat = "weapon" | "armor" | "helm" | "shield" | "orb" | "gloves" | "boots" | "belt" | "ring" | "amulet";
 type Range = [StatKey, number, number];
@@ -123,41 +123,46 @@ const ri = (r: Rng, a: number, b: number) => a + Math.floor(r() * (b - a + 1));
 const SKILLABLE = () => SKILLS.filter((s) => s.implemented && s.cls !== "any").map((s) => s.id);
 /** v1.1: share of amulet +skill rolls that pick a skill of the finder's class (the rest pick any class). */
 export const AMULET_OWN_CLASS = 0.7;
+/** v1.9: does a skill tree fit this item base (the TREE_FIT rule every "+skill" roll follows)? */
+const fits = (tab: Tab, baseId: string) => treeFitsBase(tab, baseId, BASE_BY_ID[baseId]?.slot);
+/** v1.9: the classes that have at least one tree that fits this item base */
+export const classesFor = (baseId: string): HeroClass[] => HERO_CLASSES.filter((c) => CLASS_TABS[c].some((t) => fits(t, baseId)));
 /**
- * v1.1: which skills a +skill roll may pick, by item (like Diablo II's class items): bows only Bow & Crossbow skills,
- * javelins and spears only Javelin & Spear skills, every other weapon and helms only Barbarian skills, amulets any
- * class (mostly the finder's class when known).
+ * v1.1, v1.9: which skills a single "+N to [Skill]" roll may pick: skills of trees that fit the item (TREE_FIT): bows
+ * only Bow & Crossbow, javelins and spears only Javelin & Spear, Barbarian
+ * weapons and helms Barbarian trees, Sorceress staves, wands and orbs Sorceress spells, amulets any class (mostly the
+ * finder's class when known). Items no tree fits get the any-class pool (unused: they have no skill rolls).
  */
 export function skillPoolFor(baseId: string, r: Rng = Math.random, cls?: string): string[] {
-  const b = BASE_BY_ID[baseId];
-  const ok = (f: (s: (typeof SKILLS)[number]) => boolean) => SKILLS.filter((s) => s.implemented && s.cls !== "any" && f(s)).map((s) => s.id);
-  // v1.6: Sorceress staves, wands and orbs: only Sorceress spells
-  if (SORC_ITEM_BASES.has(baseId)) return ok((s) => s.cls === "sorceress");
-  if (b?.slot === "weapon") {
-    if (b.kind === "bow") return ok((s) => s.tab === "bow");
-    if (b.kind === "spear") return ok((s) => s.tab === "javelin");
-    return ok((s) => s.cls === "barbarian");
-  }
-  if (b?.slot === "helm") return ok((s) => s.cls === "barbarian");
+  const ok = (f: (s: (typeof SKILLS)[number]) => boolean) => SKILLS.filter((s) => s.implemented && s.cls !== "any" && fits(s.tab, baseId) && f(s)).map((s) => s.id);
+  const cs = classesFor(baseId);
+  if (!cs.length) return SKILLABLE();
+  if (cs.length === 1) return ok((s) => s.cls === cs[0]);
   if (cls && r() < AMULET_OWN_CLASS) {
     const mine = ok((s) => s.cls === cls);
     if (mine.length) return mine;
   }
-  return SKILLABLE();
+  return ok(() => true);
 }
 
 /**
- * v1.6.1: whose class an item's "+N to <Class> Skills" / "+N to <Tree>" rolls belong to (same rule as skillPoolFor):
- * staves, wands and orbs the Sorceress; bows, spears and javelins the Amazon; other weapons and helms the Barbarian;
- * amulets mostly the finder's class (AMULET_OWN_CLASS), else any class.
+ * v1.6.1, v1.9: whose class an item's "+N to <Class> Skills" / "+N to <Tree>" rolls belong to: the one class whose trees
+ * fit the item (staves, wands and orbs the Sorceress; bows, spears and javelins the Amazon; other weapons and helms the
+ * Barbarian); on items that fit several (amulets) mostly the finder's class (AMULET_OWN_CLASS), else any of them.
  */
 export function itemClassFor(baseId: string, r: Rng = Math.random, cls?: string): HeroClass {
-  const b = BASE_BY_ID[baseId];
-  if (SORC_ITEM_BASES.has(baseId)) return "sorceress";
-  if (b?.slot === "weapon") return b.kind === "bow" || b.kind === "spear" ? "amazon" : "barbarian";
-  if (b?.slot === "helm") return "barbarian";
-  if (cls && (HERO_CLASSES as string[]).includes(cls) && r() < AMULET_OWN_CLASS) return cls as HeroClass;
-  return HERO_CLASSES[Math.floor(r() * HERO_CLASSES.length)];
+  const cs = classesFor(baseId);
+  if (!cs.length) return HERO_CLASSES[Math.floor(r() * HERO_CLASSES.length)];
+  if (cs.length === 1) return cs[0];
+  if (cls && cs.includes(cls as HeroClass) && r() < AMULET_OWN_CLASS) return cls as HeroClass;
+  return cs[Math.floor(r() * cs.length)];
+}
+/** v1.9: can this saved/rolled skill mod sit on this item base under the rule? (single skill: its tree; tree; class: any of its trees) */
+export function modFitsBase(m: Mod, baseId: string): boolean {
+  if (m.s === "skill") { const sd = m.sk ? SKILL_BY_ID[m.sk] : undefined; return !sd || fits(sd.tab, baseId); }
+  if (m.s === "tabsk") return !m.sk || !(m.sk in TAB_NAMES) || fits(m.sk as Tab, baseId);
+  if (m.s === "clsk") return !m.sk || !(HERO_CLASSES as string[]).includes(m.sk) || CLASS_TABS[m.sk as HeroClass].some((t) => fits(t, baseId));
+  return true;
 }
 /** v1.6.1: the skill trees of a class (not the shared Basic tab) */
 export const classTrees = (c: HeroClass): Tab[] => CLASS_TABS[c].filter((t) => t !== "basic");
@@ -226,7 +231,10 @@ export function rollMore(cat: Cat, ilvl: number, n: number, existing: Mod[], r: 
         const c = ctx.cls ? ctx.cls() : HERO_CLASSES[Math.floor(r() * HERO_CLASSES.length)];
         if (s === "clsk") m.sk = c;
         else {
-          const trees = classTrees(c);
+          // v1.9: only a tree that fits the item (a javelin never rolls +Bow & Crossbow)
+          const all = classTrees(c);
+          const fit = ctx.baseId ? all.filter((t) => fits(t, ctx.baseId!)) : all;
+          const trees = fit.length ? fit : all;
           m.sk = trees[Math.floor(r() * trees.length)];
         }
       }

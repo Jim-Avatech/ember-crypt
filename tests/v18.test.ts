@@ -32,7 +32,7 @@ function survey(floors: number[]) {
 
 describe("v1.8 release", () => {
   it("version, patch note, cache v42", () => {
-    expect(GAME_VERSION).toMatch(/^1\.8/);
+    expect(GAME_VERSION).toMatch(/^1\.(8|9)/);
     expect(PATCH_NOTES.find((n) => n.version === "1.8")!.notes.join(" ")).toMatch(/Act V/);
     expect(swSrc).toMatch(/ember-crypt-shell-v4[2-9]/);
   });

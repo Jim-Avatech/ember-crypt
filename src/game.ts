@@ -276,6 +276,10 @@ export interface Player {
    */
   unclaimed?: Item[];
   equip: Partial<Record<EquipSlot, Item>>;
+  /** v1.9 weapon swap: the OTHER weapon set (main hand and off-hand); `equip.main`/`equip.off` is always the active one */
+  altSet?: { main?: Item; off?: Item };
+  /** v1.9: which set is active: 0 = I, 1 = II (swapping exchanges the hands with `altSet`) */
+  weaponSet?: 0 | 1;
   nextHand: number;
   frenzy: { stacks: number; t: number; decay: number };
   gold: number;
@@ -688,7 +692,7 @@ export interface SaveData {
   floor: number;
   maxFloor: number;
   player: Pick<Player, "level" | "xp" | "base" | "statPoints" | "skillPoints" | "skills" | "slots" | "bag" | "equip" | "gold" | "hpPots" | "mpPots" | "kills"> & {
-    stashGold?: number; stash?: BagEntry[]; unclaimed?: Item[]; artifacts?: FoundArtifact[]; towerOpen?: boolean; towerBest?: number; cls?: HeroClass; name?: string; mainAtk?: string | null;
+    stashGold?: number; stash?: BagEntry[]; unclaimed?: Item[]; artifacts?: FoundArtifact[]; towerOpen?: boolean; towerBest?: number; altSet?: { main?: Item; off?: Item }; weaponSet?: 0 | 1; cls?: HeroClass; name?: string; mainAtk?: string | null;
   };
   /** v1.0: when the (shared) stash last changed; the newest copy of the stash wins across heroes */
   stashAt?: number;
@@ -843,6 +847,15 @@ function sanitizeV3(d: SaveData): SaveData {
   p.stash = Array.isArray(p.stash) ? p.stash.filter(okEntry) : [];
   if (p.unclaimed !== undefined) p.unclaimed = Array.isArray(p.unclaimed) ? p.unclaimed.filter((it) => it && BASE_BY_ID[it.baseId]) : [];
   if (p.equip && typeof p.equip === "object") for (const k of Object.keys(p.equip) as EquipSlot[]) if (!p.equip[k] || !BASE_BY_ID[p.equip[k]!.baseId]) delete p.equip[k];
+  // v1.9: the other weapon set: known items only, nothing else
+  if (p.altSet !== undefined) {
+    const a = p.altSet && typeof p.altSet === "object" ? p.altSet : {};
+    const out: { main?: Item; off?: Item } = {};
+    for (const k of ["main", "off"] as const) if (a[k] && BASE_BY_ID[a[k]!.baseId]) out[k] = a[k];
+    if (out.main || out.off) p.altSet = out;
+    else delete p.altSet;
+  }
+  if (p.weaponSet !== undefined && p.weaponSet !== 1) delete p.weaponSet;
   if (!p.skills || typeof p.skills !== "object") p.skills = {};
   if (!Array.isArray(p.slots)) p.slots = [null, null, null];
   for (const k of ["hpPots", "mpPots", "kills", "statPoints", "skillPoints"] as const) if (!Number.isFinite(p[k])) p[k] = 0;
@@ -1156,6 +1169,8 @@ export class Game {
       if (!mainAtkOk(this.player.mainAtk, this.player.cls)) this.player.mainAtk = null;
       this.player.unclaimed = this.player.unclaimed ?? [];
       this.clearAmazonOffhand();
+      this.fixHands();
+      if (this.hasAltSet()) this.withAlt(() => { this.clearAmazonOffhand(); this.fixHands(); });
       this.mergedItems = this.mergeDuplicates();
       this.stashAt = save.stashAt ?? 0;
       this.floor = save.floor;
@@ -1188,6 +1203,12 @@ export class Game {
   }
 
   toSave(): SaveData {
+    // v1.9: while the bag shows the other weapon set the hands are exchanged; the save always holds the real ones
+    if (this.viewing) {
+      this.rawSwap();
+      this.viewing = false;
+      try { return JSON.parse(JSON.stringify(this.toSave())) as SaveData; } finally { this.viewing = true; this.rawSwap(); }
+    }
     const p = this.player;
     return {
       v: SAVE_VERSION, seed: this.seed, floor: isTower(this.floor) ? Math.min(this.maxFloor, SANCTUM_FLOOR) : this.floor, maxFloor: this.maxFloor, stashAt: this.stashAt,
@@ -1197,6 +1218,7 @@ export class Game {
         skills: p.skills, slots: p.slots.slice(0, SKILL_SLOTS), bag: p.bag, stash: p.stash, equip: p.equip, gold: p.gold, stashGold: p.stashGold,
         hpPots: p.hpPots, mpPots: p.mpPots, kills: p.kills, artifacts: p.artifacts,
         ...(p.towerOpen ? { towerOpen: true } : {}), ...(p.towerBest ? { towerBest: p.towerBest } : {}),
+        ...(this.hasAltSet() ? { altSet: this.savedAlt() } : {}), ...(p.weaponSet === 1 ? { weaponSet: 1 as const } : {}),
         ...(p.unclaimed?.length ? { unclaimed: p.unclaimed } : {}),
       },
     };
@@ -1267,7 +1289,7 @@ export class Game {
     this.restock();
     // throwing weapons (v1.0: and quivers) refill for free in camp
     let refilled = 0;
-    for (const it of [...Object.values(p.equip), ...p.bag.map((e) => e.item)]) {
+    for (const it of [...Object.values(p.equip), ...Object.values(p.altSet ?? {}), ...p.bag.map((e) => e.item)]) {
       if (it && qtyMax(it) > 0 && (it.qty ?? 0) < qtyMax(it)) {
         it.qty = qtyMax(it);
         refilled++;
@@ -4563,7 +4585,7 @@ export class Game {
    */
   mergeDuplicates(): number {
     const p = this.player;
-    const items = [...Object.values(p.equip), ...p.bag.map((e) => e.item), ...p.stash.map((e) => e.item), ...(p.unclaimed ?? [])];
+    const items = [...Object.values(p.equip), ...Object.values(p.altSet ?? {}), ...p.bag.map((e) => e.item), ...p.stash.map((e) => e.item), ...(p.unclaimed ?? [])];
     let n = 0;
     for (const it of items) if (it && mergeDuplicateMods(it) > 0) n++;
     return n;
@@ -4687,6 +4709,91 @@ export class Game {
     this.clampVitals();
     this.events.changed();
     return null;
+  }
+
+  // ------------------------------------------------------------------ v1.9 weapon swap
+  /** game seconds before the weapons can be swapped again */
+  static readonly SWAP_CD = 1;
+  /** game time the next swap is allowed */
+  swapReady = 0;
+  /** true while the bag shows the other set (the hands are exchanged; see withAlt) */
+  viewing = false;
+  /** does the hero hold anything in the other weapon set? */
+  hasAltSet(): boolean {
+    const a = this.player.altSet;
+    return !!(a && (a.main || a.off));
+  }
+  private savedAlt(): { main?: Item; off?: Item } {
+    const a = this.player.altSet!;
+    return { ...(a.main ? { main: a.main } : {}), ...(a.off ? { off: a.off } : {}) };
+  }
+  /** exchange the active hands with the other set (no checks) */
+  private rawSwap() {
+    const p = this.player;
+    const a = (p.altSet ??= {});
+    const m = p.equip.main;
+    const o = p.equip.off;
+    if (a.main) p.equip.main = a.main;
+    else delete p.equip.main;
+    if (a.off) p.equip.off = a.off;
+    else delete p.equip.off;
+    if (m) a.main = m;
+    else delete a.main;
+    if (o) a.off = o;
+    else delete a.off;
+    if (!a.main && !a.off) delete p.altSet;
+    p.nextHand = 0;
+  }
+  /**
+   * Run `fn` with the OTHER weapon set in the hands (the bag's II / I tab uses it, so equipping, unequipping, tooltips and
+   * comparisons all work on that set with the same code), then put the hands back. Vitals and hotbar are left alone.
+   */
+  withAlt<T>(fn: () => T): T {
+    if (this.viewing) return fn();
+    this.rawSwap();
+    this.viewing = true;
+    try {
+      return fn();
+    } finally {
+      this.viewing = false;
+      this.rawSwap();
+    }
+  }
+  /** seconds until the next swap is allowed (0 = ready) */
+  swapWait(): number {
+    return Math.max(0, this.swapReady - this.time);
+  }
+  /**
+   * v1.9 weapon swap (D2's W key): exchange main hand and off-hand with the other set. A short cooldown; an attack in
+   * progress is cut off. Everything (damage, stats, +skills, bow and javelin skills) reads the active hands, so it all
+   * follows. Returns a refusal or null.
+   */
+  swapWeapons(): string | null {
+    const p = this.player;
+    if (p.dead) return "You can't swap now";
+    if (this.viewing) return "Close the bag first";
+    if (this.swapWait() > 0) return "Swapping…";
+    this.swapReady = this.time + Game.SWAP_CD;
+    this.rawSwap();
+    p.weaponSet = p.weaponSet === 1 ? 0 : 1;
+    if (!p.weaponSet) delete p.weaponSet;
+    p.action = null;
+    this.events.sound("equip");
+    const w = (it?: Item) => (it ? itemName(it) : "—");
+    this.hint(`Weapon set ${p.weaponSet === 1 ? "II" : "I"}: ${w(p.equip.main)}${p.equip.off ? ` · ${w(p.equip.off)}` : ""}`);
+    this.dropLostSkills(true);
+    this.clampVitals();
+    this.events.changed();
+    return null;
+  }
+  /** a two-handed main hand keeps nothing in the off-hand but a quiver (saved sets from the other set's edits); extras go to the bag */
+  private fixHands() {
+    const p = this.player;
+    if (p.equip.off && offBlocked(p.equip.main, p.equip.off)) {
+      const it = p.equip.off;
+      delete p.equip.off;
+      if (!addItem(p.bag, it)) (p.unclaimed ??= []).push(it);
+    }
   }
 
   /** Move an equipped item to another slot (e.g. main hand to off-hand), swapping if both fit. */
@@ -5131,6 +5238,7 @@ export class Game {
   }
 
   private clampVitals() {
+    if (this.viewing) return; // v1.9: the bag is only showing the other weapon set
     if (this.dropLostSkills(true)) this.events.changed();
     const d = this.derived();
     const p = this.player;

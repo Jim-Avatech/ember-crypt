@@ -10,6 +10,14 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.9",
+    title: "Items that fit, and a weapon swap",
+    notes: [
+      "+skill bonuses now fit the item: a javelin or spear only rolls Javelin & Spear, a bow only Bow & Crossbow, Barbarian weapons and helms the Barbarian trees, staves, wands and orbs the Sorceress spells, amulets any. One rule for drops, crafting and every class. Items you already have keep what they rolled.",
+      "Weapon swap, like Diablo II: a second weapon set (main hand and off-hand). Tap the ⇄ button above the potions (or press W) to swap with a short cooldown; damage, stats, +skills and bow and javelin skills follow the weapons in your hands. The Bag has I and II tabs to set up both. Saved with each hero.",
+    ],
+  },
+  {
     version: "1.8.1",
     title: "The Sanctum of the Four and the Endless Tower",
     notes: [

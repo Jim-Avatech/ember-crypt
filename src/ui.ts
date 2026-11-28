@@ -189,6 +189,7 @@ export class Ui {
         <button id="btn-s0" class="sbtn" data-slot="0"></button>
         <button id="btn-s1" class="sbtn" data-slot="1"></button>
         <button id="btn-s2" class="sbtn" data-slot="2"></button>
+        <button id="btn-swap" class="pbtn swap" aria-label="Swap weapons (W)"><span>⇄</span><b>I</b></button>
         <button id="btn-hp" class="pbtn hp" aria-label="Healing potion"><b></b></button>
         <button id="btn-mp" class="pbtn mp" aria-label="Mana potion"><b></b></button>
         <button id="btn-ctx" hidden></button>
@@ -231,6 +232,7 @@ export class Ui {
         },
       );
     }
+    Input.tapButton($(root, "#btn-swap"), () => this.swapTap());
     Input.tapButton($(root, "#btn-hp"), () => this.game().usePotion("hp"));
     Input.tapButton($(root, "#btn-mp"), () => this.game().usePotion("mp"));
     Input.tapButton($(root, "#btn-ctx"), () => this.contextTap());
@@ -286,6 +288,13 @@ export class Ui {
     });
   }
 
+  /** v1.9: the swap button and the W key */
+  swapTap() {
+    if (this.openTab) return;
+    const why = this.game().swapWeapons();
+    if (why && why !== "Swapping…") this.toast(why);
+  }
+
   /** Town button: start (or cancel) Return to Town. */
   recallTap() {
     const g = this.game();
@@ -331,7 +340,7 @@ export class Ui {
       tbuffs.map((b) => `${b.id}${Math.ceil(b.left)}/${b.full ? Math.round((b.left / b.full) * 24) : 0}x${b.stacks ?? 0}`).join(), g.maxFloor,
       g.recall ? Math.round((g.recall.t / g.recall.dur) * 40) : -1, g.portal?.floor ?? 0, Math.ceil(g.portalLeft() ?? -1), p.towerBest ?? 0, !!g.altar?.used, p.chillT > 0, p.poison.t > 0, p.artifacts.length, g.victory,
       p.equip.main?.qty ?? -1, p.equip.off?.qty ?? -1, p.equip.main?.baseId, p.equip.off?.baseId, p.mainAtk, p.cls, cool(g.mainSkill()),
-      g.mainSkill() ? (SKILL_BY_ID[g.mainSkill()!].mana?.(g.skillLevel(g.mainSkill()!)) ?? 0) <= p.mana : -1, g.potionWait("hp") > 0, g.potionWait("mp") > 0,
+      g.mainSkill() ? (SKILL_BY_ID[g.mainSkill()!].mana?.(g.skillLevel(g.mainSkill()!)) ?? 0) <= p.mana : -1, g.potionWait("hp") > 0, g.potionWait("mp") > 0, p.weaponSet ?? 0, g.swapWait() > 0, g.hasAltSet(),
     ].join("|");
     if (key === this.lastHud) return;
     this.lastHud = key;
@@ -359,6 +368,9 @@ export class Ui {
     $(r, "#btn-mp b").textContent = `${p.mpPots}`;
     $(r, "#btn-hp").classList.toggle("empty", p.hpPots === 0);
     $(r, "#btn-mp").classList.toggle("empty", p.mpPots === 0);
+    $(r, "#btn-swap b").textContent = p.weaponSet === 1 ? "II" : "I";
+    $(r, "#btn-swap").classList.toggle("cool", g.swapWait() > 0);
+    $(r, "#btn-swap").classList.toggle("empty", !g.hasAltSet());
     $(r, "#btn-hp").classList.toggle("cool", g.potionWait("hp") > 0);
     $(r, "#btn-mp").classList.toggle("cool", g.potionWait("mp") > 0);
     // v0.9.2: no top-left text (floor and portal info come as toasts; ⌂ Town is top right). The same line is kept
@@ -461,6 +473,7 @@ export class Ui {
     this.craftAsk = false;
     this.craftNew = null;
     this.hooks.click();
+    this.viewAlt = false;
     this.openTab = tab;
     this.confirmReset = false;
     this.sel = null;
@@ -472,6 +485,7 @@ export class Ui {
   }
 
   close() {
+    this.viewAlt = false;
     this.respecAsk = null;
     this.cancelDrag();
     this.openTab = null;
@@ -501,7 +515,30 @@ export class Ui {
     }
   }
 
+  /** v1.9: which weapon set the bag shows: false = the active one, true = the other (the I / II tabs) */
+  private viewAlt = false;
+  private deferRender = false;
+  /** run bag code with the other weapon set in the hands while its tab is open (equip, drag, tooltips all just work) */
+  private inView(fn: () => void) {
+    const g = this.game();
+    if (this.viewAlt && this.openTab === "inv" && !g.viewing) g.withAlt(fn);
+    else fn();
+    if (this.deferRender) {
+      this.deferRender = false;
+      this.renderPanel();
+    }
+  }
   private renderPanel() {
+    const g = this.game();
+    const want = this.viewAlt && this.openTab === "inv";
+    if (want === g.viewing) return this.renderPanel0();
+    if (g.viewing) {
+      this.deferRender = true; // leaving the other set from inside a bag action: redraw once the hands are back
+      return;
+    }
+    g.withAlt(() => this.renderPanel0());
+  }
+  private renderPanel0() {
     const tab = this.openTab!;
     this.layout();
     const tabs: [PanelTab, string][] = [
@@ -565,6 +602,9 @@ export class Ui {
   }
 
   private onPanelTap(t: HTMLElement, x: number, y: number) {
+    this.inView(() => this.onPanelTap0(t, x, y));
+  }
+  private onPanelTap0(t: HTMLElement, x: number, y: number) {
     // a tap must start and end inside the open panel (the finger that opened it doesn't count)
     if (this.lastPanelDown < this.openedAt) return;
     if (performance.now() < this.suppress.t && Math.hypot(x - this.suppress.x, y - this.suppress.y) < 40) return;
@@ -589,6 +629,13 @@ export class Ui {
       case "close":
         this.close();
         return;
+      case "wset": {
+        const k = Number(el.dataset.set) === 1 ? 1 : 0;
+        this.viewAlt = k !== (g.player.weaponSet === 1 ? 1 : 0);
+        this.sel = null;
+        this.renderPanel();
+        return;
+      }
       case "exp-copy":
       case "exp-file":
       case "exp-share":
@@ -817,6 +864,9 @@ export class Ui {
 
   // ------------------------------------------------------------ drag & drop / taps on grids
   private onDown(e: PointerEvent) {
+    this.inView(() => this.onDown0(e));
+  }
+  private onDown0(e: PointerEvent) {
     if (this.press) return;
     const t = e.target as HTMLElement;
     const zone = t.closest<HTMLElement>(".dnd");
@@ -842,6 +892,9 @@ export class Ui {
   }
 
   private onMove(e: PointerEvent) {
+    this.inView(() => this.onMove0(e));
+  }
+  private onMove0(e: PointerEvent) {
     const pr = this.press;
     if (!pr || e.pointerId !== pr.pid) return;
     e.preventDefault();
@@ -945,6 +998,9 @@ export class Ui {
   }
 
   private onUp(e: PointerEvent) {
+    this.inView(() => this.onUp0(e));
+  }
+  private onUp0(e: PointerEvent) {
     const pr = this.press;
     if (!pr || e.pointerId !== pr.pid) return;
     e.preventDefault();
@@ -1474,12 +1530,22 @@ export class Ui {
     return `<div class="beltline">Belt: <span class="hpc">♥ ${p.hpPots}/${cap}</span> <span class="mpc">◆ ${p.mpPots}/${cap}</span><small>${p.equip.belt ? "" : " · equip a belt for more"}</small></div>`;
   }
 
+  /** v1.9: the weapon set tabs (I | II): the active set is marked, the other one is edited the same way */
+  private setTabs(): string {
+    const g = this.game();
+    const active = g.player.weaponSet === 1 ? 1 : 0;
+    const shown = g.viewing ? 1 - active : active;
+    return `<span class="wsets" title="Weapon sets: W swaps"><em>Weapons</em>${[0, 1]
+      .map((k) => `<button class="wset ${k === shown ? "on" : ""} ${k === active ? "act" : ""}" data-act="wset" data-set="${k}" aria-label="Weapon set ${k ? "II" : "I"}${k === active ? " (in use)" : ""}">${k ? "II" : "I"}</button>`)
+      .join("")}</span>`;
+  }
+
   private invHtml() {
     const p = this.game().player;
     return `
       ${this.dollHtml()}
       <div class="bagwrap">
-        <div class="bagtop"><span>Backpack</span><span class="gold">${p.gold.toLocaleString()} gold</span></div>
+        <div class="bagtop"><span>Backpack</span>${this.setTabs()}<span class="gold">${p.gold.toLocaleString()} gold</span></div>
         <div class="dnd">${this.bagGrid()}</div>
         ${this.beltLine()}
       </div>

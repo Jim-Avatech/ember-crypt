@@ -134,6 +134,13 @@ const ui = new Ui(app, () => game, input, settings, {
   testSound: () => sfx.test(),
   soundState: () => sfx.state,
 });
+// v1.9: W swaps the weapon sets on a keyboard (not while typing, and not with the bag open)
+document.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() !== "w" || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  ui.swapTap();
+});
 renderer.setMinimap(ui.minimap);
 // v0.9.2: the boss bar stays clear of the menu buttons, buffs and minimap; toasts drop below the bar
 const toastEl = document.getElementById("toast");

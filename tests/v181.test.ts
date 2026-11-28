@@ -42,8 +42,8 @@ function beatKharos(g: Game) {
 
 describe("v1.8.1 release", () => {
   it("version, patch note, cache v42+", () => {
-    expect(GAME_VERSION).toMatch(/^1\.8\.1/);
-    expect(PATCH_NOTES[0].notes.join(" ")).toMatch(/Endless Tower/);
+    expect(GAME_VERSION).toMatch(/^1\.(8\.1|9)/);
+    expect(PATCH_NOTES.find((n) => n.version === "1.8.1")!.notes.join(" ")).toMatch(/Endless Tower/);
     expect(swSrc).toMatch(/ember-crypt-shell-v4[2-9]/);
   });
 });

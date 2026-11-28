@@ -1700,3 +1700,25 @@ body.portrait #rotate {
 }
 /* v1.8.1: Artifacts tab note about the altar and the Endless Tower */
 .artnote { font-size: 12px; color: #c8b88a; margin-top: 8px; line-height: 1.35; }
+
+/* v1.9: weapon swap button (above the potions, clear of the attack and skill buttons) and the I / II bag tabs */
+.pbtn.swap {
+  bottom: calc(var(--sab) + 192px);
+  border-color: #7a6238;
+  background: radial-gradient(circle at 50% 30%, #3a2c1a, #120c06);
+  color: #f0dca0;
+  font: 800 22px/1 system-ui, sans-serif;
+}
+.pbtn.swap::before { display: none; }
+.pbtn.swap span { transform: translateY(-1px); text-shadow: 0 1px 2px #000; }
+.pbtn.swap b { right: -3px; bottom: -4px; font-size: 11px; background: #7a4a14; border: 1px solid #000; }
+.pbtn.swap.empty { opacity: 0.6; }
+#btn-swap.cool { filter: grayscale(.7) brightness(.6); }
+.wsets { display: inline-flex; align-items: center; gap: 4px; }
+.wsets em { font-style: normal; color: #a89878; font-size: 11px; margin-right: 2px; }
+.wset {
+  min-width: 30px; height: 22px; padding: 0 8px; border: 1px solid #5a4a32; border-radius: 4px;
+  background: #1a130b; color: #c8b890; font: 700 12px/1 system-ui, sans-serif;
+}
+.wset.act::after { content: " ●"; color: #e0a040; font-size: 8px; vertical-align: 1px; }
+.wset.on { background: #4a3418; border-color: #d4a448; color: #fff3cc; }

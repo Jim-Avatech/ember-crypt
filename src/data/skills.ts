@@ -39,6 +39,36 @@ export const TAB_NAMES: Record<Tab, string> = {
   lightning: "Lightning Spells",
   basic: "Basic",
 };
+/**
+ * v1.9: the ONE rule for "+to skills" rolls. Every skill tree declares which items it can roll on: weapon bases (by id)
+ * and body slots. A single "+N to [Skill]" rolls only on items that fit that skill's tree, "+N to [Tree]" only on items
+ * that fit that tree, and "+N to [Class] Skills" on items that fit any tree of that class. Helms and amulets are the
+ * generic slots: helms follow the Barbarian (as before), amulets fit every tree.
+ */
+export interface TreeFit {
+  /** weapon / off-hand base ids that can roll this tree */
+  bases: string[];
+  /** other item slots that can roll it */
+  slots: string[];
+}
+const BARB_BASES = ["sword", "axe", "mace", "great_sword", "quarterstaff", "throwing_knife", "throwing_axe"];
+const SORC_BASES = ["battle_staff", "wand", "orb"];
+export const TREE_FIT: Record<Tab, TreeFit> = {
+  combat: { bases: BARB_BASES, slots: ["helm", "amulet"] },
+  masteries: { bases: BARB_BASES, slots: ["helm", "amulet"] },
+  warcries: { bases: BARB_BASES, slots: ["helm", "amulet"] },
+  bow: { bases: ["short_bow", "long_bow"], slots: ["amulet"] },
+  javelin: { bases: ["javelin", "spear"], slots: ["amulet"] },
+  passive: { bases: [], slots: ["amulet"] }, // Passive & Magic: amulets only (no weapon is its tree)
+  fire: { bases: SORC_BASES, slots: ["amulet"] },
+  cold: { bases: SORC_BASES, slots: ["amulet"] },
+  lightning: { bases: SORC_BASES, slots: ["amulet"] },
+  basic: { bases: [], slots: [] },
+};
+/** v1.9: can a skill tree roll on this item base? (`slot` is the base's slot: "helm", "amulet", ...) */
+export const treeFitsBase = (tab: Tab, baseId: string, slot?: string): boolean =>
+  TREE_FIT[tab].bases.includes(baseId) || (!!slot && TREE_FIT[tab].slots.includes(slot));
+
 /** v1.0: skill tabs per class, in D2 order, then the basic attacks everyone has */
 export const CLASS_TABS: Record<HeroClass, Tab[]> = {
   barbarian: ["combat", "masteries", "warcries", "basic"],
