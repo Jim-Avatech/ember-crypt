@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0a0806" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Ember Crypt" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="description" content="A Diablo II-style action RPG for your phone. Play in landscape." />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./icons/icon-32.png" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <title>Ember Crypt</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #070605; }
+      #boot { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: #070605; color: #e9d9a8; font: 15px Georgia, "Times New Roman", serif; text-align: center; padding: 16px; box-sizing: border-box; }
+      #boot .bt { font-size: 22px; color: #ff9a2a; letter-spacing: 2px; margin-bottom: 10px; }
+      #boot .bs { width: 26px; height: 26px; border: 3px solid #3a2a18; border-top-color: #ff9a2a; border-radius: 50%; animation: bspin 0.9s linear infinite; margin: 6px; }
+      #boot.err .bs { display: none; }
+      #boot .bm { max-width: 640px; line-height: 1.35; }
+      #boot .bd { max-width: 640px; color: #c9a; font: 12px ui-monospace, Menlo, monospace; margin-top: 6px; word-break: break-word; max-height: 70px; overflow: auto; }
+      #boot .bb { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+      #boot button { font: 15px Georgia, serif; color: #f2e4bc; background: #3a2414; border: 1px solid #8a6a3a; border-radius: 8px; padding: 10px 14px; min-height: 44px; }
+      #boot textarea { width: min(640px, 90vw); height: 64px; margin-top: 8px; font: 11px ui-monospace, Menlo, monospace; background: #120c08; color: #e9d9a8; border: 1px solid #5a4020; }
+      @keyframes bspin { to { transform: rotate(360deg); } }
+    </style>
+    <script>
+      /* Boot shell (plain ES5, runs before the game): a loading indicator, and if the game can't start,
+         the error on screen with Reload / Repair / Export save / Load last backup. It never deletes a save. */
+      (function () {
+        var KEY = "ember-crypt-save-v1", BAKS = ["ember-crypt-save-tmp", "ember-crypt-save-bak1", "ember-crypt-save-bak2", "ember-crypt-save-bak3"];
+        var B = (window.__ecBoot = { done: false, shown: false });
+        function el() { return document.getElementById("boot"); }
+        function ls() { try { return window.localStorage; } catch (e) { return null; } }
+        function okSave(raw) { try { var d = JSON.parse(raw); return d && d.player && typeof d.player.level === "number" ? d : null; } catch (e) { return null; } }
+        function bestSave() {
+          var s = ls(); if (!s) return null;
+          var keys = [KEY].concat(BAKS);
+          for (var i = 0; i < keys.length; i++) { var r = s.getItem(keys[i]); if (okSave(r)) return { key: keys[i], raw: r }; }
+          return null;
+        }
+        function code(raw) {
+          var bytes = unescape(encodeURIComponent(raw));
+          return "EMBERCRYPT1:" + btoa(bytes);
+        }
+        function repair() {
+          var p = [];
+          try { if (navigator.serviceWorker) p.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })); } catch (e) {}
+          try { if (window.caches) p.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })); } catch (e) {}
+          Promise.all(p).then(go, go);
+          function go() { location.replace(location.pathname + "?r=" + Date.now()); }
+        }
+        function show(title, detail) {
+          if (B.done && !B.after) return;
+          B.shown = true;
+          var b = el();
+          if (!b) { document.addEventListener("DOMContentLoaded", function () { show(title, detail); }); return; }
+          b.style.display = "flex";
+          b.className = "err";
+          var s = ls(), best = bestSave();
+          var bak = null;
+          if (s) for (var i = 1; i < BAKS.length; i++) { var r = s.getItem(BAKS[i]); var d = okSave(r); if (d) { bak = { key: BAKS[i], raw: r, d: d }; break; } }
+          b.innerHTML = '<div class="bt">EMBER CRYPT</div><div class="bm"></div><div class="bd"></div><div class="bb"></div>' +
+            '<div class="bm" style="font-size:12px;color:#a89070;margin-top:8px">Your hero is still saved on this phone. Nothing here deletes it.</div>';
+          b.querySelector(".bm").textContent = title;
+          b.querySelector(".bd").textContent = detail || "";
+          var bb = b.querySelector(".bb");
+          function btn(label, fn) { var x = document.createElement("button"); x.textContent = label; x.onclick = fn; bb.appendChild(x); }
+          btn("↻ Reload", function () { location.reload(); });
+          btn("🛠 Repair & reload", repair);
+          if (best) btn("⇪ Export save", function () {
+            var c = code(best.raw), t = b.querySelector("textarea");
+            if (!t) { t = document.createElement("textarea"); t.readOnly = true; b.appendChild(t); }
+            t.value = c; t.focus(); t.select();
+            try { navigator.clipboard.writeText(c); } catch (e) {}
+          });
+          if (bak) btn("⟲ Load last backup (Lv " + bak.d.player.level + ")", function () {
+            try {
+              var cur = s.getItem(KEY);
+              if (cur) s.setItem("ember-crypt-save-before-restore-" + Date.now(), cur); // keep the current one too
+              s.setItem(KEY, bak.raw);
+            } catch (e) {}
+            location.reload();
+          });
+        }
+        B.show = show;
+        B.ok = function () { B.done = true; if (!B.shown) { var b = el(); if (b) b.style.display = "none"; } };
+        window.addEventListener("error", function (e) {
+          if (B.done || B.shown) return;
+          var t = e.target;
+          if (t && t !== window && (t.tagName === "SCRIPT" || t.tagName === "LINK")) show("A game file didn't load. Check your connection, then Reload. If it keeps happening, tap Repair & reload.", t.src || t.href);
+          else show("The game hit an error while starting.", (e.message || "") + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : ""));
+        }, true);
+        window.addEventListener("unhandledrejection", function (e) { if (!B.done && !B.shown) show("The game hit an error while starting.", String(e.reason && (e.reason.message || e.reason))); });
+        setTimeout(function () { if (!B.done) show("Still loading… this is taking longer than it should. Check your connection, then Reload. If it keeps happening, tap Repair & reload.", ""); }, 15000);
+      })();
+    </script>
+    <script type="module" crossorigin src="/ember-crypt/assets/index-BqXf0tc0.js"></script>
+    <link rel="stylesheet" crossorigin href="/ember-crypt/assets/index-Buzr2qWw.css">
+  </head>
+  <body>
+    <div id="boot"><div class="bt">EMBER CRYPT</div><div class="bs"></div><div class="bm">Loading…</div></div>
+    <div id="app"></div>
+  </body>
+</html>
