@@ -5,6 +5,7 @@ import { ITEM_BASES, UNARMED_REACH, meleeHitDist, weaponReachOf, makeItem } from
 import { MONSTERS, type MonsterDef } from "../src/data/monsters";
 import { GAME_VERSION, PATCH_NOTES } from "../src/data/patchNotes";
 import { Game, type GameEvents, type Monster } from "../src/game";
+import { castSorc, sorcDefPct, type SorcHost } from "../src/spells";
 import gameSrc from "../src/game.ts?raw";
 import swSrc from "../public/sw.js?raw";
 
@@ -100,10 +101,107 @@ describe("v1.9.1 weapon reach is data-driven and fits the weapon's size", () => 
     g.player.base = { str: 200, dex: 80, vit: 80, ene: 10 };
     g.player.equip = { main: makeItem("sword", 30) };
     const swing = (g as unknown as { resolveMelee: (s: string | null, mon: Monster, d: ReturnType<Game["derived"]>, h: number) => void }).resolveMelee.bind(g);
-    swing(null, m, g.derived(), 0);
-    expect(m.hp).toBe(10_000); // sword missed
-    g.player.equip = { main: makeItem("great_sword", 30) };
-    swing(null, m, g.derived(), 0);
-    expect(m.hp).toBeLessThan(10_000);
+    const rnd = Math.random;
+    Math.random = () => 0; // every attack rating roll lands
+    try {
+      swing(null, m, g.derived(), 0);
+      expect(m.hp).toBe(10_000); // sword is out of reach
+      g.player.equip = { main: makeItem("great_sword", 30) };
+      swing(null, m, g.derived(), 0);
+      expect(m.hp).toBeLessThan(10_000);
+    } finally { Math.random = rnd; }
+  });
+});
+
+describe("v1.9.1 weapon swap is a D2 stat stick: lasting effects keep the level they were cast at", () => {
+  const stick = (tab: "warcries" | "cold" | "fire", v = 3) => {
+    const it = makeItem(tab === "warcries" ? "sword" : tab === "cold" ? "battle_staff" : "wand", 30);
+    it.q = "magic";
+    it.mods = [{ s: "tabsk", v, sk: tab }];
+    it.aff = ["tabsk"];
+    return it;
+  };
+  const barb = () => {
+    const g = new Game(events, null, 4, { cls: "barbarian", name: "Stick" });
+    g.player.level = 40;
+    g.player.base = { str: 200, dex: 80, vit: 80, ene: 20 };
+    g.player.skills = { shout: 5, battle_orders: 5, battle_command: 1 };
+    g.player.skillPoints = 0;
+    g.player.equip = { main: stick("warcries", 3) };
+    g.player.altSet = { main: makeItem("axe", 10) };
+    g.player.mana = 400;
+    return g;
+  };
+
+  it("Shout and Battle Orders keep their strength after you swap off +Warcries", () => {
+    const g = barb();
+    const shoutLvl = g.skillLevel("shout");
+    expect(shoutLvl).toBe(8); // 5 hard + 3 tree
+    expect(g.castSkill("shout", g.derived())).toBe(true);
+    expect(g.castSkill("battle_orders", g.derived())).toBe(true);
+    expect(g.buffLevel("shout")).toBe(8);
+    expect(g.buffLevel("battle_orders")).toBe(8);
+    const def1 = g.derived().def;
+    const hp1 = g.derived().maxHp;
+    const left = g.player.buffs.shout;
+    g.time += Game.SWAP_CD + 0.01;
+    expect(g.swapWeapons()).toBeNull();
+    expect(g.skillLevel("shout")).toBe(5); // live skill is down
+    expect(g.buffLevel("shout")).toBe(8); // the running shout is not
+    expect(g.derived().def).toBe(def1);
+    expect(g.derived().maxHp).toBe(hp1);
+    expect(g.player.buffs.shout).toBe(left); // duration already set at cast; swap doesn't cut it
+    const bar = g.timedBuffs();
+    expect(bar.find((b) => b.id === "shout")?.lvl).toBe(8);
+    expect(bar.find((b) => b.id === "shout")?.label).toMatch(/slvl 8/);
+    expect(bar.find((b) => b.id === "battle_orders")?.lvl).toBe(8);
+  });
+
+  it("a later cast uses the gear in your hands then", () => {
+    const g = barb();
+    expect(g.castSkill("shout", g.derived())).toBe(true);
+    expect(g.buffLevel("shout")).toBe(8);
+    g.time += Game.SWAP_CD + 0.01;
+    expect(g.swapWeapons()).toBeNull();
+    g.player.mana = 400;
+    expect(g.castSkill("shout", g.derived())).toBe(true);
+    expect(g.buffLevel("shout")).toBe(5);
+    expect(g.timedBuffs().find((b) => b.id === "shout")?.lvl).toBe(5);
+  });
+
+  it("Battle Command's +skills stays at the cast level after a swap, and a new shout uses that bonus", () => {
+    const g = barb();
+    expect(g.skillLevel("battle_command")).toBe(4); // 1 hard + 3 tree
+    expect(g.castSkill("battle_command", g.derived())).toBe(true);
+    const after = g.skillLevel("shout"); // 5 hard + 3 tree + Battle Command's +1
+    expect(after).toBe(9);
+    g.time += Game.SWAP_CD + 0.01;
+    expect(g.swapWeapons()).toBeNull();
+    // +Warcries is gone, but Battle Command's +1 (from slvl 4 at cast) still applies
+    expect(g.skillLevel("shout")).toBe(6);
+    g.player.mana = 400;
+    expect(g.castSkill("shout", g.derived())).toBe(true);
+    expect(g.buffLevel("shout")).toBe(6);
+  });
+
+  it("Frozen Armor keeps its defense after you swap off a +Cold staff", () => {
+    const g = new Game(events, null, 5, { cls: "sorceress", name: "Stick" });
+    g.player.level = 40;
+    g.player.base = { str: 40, dex: 40, vit: 40, ene: 200 };
+    g.player.skills = { frozen_armor: 5 };
+    g.player.equip = { main: stick("cold", 3) };
+    g.player.altSet = { main: makeItem("wand", 10) };
+    g.player.mana = 400;
+    expect(g.skillLevel("frozen_armor")).toBe(8);
+    castSorc(g as unknown as SorcHost, "frozen_armor", g.skillLevel("frozen_armor"));
+    expect(g.buffLevel("frozen_armor")).toBe(8);
+    const def1 = sorcDefPct(g as unknown as SorcHost);
+    expect(def1).toBeGreaterThan(0);
+    g.time += Game.SWAP_CD + 0.01;
+    expect(g.swapWeapons()).toBeNull();
+    expect(g.skillLevel("frozen_armor")).toBe(5);
+    expect(g.buffLevel("frozen_armor")).toBe(8);
+    expect(sorcDefPct(g as unknown as SorcHost)).toBe(def1);
+    expect(g.timedBuffs().find((b) => b.id === "frozen_armor")?.lvl).toBe(8);
   });
 });

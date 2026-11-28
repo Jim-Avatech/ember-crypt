@@ -93,6 +93,9 @@ export interface SorcHost {
   addPatch(x: number, y: number, r: number, life: number, dps: number, elem: Elem): void;
   nearestMonster(maxDist: number, requireLos?: boolean): Monster | null;
   skillLevel(id: string): number;
+  /** v1.9.1: skill level a lasting effect was cast at (0 if none); see Game.buffLevel */
+  buffLevel(id: string): number;
+  noteCast(id: string, lvl?: number): number;
   hint(text: string): void;
   /** v1.6.1: seconds a cast takes now (faster cast rate from gear) */
   castTime(): number;
@@ -108,6 +111,8 @@ export const CB_CONE = (22.5 * Math.PI) / 180;
 export const CB_WANDER_MAX = (33 * Math.PI) / 180; // v1.6.3: scaled with the cone (×1.5; was 22°)
 export const CB_WANDER_DAMP = 0.7;
 export const sb = (p: Player & { sb?: SorcBuffs }): SorcBuffs => (p.sb ??= {});
+/** v1.9.1: a running buff uses the level it was cast at; otherwise the current skill level */
+const effectLvl = (g: Pick<SorcHost, "skillLevel" | "buffLevel">, id: string) => g.buffLevel(id) || g.skillLevel(id) || 1;
 
 /** + % spell damage from the mastery of an element */
 export function masteryPct(g: Pick<SorcHost, "skillLevel">, e: SpellElem): number {
@@ -174,9 +179,11 @@ export function sorcBlock(g: SorcHost, id: string): string | null | "" {
 }
 
 /** the cast itself (at the release point of the cast animation) */
+const LASTING_SORC = new Set(["blaze", "enchant", "frozen_armor", "shiver_armor", "chilling_armor", "thunder_storm", "energy_shield", "hydra"]);
 export function castSorc(g: SorcHost, id: string, lvl: number) {
   const p = g.player;
   const b = sb(p);
+  if (LASTING_SORC.has(id)) lvl = g.noteCast(id, lvl);
   const hit = (k: number) => spellHit(g, SPELL_ELEM[id] ?? "fire", k);
   const cd = SORC_COOLDOWN[id];
   if (cd) g.sorcCd[id] = g.time + cd;
@@ -448,7 +455,7 @@ export function updateSorc(g: SorcHost, dt: number) {
     if (b.storm && b.storm > 0) {
       b.stormCd = (b.stormCd ?? 0) - dt;
       if (b.stormCd <= 0) {
-        const lvl = g.skillLevel("thunder_storm") || 1;
+        const lvl = effectLvl(g, "thunder_storm");
         const near = g.monsters.filter((m) => alive(m) && Math.hypot(m.x - p.x, m.y - p.y) < THUNDER_R && lineOfSight(g.level, p.x, p.y, m.x, m.y));
         if (near.length) {
           const m = near[Math.floor(Math.random() * near.length)];
@@ -462,7 +469,7 @@ export function updateSorc(g: SorcHost, dt: number) {
     if (b.blaze && b.blaze > 0 && !p.dead) {
       const d = Math.hypot(p.x - (b.blazeX ?? p.x), p.y - (b.blazeY ?? p.y));
       if (d > 0.85) {
-        const lvl = g.skillLevel("blaze") || 1;
+        const lvl = effectLvl(g, "blaze");
         g.addPatch(p.x, p.y, 0.5, 3, spellHit(g, "fire", blazeK(lvl)), "fire");
         b.blazeX = p.x;
         b.blazeY = p.y;
@@ -617,7 +624,7 @@ function shard(g: SorcHost, from: Missile, ang: number) {
 export function sorcDefPct(g: SorcHost): number {
   const b = g.player.sb;
   if (!b?.armor || !b.armorId) return 0;
-  const l = g.skillLevel(b.armorId) || 1;
+  const l = effectLvl(g, b.armorId);
   return b.armorId === "frozen_armor" ? frozenArmorDef(l) : b.armorId === "shiver_armor" ? shiverDef(l) : chillingDef(l);
 }
 
@@ -647,7 +654,7 @@ export function sorcOnHurt(g: SorcHost, dmg: number, how: "melee" | "missile" | 
     }
   }
   if (b.es && b.es > 0 && p.mana > 0) {
-    const share = esAbsorb(g.skillLevel("energy_shield") || 1) / 100;
+    const share = esAbsorb(effectLvl(g, "energy_shield")) / 100;
     const absorb = Math.min(dmg * share, p.mana / ES_MANA_PER_LIFE);
     p.mana -= absorb * ES_MANA_PER_LIFE;
     if (absorb >= 1) g.floatAt(p.x + 0.3, p.y - 0.3, `◍${Math.round(absorb)}`, "#8ab0ff", 11);
@@ -657,10 +664,10 @@ export function sorcOnHurt(g: SorcHost, dmg: number, how: "melee" | "missile" | 
 }
 
 /** fire added to each of her attacks while Enchant is up (0 otherwise) */
-export function enchantBonus(g: Pick<SorcHost, "player" | "skillLevel" | "spellBaseParts">): number {
+export function enchantBonus(g: Pick<SorcHost, "player" | "skillLevel" | "buffLevel" | "spellBaseParts">): number {
   const b = g.player.sb;
   if (!b?.ench || b.ench <= 0) return 0;
-  return roll(spellHit(g, "fire", enchantK(g.skillLevel("enchant") || 1)));
+  return roll(spellHit(g, "fire", enchantK(effectLvl(g, "enchant"))));
 }
 
 /** skills that do damage on their own (for the character screen's spell DPS) */

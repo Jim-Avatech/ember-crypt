@@ -602,6 +602,8 @@ export interface TimedBuff {
   full: number;
   kind: "buff" | "debuff" | "ailment";
   stacks?: number;
+  /** v1.9.1: the skill level this lasting effect was cast at (D2 stat-stick) */
+  lvl?: number;
 }
 
 /** v1.3: DPS shown with one decimal under 100, whole numbers above, thousands separated */
@@ -1269,6 +1271,7 @@ export class Game {
     p.moveTarget = null;
     p.dead = false;
     p.buffs = { shout: 0, bo: 0, conc: 0, bers: 0, bcmd: 0, slowm: 0 };
+    this.castLvl.clear();
     p.sb = {};
     this.spells = [];
     p.frenzy = { stacks: 0, t: 0, decay: 0 };
@@ -1693,11 +1696,11 @@ export class Game {
     let defPct = 0;
     const isl = this.skillLevel("iron_skin");
     if (isl) defPct += ironSkinDef(isl);
-    if (p.buffs.shout > 0) defPct += shoutDef(this.skillLevel("shout") || 1);
-    if (p.buffs.conc > 0) defPct += concDef(this.skillLevel("concentrate") || 1);
+    if (p.buffs.shout > 0) defPct += shoutDef(this.buffLevel("shout") || 1);
+    if (p.buffs.conc > 0) defPct += concDef(this.buffLevel("concentrate") || 1);
     if (p.sb?.armor) defPct += sorcDefPct(this as unknown as SorcHost);
     const stam = stamLife(this.skillLevel("increased_stamina"));
-    const boMul = p.buffs.bo > 0 ? 1 + boPct(this.skillLevel("battle_orders") || 1) / 100 : 1;
+    const boMul = p.buffs.bo > 0 ? 1 + boPct(this.buffLevel("battle_orders") || 1) / 100 : 1;
     const cd = CLASS_DEF[p.cls] ?? CLASS_DEF.barbarian;
     const maxHp = Math.round((cd.life + (s.vit - cd.stats.vit) * cd.lifePerVit + (p.level - 1) * (cd.lifePerLvl ?? 2) + g("life")) * boMul * (1 + stam / 100));
     const maxMana = Math.round((cd.mana + (s.ene - cd.stats.ene) * cd.manaPerEne + (p.level - 1) * (cd.manaPerLvl ?? 1.5) + g("mana")) * boMul);
@@ -1762,11 +1765,15 @@ export class Game {
     const add = (id: string, label: string, left: number, kind: TimedBuff["kind"], extra: Partial<TimedBuff> = {}) => {
       if (!(left > 0) || !isFinite(left)) {
         this.buffFull.delete(id);
+        // v1.9.1: drop the stored cast level once the effect is gone (frenzy keeps it while stacks remain)
+        if (id !== "frenzy" || !(p.frenzy.stacks > 0)) this.castLvl.delete(id);
         return;
       }
       const full = Math.max(this.buffFull.get(id) ?? 0, left);
       this.buffFull.set(id, full);
-      out.push({ id, label, glyph: SKILL_BY_ID[id]?.glyph ?? "•", left, full, kind, ...extra });
+      const lvl = this.buffLevel(id);
+      const shown = lvl ? `${label} (slvl ${lvl})` : label;
+      out.push({ id, label: shown, glyph: SKILL_BY_ID[id]?.glyph ?? "•", left, full, kind, ...(lvl ? { lvl } : {}), ...extra });
     };
     const most = (f: (m: Monster) => number) => this.monsters.reduce((a, m) => (m.state === "dead" || m.dummy ? a : Math.max(a, f(m))), 0);
     add("battle_orders", "Battle Orders", p.buffs.bo, "buff");
@@ -2199,8 +2206,25 @@ export class Game {
     const hard = this.player.skills[id] ?? 0;
     if (!hard && !this.grantedLevel(id)) return 0;
     let bonus = this.gearSkillBonus(id);
-    if (this.player.buffs.bcmd > 0) bonus += bcmdBonus(this.gearLevel("battle_command"));
+    if (this.player.buffs.bcmd > 0) bonus += bcmdBonus(this.buffLevel("battle_command") || this.gearLevel("battle_command"));
     return hard + bonus;
+  }
+
+  /**
+   * v1.9.1: lasting effects (warcries, Frozen Armor, Inner Sight, Enchant, Valkyrie, …) keep the skill level,
+   * duration and strength they had at the moment of the cast, even after a weapon swap (D2 "stat stick"). A later
+   * cast uses the gear in your hands then. One rule for every class.
+   */
+  castLvl = new Map<string, number>();
+  /** Remember the skill level of a lasting effect at the moment of the cast; returns that level. */
+  noteCast(id: string, lvl = this.skillLevel(id)): number {
+    const n = Math.max(1, lvl);
+    this.castLvl.set(id, n);
+    return n;
+  }
+  /** The skill level a running lasting effect was cast at (0 if none). */
+  buffLevel(id: string): number {
+    return this.castLvl.get(id) ?? 0;
   }
 
   /** v1.6.1: seconds a spell cast takes with the faster cast rate on worn gear (capped, see FCR_CAP) */
@@ -3199,7 +3223,7 @@ export class Game {
           const l = Math.hypot(fx, fy) || 1;
           a.fx = fx / l;
           a.fy = fy / l;
-          const lvl = this.skillLevel("valkyrie") || 1;
+          const lvl = this.buffLevel("valkyrie") || this.skillLevel("valkyrie") || 1;
           const [mn, mx] = itemDamage(makeItem("spear", p.level));
           const h = { ...this.handFor("main"), min: mn, max: mx, dmgPct: valkDmg(lvl) + p.level * 2, kind: "spear" as const, missile: false, crit: 0 };
           this.playerHit(tgt, h, { knock: 1.5, noLeech: true });
@@ -3330,13 +3354,14 @@ export class Game {
       p.mana -= cost;
       this.startSwing(id, d);
       const sw = p.action;
-      if (id === "concentrate" && sw) p.buffs.conc = sw.dur + 0.3;
-      if (id === "berserk") p.buffs.bers = BERSERK_DEF_T;
+      if (id === "concentrate" && sw) { this.noteCast(id, lvl); p.buffs.conc = sw.dur + 0.3; }
+      if (id === "berserk") { this.noteCast(id, lvl); p.buffs.bers = BERSERK_DEF_T; }
       return true;
     }
     switch (id) {
       case "inner_sight": {
         p.mana -= cost;
+        this.noteCast(id, lvl);
         let n = 0;
         for (const m of this.monsters) {
           if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > 9) continue;
@@ -3350,6 +3375,7 @@ export class Game {
         return true;
       }
       case "slow_missiles": {
+        this.noteCast(id, lvl);
         p.mana -= cost;
         p.buffs.slowm = slowMissilesDur(lvl);
         this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.7, radius: 10, color: "rgba(160,200,255," });
@@ -3362,6 +3388,7 @@ export class Game {
       case "decoy":
       case "valkyrie": {
         p.mana -= cost;
+        this.noteCast(id, lvl);
         const kind = id;
         this.allies = this.allies.filter((a) => a.kind !== kind); // one of each, like D2
         const ang = Math.atan2(p.fy, p.fx);
@@ -3421,6 +3448,7 @@ export class Game {
       }
       case "howl": {
         p.mana -= cost;
+        this.noteCast(id, lvl);
         let n = 0;
         for (const m of this.monsters) {
           if (m.state === "dead") continue;
@@ -3439,6 +3467,7 @@ export class Game {
       }
       case "shout": {
         p.mana -= cost;
+        this.noteCast(id, lvl);
         p.buffs.shout = shoutDur(lvl, this.hardLevel("battle_orders") + this.hardLevel("battle_command"));
         this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.6, radius: 4, color: "rgba(150,190,255," });
         p.action = { type: "cry", t: 0, dur: 0.4 };
@@ -3449,6 +3478,7 @@ export class Game {
       }
       case "battle_orders": {
         p.mana -= cost;
+        this.noteCast(id, lvl);
         const before = this.derived();
         p.buffs.bo = boDur(lvl, this.hardLevel("shout") + this.hardLevel("battle_command"));
         const after = this.derived();
@@ -3475,6 +3505,7 @@ export class Game {
           return false;
         }
         p.mana -= cost;
+        this.noteCast(id, lvl);
         m.taunt = { t: tauntDur(lvl), pct: tauntDmg(lvl) };
         m.fearT = 0;
         if (m.state === "idle") this.aggroPack(m);
@@ -3487,6 +3518,7 @@ export class Game {
       }
       case "battle_cry": {
         p.mana -= cost;
+        this.noteCast(id, lvl);
         let n = 0;
         for (const m of this.monsters) {
           if (m.state === "dead" || Math.hypot(m.x - p.x, m.y - p.y) > 6) continue;
@@ -3519,6 +3551,7 @@ export class Game {
       }
       case "battle_command": {
         p.mana -= cost;
+        this.noteCast(id, lvl);
         p.buffs.bcmd = bcmdDur(lvl);
         this.rings.push({ x: p.x, y: p.y, t: 0, life: 0.6, radius: 4, color: "rgba(255,240,170," });
         p.action = { type: "cry", t: 0, dur: 0.4 };
@@ -3538,6 +3571,7 @@ export class Game {
         best.searched = true;
         p.action = { type: "cry", t: 0, dur: 0.35 };
         if (id === "grim_ward") {
+          this.noteCast(id, lvl);
           this.wards.push({ x: best.x, y: best.y, t: 0, life: grimDur(lvl), radius: grimRadius(lvl) });
           best.hidden = true; // the corpse becomes the totem
           this.rings.push({ x: best.x, y: best.y, t: 0, life: 0.6, radius: grimRadius(lvl), color: "rgba(160,255,160," });
@@ -3733,6 +3767,7 @@ export class Game {
         p.frenzy.stacks = Math.min(FRENZY_MAX_STACKS, p.frenzy.stacks + 1);
         p.frenzy.t = FRENZY_HOLD;
         p.frenzy.decay = 0;
+        this.noteCast("frenzy");
       }
     } else this.playerHit(target, h, { knock: 1.8 });
   }

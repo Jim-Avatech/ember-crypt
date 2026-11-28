@@ -1722,3 +1722,6 @@ body.portrait #rotate {
 }
 .wset.act::after { content: " ●"; color: #e0a040; font-size: 8px; vertical-align: 1px; }
 .wset.on { background: #4a3418; border-color: #d4a448; color: #fff3cc; }
+
+/* v1.9.1: stored cast level on the buff bar (D2 stat-stick) */
+.buff .tl { position: absolute; left: 1px; top: -2px; font: 700 8px/1 system-ui, sans-serif; color: #ffe9a0; text-shadow: 0 0 3px #000, 0 1px 1px #000; pointer-events: none; }

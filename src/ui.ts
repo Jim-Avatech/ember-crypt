@@ -417,7 +417,7 @@ export class Ui {
         const secs = b.full > 0 ? `${Math.ceil(b.left)}s` : "";
         const pct = b.full > 0 ? Math.max(0, Math.min(100, (b.left / b.full) * 100)) : 100;
         return `<span class="buff tbuff k-${b.kind} b-${b.id}" data-id="${b.id}" title="${esc(b.label)}" aria-label="${esc(b.label)}${secs ? `, ${secs} left` : ""}">
-          <i class="tg">${b.glyph}</i>${b.stacks ? `<i class="tx">×${b.stacks}</i>` : ""}<b class="ts">${secs}</b><i class="tbar" style="width:${pct.toFixed(1)}%"></i></span>`;
+          <i class="tg">${b.glyph}</i>${b.lvl ? `<i class="tl">L${b.lvl}</i>` : ""}${b.stacks ? `<i class="tx">×${b.stacks}</i>` : ""}<b class="ts">${secs}</b><i class="tbar" style="width:${pct.toFixed(1)}%"></i></span>`;
       })
       .join("");
   }
