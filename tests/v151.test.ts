@@ -7,7 +7,7 @@ import uiSrc from "../src/ui.ts?raw";
 
 describe("v1.5.1 version", () => {
   it("label and patch note", () => {
-    expect(GAME_VERSION).toBe("1.7.3");
+    expect(GAME_VERSION).toBe("1.8");
     expect(PATCH_NOTES.find((n) => n.version === "1.5.1")!.notes.join(" ")).toMatch(/Act 4 · Level 7/);
   });
   it("no patch note quotes an overall level number (21-80) as a level", () => {
@@ -28,7 +28,7 @@ describe("v1.5.1 the map label: Act N · Level 1-20", () => {
     expect(whereLabel(0)).toBe("Ember Camp");
   });
   it("internal floor math unchanged", () => {
-    expect([actOf(67), levelInAct(67), MAX_FLOOR]).toEqual([4, 7, 80]);
+    expect([actOf(67), levelInAct(67), MAX_FLOOR]).toEqual([4, 7, 100]); // v1.8: Act V
   });
 });
 

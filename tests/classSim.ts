@@ -56,7 +56,7 @@ export function simClear(cls: HeroClass, L: BalLevel, pack = 5, cap = 300, build
   const g = new Game(events, null, 11, { cls, name: "" });
   const p = g.player;
   let floor = 1;
-  while (floor < MAX_FLOOR && mlvlOf(floor) < L) floor++;
+  while (floor < Math.min(MAX_FLOOR, 80) && mlvlOf(floor) < L) floor++; // v1.8: Acts I-IV, as before Act V
   p.level = L;
   p.base = b.stats ? b.stats(L) : stats(cls, L);
   p.equip = { main: makeItem(b.weapon, L) };

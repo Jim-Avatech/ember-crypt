@@ -1,16 +1,16 @@
-/** The four acts: a linear run of levels each, a theme, monsters, bosses and the artifact the final boss drops. */
+/** The five acts (v1.8 adds Act V): a linear run of levels each, a theme, monsters, bosses and the artifact the final boss drops. */
 import type { MonsterKind } from "./monsters";
 
 /** v0.8 pacing: about 20 short levels (2-5 min each) per act, so an act takes an hour or more. */
 export const LEVELS_PER_ACT = 20;
-export const ACT_COUNT = 4;
+export const ACT_COUNT = 5;
 export const MAX_FLOOR = LEVELS_PER_ACT * ACT_COUNT;
 
 export interface Theme {
   /** 4 floor base colors */
   floor: [string, string, string, string];
   /** extra floor detail */
-  feature: "slabs" | "sand" | "moss" | "lava";
+  feature: "slabs" | "sand" | "moss" | "lava" | "ice";
   wallTop: string;
   wallLeft: string;
   wallRight: string;
@@ -44,7 +44,10 @@ export interface ActDef {
   /** level boss names; levels past the list reuse them with an epithet (see bossName) */
   bossNames: string[];
   finalBoss: MonsterKind;
-  artifact: ArtifactDef;
+  /** the artifact the final boss drops (Acts I-IV; v1.8: Act V has none, its boss guards the way to the four's altar) */
+  artifact?: ArtifactDef;
+  /** what the final boss's "summon" special calls up (default: imps; Act III flayers) */
+  summon?: MonsterKind;
   /** monster level on level 1 of the act, and per level after */
   mlvl0: number;
   mlvlStep: number;
@@ -93,13 +96,23 @@ export const ACTS: ActDef[] = [
     artifact: { id: "cinder_crown", name: "The Cinder Crown", lore: "Malakar's crown of black iron. The flames on it have burned since before the camp was built.", act: 4 },
     mlvl0: 37, mlvlStep: 0.65, reward: 1.3,
   },
+  {
+    n: 5, roman: "V", area: "Rimefrost Citadel", tagline: "A fortress of black ice beneath the hells",
+    theme: {
+      floor: ["#2a3440", "#27303b", "#2d3744", "#252e38"], feature: "ice", wallTop: "#5a6e84", wallLeft: "#1c2430", wallRight: "#34445a",
+      flame: "#7ad8ff", core: "#e8f8ff", glow: "120,200,255", void: "#020408", decals: { bones: "bones", skull: "skull", blood: "crack", crack: "crack" }, mini: "#5a7088",
+    },
+    monsters: ["husk", "revenant", "rimecaller", "wraith"], levelBoss: "boss5", bossNames: ["Hrimgar the Pale", "Frostmaw", "The Glacier Knight", "Shiverbone", "Vaskr Icehand", "The Hollow Thane", "Rime Warden Ysolde"], finalBoss: "frostking", summon: "husk",
+    mlvl0: 51, mlvlStep: 0.7, reward: 1.25,
+  },
 ];
 
-export const ARTIFACTS: ArtifactDef[] = ACTS.map((a) => a.artifact);
+/** the four artifacts (Acts I-IV) */
+export const ARTIFACTS: ArtifactDef[] = ACTS.flatMap((a) => (a.artifact ? [a.artifact] : []));
 export const ARTIFACT_BY_ID: Record<string, ArtifactDef> = Object.fromEntries(ARTIFACTS.map((a) => [a.id, a]));
 export const ARTIFACT_COLOR = "#ff9a2a";
 
-/** Act number (1..4) of a global floor (1..20); 0 in town. */
+/** Act number (1..5) of a global floor (1..100); 0 in town. */
 export const actOf = (floor: number) => (floor <= 0 ? 0 : Math.min(ACT_COUNT, Math.ceil(floor / LEVELS_PER_ACT)));
 /** Level within the act (1..5). */
 export const levelInAct = (floor: number) => ((Math.max(1, floor) - 1) % LEVELS_PER_ACT) + 1;

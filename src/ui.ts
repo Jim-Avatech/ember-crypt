@@ -1572,7 +1572,7 @@ export class Ui {
     }).join("");
     return `
       <div class="artwrap">
-        <div class="arthead"><b>Artifacts</b> · ${p.artifacts.length} of ${ARTIFACTS.length} found<small> · Each act's final boss carries one. They're kept here, not in your bag, and saved with your hero.</small></div>
+        <div class="arthead"><b>Artifacts</b> · ${p.artifacts.length} of ${ARTIFACTS.length} found<small> · The final bosses of Acts I–IV carry one each. They're kept here, not in your bag, and saved with your hero.</small></div>
         <div class="artgrid">${cards}</div>
       </div>`;
   }

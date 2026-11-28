@@ -3,6 +3,14 @@
 A small Diablo II–style isometric action RPG for phones, played in landscape. Play it at
 **https://jim-avatech.github.io/ember-crypt/** (on iPhone: Share → Add to Home Screen for full screen).
 
+## v1.8: Act V, Rimefrost Citadel
+
+- `ACT_COUNT` 5, `MAX_FLOOR` 100. Act V (floors 81-100): `ice` floor/wall feature and a cold palette; monsters Frozen Husk, Rime Revenant, Rime Caller, Frost Wraith, level boss Frost Lord, final boss Vorthak, the Frozen King (bolts, nova, charge, summon husks, slam). They reuse earlier species art recolored by `MonsterDef.tint` (`tinted()` in render.ts, cached per frame). `ActDef.summon` sets what a final boss summons; `ActDef.artifact` is optional (Act V has none, `ARTIFACTS` stays the four).
+- Difficulty past parity: `curveHp`/`curveDmg` are unchanged through floor 80; Act V multiplies by `postHp` 1.15→1.35 and `postDmg` 1.10→1.25 across its 20 levels, and `bossHitShare` takes `postDmg` too (boss damage still fixed per floor). Act V `mlvl0` 51, step 0.7 (Act IV ends at 49), XP reward x1.25. Per level vs Act IV: about x3.1 monster life, x2.2 mean hit, bosses x1.6 (Act III to IV was about x2.1 / x1.95).
+- `ACT_MONSTER_MULT[4]` 3.2 keeps "+25% per act" (`tests/v14density.test.ts`); `LEECH_ACT_DRAIN[4]` 0.25.
+- Saves: a hero holding the Cinder Crown with `maxFloor` below 81 gets `maxFloor` 81 (Act V's first waypoint) on load; nothing else changes. Waypoint panel shows five act columns.
+- Tests: `tests/v18.test.ts`, `scripts/v18-shots.mjs` (screenshots/v18). SW cache v42.
+
 ## v1.7.3: A gentler start (early boss and elite damage)
 
 - Why: a Barbarian could be one-shot by a floor-1 boss slam. Boss damage was sized to an optimistic hero life (`heroLifeOld`, 83 at floor 1 vs 55-67 real), then the slam added 1.4-1.6x on top; elite uniques stacked 1.5x x Extra Strong 1.5x on monster damage that grows 32% a monster level.

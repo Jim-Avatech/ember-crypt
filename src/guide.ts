@@ -106,14 +106,14 @@ const BEHAVIOR: Record<string, string> = { melee: "Melee", ranged: "Ranged", cha
 function actsHtml(): string {
   const rows = ACTS.map((a) => {
     const f0 = firstFloorOf(a.n);
-    const icon = artifactIcon(a.artifact.id).toDataURL();
+    const icon = a.artifact ? artifactIcon(a.artifact.id).toDataURL() : "";
     return `<tr><td><b>Act ${a.roman}</b><br/>${esc(a.area)}<br/><small>${esc(a.tagline)}</small></td>
       <td>${mlvlOf(f0)}–${mlvlOf(f0 + LEVELS_PER_ACT - 1)}</td>
       <td>${a.monsters.map((k) => esc(MONSTERS[k].name)).join(", ")}</td>
       <td>${a.bossNames.map(esc).join(", ")}<br/><b>${esc(MONSTERS[a.finalBoss].name)}</b> (level ${LEVELS_PER_ACT})</td>
-      <td><img class="gicon" src="${icon}" alt="" style="width:28px;height:28px;image-rendering:pixelated"/> <span style="color:${ARTIFACT_COLOR}">${esc(a.artifact.name)}</span></td></tr>`;
+      <td>${a.artifact ? `<img class="gicon" src="${icon}" alt="" style="width:28px;height:28px;image-rendering:pixelated"/> <span style="color:${ARTIFACT_COLOR}">${esc(a.artifact.name)}</span>` : "—"}</td></tr>`;
   }).join("");
-  return `<p class="gnote">Four acts of ${LEVELS_PER_ACT} levels, all reached from Ember Camp. Every level ends with a boss guarding the stairs; each level's boss is tougher than the last (monster level climbs, plus +4% life and +2% damage per level). Level ${LEVELS_PER_ACT} holds the act's final boss, with special attacks. It drops the act's artifact ✧ (kept in the Artifacts tab, not your bag) and opens the stairs to the next act, which then shows on the waypoint. Waypoints sit on level 1 and every 5th level. Deeper acts give a little more XP per kill (Act II ×1.1, III ×1.2, IV ×1.3) and +20% magic find per act (+1% per level within an act). Like Diablo II, monsters more than 3 levels below you give less XP (−15% per level, down to 5%). Expect about 2–5 minutes per level, an hour or more per act, and roughly 13–15 hero levels per act.</p>
+  return `<p class="gnote">Five acts of ${LEVELS_PER_ACT} levels, all reached from Ember Camp. Every level ends with a boss guarding the stairs; each level's boss is tougher than the last (monster level climbs, plus +4% life and +2% damage per level). Level ${LEVELS_PER_ACT} holds the act's final boss, with special attacks. In Acts I–IV it drops the act's artifact ✧ (kept in the Artifacts tab, not your bag) and opens the stairs to the next act, which then shows on the waypoint. Waypoints sit on level 1 and every 5th level. Deeper acts give a little more XP per kill (Act II ×1.1, III ×1.2, IV ×1.3, V ×1.25 since it has more monsters) and +20% magic find per act (+1% per level within an act). Like Diablo II, monsters more than 3 levels below you give less XP (−15% per level, down to 5%). Act V is a step up: on top of its higher monster level, monsters have +15–35% life and +10–25% damage (bosses too). Expect about 2–5 minutes per level, an hour or more per act, and roughly 13–15 hero levels per act.</p>
     <div class="gtable"><table><tr><th>Act</th><th>Monster lvl</th><th>Monsters</th><th>Bosses</th><th>Artifact</th></tr>${rows}</table></div>`;
 }
 

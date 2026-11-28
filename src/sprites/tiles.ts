@@ -53,6 +53,10 @@ export function cryptFloor(v: number, th?: Theme): HTMLCanvasElement {
       if (v === 3 && Math.hypot((x - 16) / 2, y - 8) < 4) c = mul(hex("#1e3a3a"), 0.9 + 0.2 * hash(x, y, 8));
     } else if (feat === "lava") {
       if (hash(x, y, 66) < 0.04) c = mul(base, 1.6);
+    } else if (feat === "ice") {
+      // v1.8 Act V: frost drifts and glassy glints over dark slabs
+      if (v !== 1 && hash(Math.floor(x / 3), Math.floor(y / 2), v + 41) < 0.38) c = mul(hex("#7a94b0"), 0.85 + 0.2 * hash(x, y, 6));
+      if (hash(x, y, 91) < 0.05) c = mul(hex("#d8f0ff"), 0.9 + 0.1 * hash(x, y, 3));
     }
     return c;
   });
@@ -113,6 +117,7 @@ export function cryptWall(tall: boolean, th?: Theme): HTMLCanvasElement {
     const c = f(x, y, r);
     if (feat === "moss" && hash(x, Math.floor(r / 2), 21) < 0.22 - r * 0.006) return mul(hex("#3a5a26"), 0.8 + 0.3 * hash(x, r, 2));
     if (feat === "lava" && r > h - 4 && hash(x, r, 5) < 0.3) return hex(r === h - 1 ? "#ff7a20" : "#a02a08");
+    if (feat === "ice" && r < 3 && hash(x, r, 13) < 0.5) return mul(hex("#cfe8ff"), 0.8 + 0.2 * hash(x, r, 4)); // v1.8: frost on the wall tops
     if (feat === "sand" && r > h - 3 && hash(x, r, 7) < 0.6) return mul(hex("#b89868"), 0.9);
     return c;
   };

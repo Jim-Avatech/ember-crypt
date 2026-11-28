@@ -56,7 +56,7 @@ const f = (x: number) => x.toFixed(1);
 
 describe("v1.6.4 release", () => {
   it("version, patch note, cache v37", () => {
-    expect(GAME_VERSION).toBe("1.7.3");
+    expect(GAME_VERSION).toBe("1.8");
     const n = PATCH_NOTES.find((q) => q.version === "1.6.4")!;
     expect(n.version).toBe("1.6.4");
     expect(n.notes.join(" ")).toMatch(/leech/i);

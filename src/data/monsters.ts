@@ -1,5 +1,5 @@
 /**
- * Monsters for all four acts. Each act has 3-4 regular types with distinct behaviors, a level boss
+ * Monsters for all five acts. Each act has 3-4 regular types with distinct behaviors, a level boss
  * (renamed and stronger on each level of the act), and a final act boss with special attacks.
  */
 export type Elem = "phys" | "fire" | "cold" | "light" | "poison";
@@ -10,7 +10,8 @@ export type MonsterKind =
   | "zombie" | "fallen" | "skeleton" | "boss" | "lich"
   | "mummy" | "raider" | "priest" | "boss2" | "sekhet"
   | "lurker" | "flayer" | "spitter" | "bloater" | "boss3" | "mire"
-  | "imp" | "knight" | "conjurer" | "soul" | "boss4" | "malakar";
+  | "imp" | "knight" | "conjurer" | "soul" | "boss4" | "malakar"
+  | "husk" | "revenant" | "rimecaller" | "wraith" | "boss5" | "frostking";
 
 /** Sprite species (see sprites/puppet.ts). */
 export type Species =
@@ -59,6 +60,8 @@ export interface MonsterDef {
   blood: string;
   /** pixel height above the feet for the health bar */
   barY: number;
+  /** v1.8: recolor of the species' sprite (Act V's frozen variants reuse earlier acts' art) */
+  tint?: string;
 }
 
 type Base = Omit<MonsterDef, "kind" | "rank" | "pack" | "blood" | "barY" | "blurb" | "elem" | "behavior"> &
@@ -97,6 +100,13 @@ export const MONSTERS: Record<MonsterKind, MonsterDef> = {
   soul: M("soul", { name: "Burning Soul", species: "soul", behavior: "exploder", elem: "fire", hp: 12, dmgMin: 8, dmgMax: 14, speed: 2.6, atkInterval: 1, windup: 0.5, reach: 0.9, radius: 0.28, xp: 14, ar: 999, def: 2, aggro: 9, pack: [1, 2], blood: "#ff8a2a", barY: 36, blurb: "Rushes in and explodes in fire." }),
   boss4: M("boss4", { name: "Pit Lord", rank: "boss", species: "boss4", elem: "fire", hp: 140, dmgMin: 5, dmgMax: 11, speed: 1.55, atkInterval: 1.2, windup: 0.5, reach: 1.0, radius: 0.5, xp: 190, ar: 46, def: 11, aggro: 7, pack: [1, 1], blood: "#8a1a0a", barY: 70, blurb: "Guards the stairs on each level of the hells." }),
   malakar: M("malakar", { name: "Malakar, Lord of Embers", rank: "final", species: "malakar", elem: "fire", hp: 380, dmgMin: 7, dmgMax: 13, speed: 1.5, atkInterval: 1.3, windup: 0.5, reach: 1.2, radius: 0.65, xp: 1000, ar: 70, def: 18, aggro: 10, pack: [1, 1], blood: "#ff5a1a", barY: 88, blurb: "Act IV final boss. Fire nova, a burning charge, and summoned imps.", shot: { speed: 8, range: 10, look: "bolt", color: "#ff5a1a" }, specials: ["nova", "charge", "summon"] }),
+  // ---------------------------------------------------------------- v1.8 Act V: Rimefrost Citadel (frozen variants of earlier art)
+  husk: M("husk", { name: "Frozen Husk", species: "mummy", elem: "cold", hp: 22, dmgMin: 5, dmgMax: 9, speed: 1.35, atkInterval: 1.4, windup: 0.45, reach: 0.8, radius: 0.32, xp: 20, ar: 36, def: 8, aggro: 8, pack: [2, 4], blood: "#9ad0ff", tint: "#7ab8ff", blurb: "Tough and slow; its cold touch chills. Cold resist helps." }),
+  revenant: M("revenant", { name: "Rime Revenant", species: "knight", behavior: "charger", hp: 30, dmgMin: 5, dmgMax: 9, speed: 1.6, atkInterval: 1.35, windup: 0.45, reach: 0.9, radius: 0.36, xp: 23, ar: 38, def: 10, aggro: 8, pack: [1, 3], blood: "#4a6a8a", tint: "#a8d8ff", blurb: "Armored in ice; charges and hits hard." }),
+  rimecaller: M("rimecaller", { name: "Rime Caller", species: "conjurer", behavior: "ranged", elem: "cold", hp: 13, dmgMin: 4, dmgMax: 8, speed: 1.4, atkInterval: 2.0, windup: 0.55, reach: 6.5, radius: 0.28, xp: 18, ar: 34, def: 4, aggro: 9, pack: [1, 2], blood: "#6a8aaa", tint: "#6ab0ff", blurb: "Caster: hurls ice bolts that chill. Cold resist helps.", shot: { speed: 8.5, range: 10, look: "bolt", color: "#8ad8ff" } }),
+  wraith: M("wraith", { name: "Frost Wraith", species: "soul", behavior: "exploder", elem: "cold", hp: 12, dmgMin: 9, dmgMax: 15, speed: 2.8, atkInterval: 1, windup: 0.5, reach: 0.9, radius: 0.28, xp: 16, ar: 999, def: 3, aggro: 9, pack: [1, 2], blood: "#bfe8ff", barY: 36, tint: "#9ae0ff", blurb: "Rushes in and bursts in freezing cold." }),
+  boss5: M("boss5", { name: "Frost Lord", rank: "boss", species: "boss4", elem: "cold", hp: 160, dmgMin: 6, dmgMax: 12, speed: 1.55, atkInterval: 1.2, windup: 0.5, reach: 1.0, radius: 0.5, xp: 210, ar: 50, def: 12, aggro: 7, pack: [1, 1], blood: "#3a6a9a", barY: 70, tint: "#7ac0ff", blurb: "Guards the stairs on each level of the citadel." }),
+  frostking: M("frostking", { name: "Vorthak, the Frozen King", rank: "final", species: "lich", behavior: "ranged", elem: "cold", hp: 430, dmgMin: 8, dmgMax: 14, speed: 1.45, atkInterval: 1.4, windup: 0.6, reach: 5, radius: 0.5, xp: 1200, ar: 76, def: 20, aggro: 10, pack: [1, 1], blood: "#8ad8ff", barY: 78, tint: "#8ac8ff", blurb: "Act V final boss. Ice bolt fan, frost nova, an icy charge, and summoned husks.", shot: { speed: 8.5, range: 10, look: "bolt", color: "#9ae0ff" }, specials: ["bolts", "nova", "charge", "summon"] }),
 };
 
 /** Scale a stat by monster level. */

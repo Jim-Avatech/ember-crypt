@@ -115,6 +115,29 @@ function actArt(floor: number): ActArt {
   return r;
 }
 
+/** v1.8: a sprite frame recolored to a tint (hue and saturation of the tint, the sprite's own light and shade), cached. */
+const tintCache = new WeakMap<HTMLCanvasElement, Map<string, HTMLCanvasElement>>();
+export function tinted(src: HTMLCanvasElement, tint: string): HTMLCanvasElement {
+  let byTint = tintCache.get(src);
+  if (!byTint) tintCache.set(src, (byTint = new Map()));
+  let c = byTint.get(tint);
+  if (c) return c;
+  c = document.createElement("canvas");
+  c.width = src.width;
+  c.height = src.height;
+  const x = c.getContext("2d")!;
+  x.drawImage(src, 0, 0);
+  x.globalCompositeOperation = "color";
+  x.globalAlpha = 0.75;
+  x.fillStyle = tint;
+  x.fillRect(0, 0, c.width, c.height);
+  x.globalAlpha = 1;
+  x.globalCompositeOperation = "destination-in";
+  x.drawImage(src, 0, 0);
+  byTint.set(tint, c);
+  return c;
+}
+
 export class Renderer {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -1299,7 +1322,8 @@ export class Renderer {
       c.stroke();
       c.globalAlpha = 1;
     }
-    const fr = getFrame(model, {}, "", anim, dirOf(m.fx, m.fy), f, m.flash > 0.4 && m.state !== "dead");
+    const fr0 = getFrame(model, {}, "", anim, dirOf(m.fx, m.fy), f, m.flash > 0.4 && m.state !== "dead");
+    const fr = m.def.tint && !(m.flash > 0.4 && m.state !== "dead") ? { ...fr0, c: tinted(fr0.c, m.def.tint) } : fr0;
     const ctx = this.ctx;
     if (m.state === "dead" && m.searched) ctx.globalAlpha = 0.75;
     ctx.drawImage(fr.c, sx - fr.ax, sy - fr.ay);

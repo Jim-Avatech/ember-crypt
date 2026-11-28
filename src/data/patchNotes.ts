@@ -10,6 +10,15 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: "1.8",
+    title: "Act V: Rimefrost Citadel",
+    notes: [
+      "A fifth act after the Burning Hells: 20 levels of black ice with waypoints every 5th level, frozen monsters (Frozen Husks, Rime Revenants, Rime Callers, exploding Frost Wraiths), Frost Lords guarding each level and Vorthak, the Frozen King, at the end.",
+      "Act V is a real step up from Act IV: higher monster levels, +25% more monsters again, and +15–35% monster life and +10–25% damage (bosses too). Leech keeps 25% of its strength there.",
+      "Already beat Malakar? Act V's first waypoint is open for you.",
+    ],
+  },
+  {
     version: "1.7.3",
     title: "A gentler start",
     notes: [

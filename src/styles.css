@@ -1258,7 +1258,7 @@ body.portrait #rotate {
 .wpcamp { display: flex; align-items: center; gap: 12px; }
 .wpcamp .wprow { min-width: 170px; }
 .wpcamp .hint { margin: 0; }
-.wpacts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.wpacts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; } /* v1.8: five acts */
 .wpact { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .wpact .wprow { padding: 4px 10px; font-size: 14px; min-height: 40px; }
 .wph { font-size: 12px; color: #e8c86a; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 0; border-bottom: 1px solid #3a2a18; }

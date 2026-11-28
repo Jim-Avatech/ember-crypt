@@ -21,11 +21,11 @@ const v5 = {
 };
 
 describe("acts", () => {
-  it("4 acts × 20 levels, floors map to act and level; waypoints every 5 levels", () => {
-    expect(ACTS.length).toBe(4);
+  it("5 acts × 20 levels (v1.8 adds Act V), floors map to act and level; waypoints every 5 levels", () => {
+    expect(ACTS.length).toBe(5);
     expect(LEVELS_PER_ACT).toBe(20);
-    expect(MAX_FLOOR).toBe(80);
-    expect([1, 20, 21, 40, 41, 80].map(actOf)).toEqual([1, 1, 2, 2, 3, 4]);
+    expect(MAX_FLOOR).toBe(100);
+    expect([1, 20, 21, 40, 41, 80, 81, 100].map(actOf)).toEqual([1, 1, 2, 2, 3, 4, 5, 5]);
     expect([1, 20, 21, 40, 61].map(levelInAct)).toEqual([1, 20, 1, 20, 1]);
     expect(floorName(22)).toBe("Sunken Tombs — Level 2");
     expect(isFinalLevel(60)).toBe(true);
@@ -132,13 +132,13 @@ describe("final boss → artifact → next act", () => {
     const g2 = new Game(events, back);
     expect(g2.player.artifacts.length).toBe(1);
   });
-  it("Malakar on the last level ends the game: no stairs, a victory", () => {
+  it("Malakar drops the Cinder Crown and (v1.8) opens the stairs to Act V", () => {
     const g = new Game(events, null, 8);
     g.startFloor(80);
     expect(g.boss!.def.kind).toBe("malakar");
     kill(g, g.boss!);
-    expect(g.stairs).toBeNull();
-    expect(g.victory).toBe(true);
+    expect(g.stairs).not.toBeNull();
+    expect(g.victory).toBe(false);
     expect(g.ground.find((x) => x.artifact)?.artifact).toBe("cinder_crown");
   });
 });
@@ -167,7 +167,7 @@ describe("save v6 migration", () => {
   });
   it("a v6 save with junk artifacts or floors is cleaned", () => {
     const d = migrateSave({ ...JSON.parse(JSON.stringify(v5)), v: 6, floor: 99, maxFloor: 99, player: { ...v5.player, artifacts: [{ id: "nope", at: 1, level: 1 }, { id: "mire_pearl", at: 2, level: 30 }, { id: "mire_pearl", at: 3, level: 31 }] } })!;
-    expect(d.floor).toBe(80);
+    expect(d.floor).toBe(99); // v1.8: Act V is inside the game (floors 81-100)
     expect(d.player.artifacts!.map((a) => a.id)).toEqual(["mire_pearl"]);
   });
 });

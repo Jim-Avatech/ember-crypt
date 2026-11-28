@@ -20,7 +20,7 @@ const fill = (grid: Parameters<typeof addItem>[0], w?: number, h?: number) => {
 };
 
 describe("v1.3.2 version", () => {
-  it("label", () => expect(GAME_VERSION).toBe("1.7.3"));
+  it("label", () => expect(GAME_VERSION).toBe("1.8"));
 });
 
 describe("v1.3.2 Amazon: one one-handed weapon, off-hand is a shield or quiver", () => {

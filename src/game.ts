@@ -8,7 +8,7 @@ import {
   ELEM_COLOR, ELITE_MODS, type Elem, type EliteMod, MONSTERS, type MonsterDef, type MonsterKind, type Shot, scaleAR, scaleDef, scaleDmg, scaleHp, scaleXp, uniqueName,
 } from "./data/monsters";
 import {
-  ACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, hasWaypoint, MAX_FLOOR, actDef, actOf, floorName, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
+  ACTS, ARTIFACT_BY_ID, ARTIFACT_COLOR, LEVELS_PER_ACT, hasWaypoint, MAX_FLOOR, actDef, actOf, firstFloorOf, floorName, isFinalLevel, levelInAct, mlvlOf, xpPenalty, XP_RATE, bossName,
   type ActDef,
 } from "./data/acts";
 import {
@@ -54,7 +54,7 @@ export const BUYBACK_MAX = 8;
  * the average monsters per level is Act I's × 1.25^(act-1): the acts' own rolls average 44.2 / 38.7 / 40.2 / 39.0
  * (Act II-IV packs are smaller), so the targets 55.2 / 69.0 / 86.3 need these factors (tests/v14density.test.ts).
  */
-export const ACT_MONSTER_MULT = [1, 1.427, 1.719, 2.211];
+export const ACT_MONSTER_MULT = [1, 1.427, 1.719, 2.211, 3.2];
 /** v1.4: the added packs never fill a room past this many monsters per open tile. */
 export const ROOM_CROWD = 0.6;
 export const CURVE_END = 60;
@@ -64,8 +64,18 @@ export const CURVE_DMG0 = 0.65;
 export const CURVE_DMG_POW = 1.6;
 const curveAt = (f: number, start: number, pow = 1) =>
   f >= CURVE_END ? 1 : start + (1 - start) * Math.pow((Math.max(1, f) - 1) / (CURVE_END - 1), pow);
-export const curveHp = (floor: number) => curveAt(floor, CURVE_HP0);
-export const curveDmg = (floor: number) => curveAt(floor, CURVE_DMG0, CURVE_DMG_POW);
+/**
+ * v1.8: past parity. Floors 1-80 (Acts I-IV) are unchanged; Act V (floors 81-100) adds a step on top of its higher
+ * monster level: life x1.15 on its first level rising to x1.35 on its last, damage x1.10 to x1.25 (boss hits too).
+ */
+export const PARITY_ACTS_END = LEVELS_PER_ACT * 4;
+export const ACT5_HP: [number, number] = [1.15, 1.35];
+export const ACT5_DMG: [number, number] = [1.1, 1.25];
+const postAt = (f: number, [a, b]: [number, number]) => (f <= PARITY_ACTS_END ? 1 : a + (b - a) * Math.min(1, (f - PARITY_ACTS_END - 1) / (LEVELS_PER_ACT - 1)));
+export const postHp = (floor: number) => postAt(floor, ACT5_HP);
+export const postDmg = (floor: number) => postAt(floor, ACT5_DMG);
+export const curveHp = (floor: number) => curveAt(floor, CURVE_HP0) * postHp(floor);
+export const curveDmg = (floor: number) => curveAt(floor, CURVE_DMG0, CURVE_DMG_POW) * postDmg(floor);
 /** v1.7.3: 0 at floor `from`, 1 at floor `to`, straight line between (used to ease the early game off toward parity) */
 export const floorTaper = (floor: number, from: number, to: number) => Math.max(0, Math.min(1, (floor - from) / (to - from)));
 /**
@@ -93,7 +103,7 @@ export const heroLifeRef = (floor: number) => {
 export const BOSS_EASE0 = 0.45;
 export const bossEase = (floor: number) => BOSS_EASE0 + (1 - BOSS_EASE0) * floorTaper(floor, BOSS_REAL_ACTS, CURVE_END);
 export const bossHitShare = (floor: number) =>
-  (isFinalLevel(floor) ? 0.38 : 0.3 + (0.05 * (levelInAct(floor) - 1)) / Math.max(1, LEVELS_PER_ACT - 2)) * bossEase(floor);
+  (isFinalLevel(floor) ? 0.38 : 0.3 + (0.05 * (levelInAct(floor) - 1)) / Math.max(1, LEVELS_PER_ACT - 2)) * bossEase(floor) * postDmg(floor);
 /** v1.7.3: a ground slam's warning ring (s): 1.5 on floor 1 shortening to 0.8 by floor CURVE_END, for every boss. */
 export const slamWarn = (floor: number) => 1.5 - 0.7 * floorTaper(floor, 1, CURVE_END);
 /** v1.7.3: boss melee wind-up is longer early (+40% on floor 1, back to normal at CURVE_END) so a swing can be seen and stepped out of. */
@@ -779,7 +789,7 @@ export function freezeResFor(rank: string, elite: number, floor: number): number
 /** v1.7.2: share of leech that actually returns, by monster tier (champions / uniques / level bosses / act bosses). */
 export const LEECH_TIER_DRAIN: Record<FreezeTier, number> = { normal: 1, champion: 0.75, unique: 0.5, boss: 1 / 3, final: 0.2 };
 /** v1.7.2: Act I keeps all leech, Act II 75%, Act III 50% (D2 Nightmare), Act IV 33% (D2 Hell). */
-export const LEECH_ACT_DRAIN = [1, 0.75, 0.5, 1 / 3] as const;
+export const LEECH_ACT_DRAIN = [1, 0.75, 0.5, 1 / 3, 0.25] as const;
 export function leechDrainFor(rank: string, elite: number, floor: number): number {
   const act = Math.max(1, Math.min(LEECH_ACT_DRAIN.length, actOf(floor) || 1));
   return LEECH_TIER_DRAIN[freezeTier(rank, elite)] * LEECH_ACT_DRAIN[act - 1];
@@ -876,6 +886,9 @@ function sanitizeV6(d: SaveData): SaveData {
   d.player.artifacts = list.filter((a) => a && ARTIFACT_BY_ID[a.id] && !seen.has(a.id) && seen.add(a.id));
   d.floor = Math.max(1, Math.min(MAX_FLOOR, Number(d.floor) || 1));
   d.maxFloor = Math.max(d.floor, Math.min(MAX_FLOOR, Number(d.maxFloor) || 1));
+  // v1.8: Act IV used to be the end. A hero holding the Cinder Crown (Malakar beaten) gets Act V's first waypoint.
+  const fifth = firstFloorOf(5);
+  if (d.player.artifacts.some((a) => a.id === "cinder_crown") && d.maxFloor < fifth) d.maxFloor = fifth;
   return d;
 }
 
@@ -3748,7 +3761,7 @@ export class Game {
       this.events.bossKilled?.();
       if (final) {
         const art = act.artifact;
-        if (!this.player.artifacts.some((a) => a.id === art.id)) this.dropArtifact(m.x, m.y, art.id);
+        if (art && !this.player.artifacts.some((a) => a.id === art.id)) this.dropArtifact(m.x, m.y, art.id);
         else this.dropAt(m.x, m.y, { item: rollDrop(m.mlvl, mf + 100, true, Math.random, this.player.cls) });
       }
       // other monsters flee their dead boss's room
@@ -3760,7 +3773,7 @@ export class Game {
         this.events.toast(final ? `${m.def.name} is slain! The way to Act ${next.roman}, ${next.area}, is open.` : `${m.def.name} is slain! Stairs down have opened.`);
       } else {
         this.victory = true;
-        this.events.toast(`${m.def.name} is slain! You have conquered the Burning Hells.`);
+        this.events.toast(`${m.def.name} is slain! You have conquered the ${act.area}.`);
       }
     } else if (m.elite) {
       // champions and uniques: better loot (uniques always drop magic or better)
@@ -4334,7 +4347,7 @@ export class Game {
       else m.cd = 0.5;
     } else if (kind === "summon") {
       const alive = this.monsters.filter((o) => o.minion && o.state !== "dead").length;
-      const kindOf: MonsterKind = actOf(this.floor) === 3 ? "flayer" : "imp";
+      const kindOf: MonsterKind = actDef(this.floor).summon ?? (actOf(this.floor) === 3 ? "flayer" : "imp");
       for (let i = 0; i < Math.min(3, 8 - alive); i++) {
         const a = (i / 3) * Math.PI * 2 + Math.random();
         const x = m.x + Math.cos(a) * 1.2;

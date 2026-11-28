@@ -19,7 +19,8 @@ export function simDps(skill: "lightning_strike" | "lightning_fury", lvl: number
   const p = g.player;
   const cl = charLevelFor(lvl);
   let floor = 1;
-  while (floor < MAX_FLOOR && mlvlOf(floor) < cl) floor++;
+  // v1.8: stay within Acts I-IV (the v1.4 balance was set there; Act V monsters would change the comparison)
+  while (floor < Math.min(MAX_FLOOR, 80) && mlvlOf(floor) < cl) floor++;
   p.level = cl;
   p.base.dex = 40 + cl * 3;
   p.base.str = 30 + cl * 2;
